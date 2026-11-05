@@ -1,0 +1,53 @@
+# Copyright (c) 2026 Aiven, Helsinki, Finland. https://aiven.io/
+
+# Runbook: `RELEASING.md`.
+version: 2
+project_name: aiven-ai-gateway
+builds:
+  - id: aiven-ai-gateway
+    main: ./cmd/aiven-ai-gateway
+    binary: aiven-ai-gateway
+    env: [CGO_ENABLED=0]
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags: ["-s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.date={{.CommitDate}}"]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    # The binary with its licence texts; the default globs would also add README.md.
+    files: [LICENSE, THIRD_PARTY_NOTICES]
+checksum:
+  name_template: checksums.txt
+notarize:
+  macos:
+    # Snapshots skip signing; a real release without the secrets fails instead of shipping unsigned.
+    - enabled: "{{ not .IsSnapshot }}"
+      ids: [aiven-ai-gateway]
+      sign:
+        certificate: "{{.Env.MACOS_SIGN_P12}}"
+        password: "{{.Env.MACOS_SIGN_PASSWORD}}"
+      notarize:
+        issuer_id: "{{.Env.MACOS_NOTARY_ISSUER_ID}}"
+        key_id: "{{.Env.MACOS_NOTARY_KEY_ID}}"
+        key: "{{.Env.MACOS_NOTARY_KEY}}"
+        wait: true
+# The release workflow publishes the tap release under aiven-ai-gateway-<tag> and the cask itself; GoReleaser
+# has no cross-repository tag override, so it only builds, signs and generates.
+release:
+  disable: true
+homebrew_casks:
+  - name: aiven-ai-gateway
+    repository:
+      owner: aiven
+      name: homebrew-tap
+    homepage: https://github.com/aiven-open/ai-gateway-cli
+    url:
+      template: "https://github.com/aiven/homebrew-tap/releases/download/aiven-ai-gateway-{{ .Tag }}/{{ .ArtifactName }}"
+    description: Launch Claude Code and other agents against Aiven AI Gateway
+    skip_upload: true
+# Release notes are this repository's public commit subjects since the previous tag.
+changelog:
+  use: git
+  sort: asc
