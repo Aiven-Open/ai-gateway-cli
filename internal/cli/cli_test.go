@@ -67,7 +67,7 @@ func TestUnknownCommand(t *testing.T) {
 
 func TestUsageListsEveryCommand(t *testing.T) {
 	r := run(t, "help")
-	for _, cmd := range []string{"login", "models", "logout", "claude", "omp init", "codex|pi|opencode"} {
+	for _, cmd := range []string{"login", "models", "logout", "claude", "omp init", "codex|pi [--isolated]", "opencode"} {
 		if !strings.Contains(r.stdout, cmd) {
 			t.Errorf("usage lacks %q:\n%s", cmd, r.stdout)
 		}

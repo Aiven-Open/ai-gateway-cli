@@ -70,6 +70,28 @@ func TestOMPHomeIgnoresOmpHome(t *testing.T) {
 	}
 }
 
+func TestPiAgentDirDefaultsUnderHomeAndFollowsPiCodingAgentDir(t *testing.T) {
+	if got := load(t, []string{"HOME=/home/ada"}).PiAgentDir; got != "/home/ada/.pi/agent" {
+		t.Errorf("PiAgentDir = %q", got)
+	}
+	if got := load(t, []string{"HOME=/home/ada", "PI_CODING_AGENT_DIR=/srv/pi"}).PiAgentDir; got != "/srv/pi" {
+		t.Errorf("PiAgentDir = %q, want PI_CODING_AGENT_DIR", got)
+	}
+	// pi expands a leading ~ itself.
+	if got := load(t, []string{"HOME=/home/ada", "PI_CODING_AGENT_DIR=~/pi"}).PiAgentDir; got != "/home/ada/pi" {
+		t.Errorf("PiAgentDir = %q, want ~ expanded", got)
+	}
+}
+
+func TestCodexHomeDefaultsUnderHomeAndFollowsCodexHome(t *testing.T) {
+	if got := load(t, []string{"HOME=/home/ada"}).CodexHome; got != "/home/ada/.codex" {
+		t.Errorf("CodexHome = %q", got)
+	}
+	if got := load(t, []string{"HOME=/home/ada", "CODEX_HOME=/srv/codex"}).CodexHome; got != "/srv/codex" {
+		t.Errorf("CodexHome = %q, want CODEX_HOME", got)
+	}
+}
+
 func TestKeystoreModeDefaultsToAutoAndIsOverridable(t *testing.T) {
 	if got := load(t, []string{"PATH=/bin"}).Keystore; got != "auto" {
 		t.Errorf("default Keystore = %q, want auto", got)

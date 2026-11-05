@@ -4,6 +4,7 @@
 package config
 
 import (
+	"cmp"
 	"fmt"
 	"net/url"
 	"path/filepath"
@@ -26,6 +27,10 @@ type Env struct {
 	WorkDir string
 	// OMPHome is omp's config root (`PI_CONFIG_DIR` under home, default `.omp`), which holds the `aiven-llm` profile.
 	OMPHome string
+	// PiAgentDir is the user's own pi profile (`PI_CODING_AGENT_DIR`, default `~/.pi/agent`).
+	PiAgentDir string
+	// CodexHome is the user's own Codex profile (`CODEX_HOME`, default `~/.codex`).
+	CodexHome string
 }
 
 // Load builds Env from an environ-style KEY=VALUE list (os.Environ()); an invalid AIVEN_LLM_BASE_URL is an error.
@@ -45,9 +50,19 @@ func Load(environ []string) (Env, error) {
 		if v, ok := strings.CutPrefix(kv, "PI_CONFIG_DIR="); ok && v != "" {
 			configDir = v
 		}
+		if v, ok := strings.CutPrefix(kv, "PI_CODING_AGENT_DIR="); ok && v != "" {
+			env.PiAgentDir = v
+		}
+		if v, ok := strings.CutPrefix(kv, "CODEX_HOME="); ok && v != "" {
+			env.CodexHome = v
+		}
 		if v, ok := strings.CutPrefix(kv, "HOME="); ok {
 			home = v
 		}
+	}
+	if home != "" {
+		env.PiAgentDir = cmp.Or(expandTilde(env.PiAgentDir, home), filepath.Join(home, ".pi", "agent"))
+		env.CodexHome = cmp.Or(env.CodexHome, filepath.Join(home, ".codex"))
 	}
 	if env.Home == "" && home != "" {
 		env.Home = home + "/.config/aiven-llm"
@@ -65,6 +80,17 @@ func Load(environ []string) (Env, error) {
 	}
 	env.BaseURL = base
 	return env, nil
+}
+
+// expandTilde resolves a leading `~` as pi does for PI_CODING_AGENT_DIR.
+func expandTilde(path, home string) string {
+	if path == "~" {
+		return home
+	}
+	if rest, ok := strings.CutPrefix(path, "~/"); ok {
+		return filepath.Join(home, rest)
+	}
+	return path
 }
 
 // normaliseBaseURL accepts only an http(s) origin, so every endpoint appends its own path to one canonical value.

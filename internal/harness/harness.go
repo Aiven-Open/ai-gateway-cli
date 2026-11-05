@@ -15,6 +15,10 @@ type Input struct {
 	Key     string
 	BaseURL string
 	Home    string
+	// Isolated runs the harness in a private profile under Home instead of the user's own.
+	Isolated bool
+	// ProfileDir is the user's own profile of the harness, for harnesses that inspect it.
+	ProfileDir string
 	// Args are forwarded to the harness untouched.
 	Args []string
 }

@@ -27,23 +27,35 @@ func launchClaude(ctx context.Context, args []string, env config.Env, deps Deps)
 	if code != 0 {
 		return code
 	}
-	in := claude.Input{Table: table, Key: key, BaseURL: env.BaseURL, Home: env.Home, WorkDir: env.WorkDir, Args: args}
-	if len(args) > 0 && args[0] == isolatedFlag {
-		in.Isolated, in.Args = true, args[1:]
-	}
+	in := claude.Input{Table: table, Key: key, BaseURL: env.BaseURL, Home: env.Home, WorkDir: env.WorkDir}
+	in.Isolated, in.Args = splitIsolated(args)
 	return launch(claude.Prepare(in), env, deps)
 }
 
 func launchCodex(ctx context.Context, args []string, env config.Env, deps Deps) int {
-	return launchTable(ctx, "codex", args, env, deps, codex.Prepare)
+	return launchTable(ctx, "codex", args, true, env, deps, func(in harness.Input) (harness.Plan, error) {
+		in.ProfileDir = env.CodexHome
+		return codex.Prepare(in)
+	})
 }
 
 func launchPi(ctx context.Context, args []string, env config.Env, deps Deps) int {
-	return launchTable(ctx, "pi", args, env, deps, func(in harness.Input) (harness.Plan, error) { return pi.Prepare(in), nil })
+	return launchTable(ctx, "pi", args, true, env, deps, func(in harness.Input) (harness.Plan, error) {
+		in.ProfileDir = env.PiAgentDir
+		return pi.Prepare(in)
+	})
 }
 
 func launchOpencode(ctx context.Context, args []string, env config.Env, deps Deps) int {
-	return launchTable(ctx, "opencode", args, env, deps, func(in harness.Input) (harness.Plan, error) { return opencode.Prepare(in), nil })
+	return launchTable(ctx, "opencode", args, false, env, deps, func(in harness.Input) (harness.Plan, error) { return opencode.Prepare(in), nil })
+}
+
+// splitIsolated reports whether args lead with --isolated, and returns the rest.
+func splitIsolated(args []string) (bool, []string) {
+	if len(args) > 0 && args[0] == isolatedFlag {
+		return true, args[1:]
+	}
+	return false, args
 }
 
 // launchOmp dispatches `omp init`; otherwise it checks the plugin next to the binary, before the gateway call or any write: without role agents the router cannot route.
@@ -65,13 +77,17 @@ func launchOmp(ctx context.Context, args []string, env config.Env, deps Deps) in
 	return launch(omp.Prepare(omp.Input{Table: table, Key: key, BaseURL: env.BaseURL, Home: env.Home, OMPHome: env.OMPHome, Args: args}), env, deps)
 }
 
-// launchTable launches a harness whose launch needs only the key, the table and pass-through args.
-func launchTable(ctx context.Context, bin string, args []string, env config.Env, deps Deps, prepare func(harness.Input) (harness.Plan, error)) int {
+// launchTable launches a harness whose launch needs only the key, the table and pass-through args; isolatable harnesses take a leading --isolated.
+func launchTable(ctx context.Context, bin string, args []string, isolatable bool, env config.Env, deps Deps, prepare func(harness.Input) (harness.Plan, error)) int {
 	key, table, code := grantedModels(ctx, bin, env, deps)
 	if code != 0 {
 		return code
 	}
-	plan, err := prepare(harness.Input{Table: table, Key: key, BaseURL: env.BaseURL, Home: env.Home, Args: args})
+	in := harness.Input{Table: table, Key: key, BaseURL: env.BaseURL, Home: env.Home, Args: args}
+	if isolatable {
+		in.Isolated, in.Args = splitIsolated(args)
+	}
+	plan, err := prepare(in)
 	if err != nil {
 		return fail(deps, err.Error())
 	}

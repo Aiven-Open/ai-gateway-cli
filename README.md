@@ -21,7 +21,7 @@ aiven-llm login
 aiven-llm claude
 ```
 
-`aiven-llm models` lists the models the key grants with prices, `aiven-llm logout` removes the key, `aiven-llm help` lists the harness commands. Harness config is generated per launch; the harness's own profile is left alone.
+`aiven-llm models` lists the models the key grants with prices, `aiven-llm logout` removes the key, `aiven-llm help` lists the harness commands. Harness config is generated per launch: Claude Code, Codex and pi run in your own profile (skills, MCP servers, settings) with the gateway provider added for the session, and `--isolated` runs them in a blank profile under `~/.config/aiven-llm` instead. opencode applies a project's `opencode.json` over the launcher's, including local MCP servers it starts, so run it only in repositories you trust.
 
 ## Environment
 

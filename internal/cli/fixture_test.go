@@ -197,7 +197,7 @@ func newSession(t *testing.T, g *gatewayDouble) *session {
 	s := &session{
 		t: t,
 		env: config.Env{
-			BaseURL: g.URL, Home: home, WorkDir: project, OMPHome: filepath.Join(fakeHome, ".omp"),
+			BaseURL: g.URL, Home: home, WorkDir: project, OMPHome: filepath.Join(fakeHome, ".omp"), PiAgentDir: filepath.Join(fakeHome, ".pi", "agent"), CodexHome: filepath.Join(fakeHome, ".codex"),
 			Environ: []string{"PATH=/usr/bin:/bin", "HOME=" + fakeHome},
 		},
 		out:      &bytes.Buffer{},

@@ -53,5 +53,7 @@ const usageText = `usage: aiven-llm <command> [args]
   omp init [flags]   pick a gateway alias per role for this project and write .omp/config.yml
                      flags: --architect --builder --cross-reviewer --bulk-reader
                      --boilerplate-writer --advisor off|main|builder|both --advisor-model
-  codex|pi|opencode [args]          launch that harness against the gateway
+  codex|pi [--isolated] [args]      launch Codex or pi with your own profile plus gateway wiring
+                     --isolated uses a blank profile under ~/.config/aiven-llm/<harness> instead
+  opencode [args]    launch opencode against the gateway
 `

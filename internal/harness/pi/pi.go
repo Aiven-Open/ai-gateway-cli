@@ -4,16 +4,37 @@
 package pi
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/Aiven-Open/ai-gateway-cli/internal/harness"
 	"github.com/Aiven-Open/ai-gateway-cli/internal/models"
 )
 
+const providerID = "aiven-gateway"
+
+// Pi's models.json parser fills these for absent fields (pi 0.80.3); an extension's models get no defaults.
+const (
+	defaultContextWindow = 128000
+	defaultMaxTokens     = 16384
+)
+
+// subcommands are read by pi only as the first argument and manage the user's own pi.
+var subcommands = map[string]bool{"install": true, "remove": true, "uninstall": true, "update": true, "list": true, "config": true}
+
 type model struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Cost *cost  `json:"cost,omitempty"`
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	Reasoning     bool     `json:"reasoning"`
+	Input         []string `json:"input"`
+	Cost          cost     `json:"cost"`
+	ContextWindow int      `json:"contextWindow"`
+	MaxTokens     int      `json:"maxTokens"`
 }
 
 // cost is USD per million tokens; Pi has no cache pricing to learn from the gateway.
@@ -24,28 +45,78 @@ type cost struct {
 	CacheWrite float64 `json:"cacheWrite"`
 }
 
-// Prepare renders a private PI_CODING_AGENT_DIR with every granted alias; the provider reads the key from the environment.
-func Prepare(in harness.Input) harness.Plan {
+// Prepare registers the gateway provider in the user's own pi through a generated extension; Isolated renders a
+// private PI_CODING_AGENT_DIR instead. Either way every granted alias is listed and the key is read from the environment.
+func Prepare(in harness.Input) (harness.Plan, error) {
+	argv := append([]string{"pi"}, in.Args...)
+	if !in.Isolated && len(in.Args) > 0 && subcommands[in.Args[0]] {
+		return harness.Plan{Argv: argv}, nil
+	}
+	if slices.ContainsFunc(in.Args, func(a string) bool { return a == "--api-key" || strings.HasPrefix(a, "--api-key=") }) {
+		return harness.Plan{}, errors.New("--api-key would replace this login's key; run: aiven-llm login")
+	}
+	if !in.Isolated && in.ProfileDir == "" {
+		return harness.Plan{}, errors.New("cannot locate your pi profile (HOME unset); run: aiven-llm pi --isolated")
+	}
+	if auth := filepath.Join(in.ProfileDir, "auth.json"); !in.Isolated && storesKey(auth) {
+		return harness.Plan{}, fmt.Errorf("%s stores a key for %s, which pi would use instead of this login. Remove it with /logout in pi, or run: aiven-llm pi --isolated", auth, providerID)
+	}
+	provider := map[string]any{"baseUrl": in.BaseURL + "/v1", "api": "openai-completions", "apiKey": "$AIVEN_GATEWAY_KEY", "models": modelList(in.Table)}
+	env := []string{"AIVEN_GATEWAY_KEY=" + in.Key}
+	dir := filepath.Join(in.Home, "pi")
+	if in.Isolated {
+		settings := map[string]string{"defaultProvider": providerID, "defaultModel": models.SonnetOrFirst(in.Table)}
+		return harness.Plan{
+			Files: []harness.File{
+				{Path: filepath.Join(dir, "models.json"), Data: harness.JSON(map[string]any{"providers": map[string]any{providerID: provider}})},
+				{Path: filepath.Join(dir, "settings.json"), Data: harness.JSON(settings)},
+			},
+			Argv:   argv,
+			Env:    append(env, "PI_CODING_AGENT_DIR="+dir),
+			Notice: models.Table(in.Table),
+		}, nil
+	}
+	ext := filepath.Join(dir, providerID+".js")
+	// Always set: a session pi cannot restore otherwise falls back to the user's own provider. pi takes the last
+	// --model, so the user's own flags after these win; a resumed session gets the gateway default unless they pass one.
+	overlay := []string{"pi", "-e", ext, "--provider", providerID, "--model", models.SonnetOrFirst(in.Table)}
+	return harness.Plan{
+		Files:  []harness.File{{Path: ext, Data: extension(provider)}},
+		Argv:   append(overlay, in.Args...),
+		Env:    env,
+		Notice: models.Table(in.Table),
+	}, nil
+}
+
+// storesKey reports whether pi's auth.json at path has an entry for the gateway provider; pi ranks it above the extension's key.
+func storesKey(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	var entries map[string]json.RawMessage
+	_ = json.Unmarshal(data, &entries) // a file pi cannot parse is pi's error to report
+	_, ok := entries[providerID]
+	return ok
+}
+
+func modelList(table []models.Model) []model {
 	var list []model
-	for _, m := range models.Sorted(in.Table) {
-		e := model{ID: m.Alias, Name: m.PriceLabel()}
+	for _, m := range models.Sorted(table) {
+		e := model{ID: m.Alias, Name: m.PriceLabel(), Input: []string{"text"}, ContextWindow: defaultContextWindow, MaxTokens: defaultMaxTokens}
 		if m.Priced() {
-			e.Cost = &cost{Input: *m.InUSD1M, Output: *m.OutUSD1M}
+			e.Cost = cost{Input: *m.InUSD1M, Output: *m.OutUSD1M}
+		}
+		if m.Context != nil {
+			e.ContextWindow = *m.Context
 		}
 		list = append(list, e)
 	}
-	cfg := map[string]any{"providers": map[string]any{"aiven-gateway": map[string]any{
-		"baseUrl": in.BaseURL + "/v1", "api": "openai-completions", "apiKey": "$AIVEN_GATEWAY_KEY", "models": list,
-	}}}
-	settings := map[string]string{"defaultProvider": "aiven-gateway", "defaultModel": models.SonnetOrFirst(in.Table)}
-	dir := filepath.Join(in.Home, "pi")
-	return harness.Plan{
-		Files: []harness.File{
-			{Path: filepath.Join(dir, "models.json"), Data: harness.JSON(cfg)},
-			{Path: filepath.Join(dir, "settings.json"), Data: harness.JSON(settings)},
-		},
-		Argv:   append([]string{"pi"}, in.Args...),
-		Env:    []string{"PI_CODING_AGENT_DIR=" + dir, "AIVEN_GATEWAY_KEY=" + in.Key},
-		Notice: models.Table(in.Table),
-	}
+	return list
+}
+
+// extension renders a pi extension registering provider. encoding/json escapes U+2028/2029, so the literal is valid JS.
+func extension(provider map[string]any) []byte {
+	data, _ := json.Marshal(provider) // plain structs and maps cannot fail to marshal
+	return []byte("// Generated by aiven-llm on each launch; the key comes from AIVEN_GATEWAY_KEY.\nconst provider = " + string(data) + ";\nexport default function (pi) {\n  pi.registerProvider(\"" + providerID + "\", provider);\n}\n")
 }
