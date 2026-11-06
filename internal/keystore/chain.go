@@ -17,15 +17,18 @@ type Chain struct {
 
 // Get serves the file record when one exists, else the keychain's. A file record means the keychain failed
 // the last write (Set removes or overwrites it otherwise), and skipping the keychain avoids its timeout on every launch.
-// Backend errors count as missing.
+// A file that exists but cannot be used is an error rather than a reason to serve the keychain's older key.
 func (c *Chain) Get(baseURL string) (Record, error) {
 	canon := Canonical(baseURL)
-	for _, s := range []Store{c.Fallback, c.Primary} {
-		if rec, err := s.Get(canon); err == nil && rec.BaseURL == canon {
-			return rec, nil
-		}
+	rec, err := c.Fallback.Get(canon)
+	if !errors.Is(err, ErrNotFound) {
+		return rec, err
 	}
-	return Record{}, ErrNotFound
+	rec, err = c.Primary.Get(canon)
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return Record{}, fmt.Errorf("no key file, and the OS keychain could not be read (%w); if you have not logged in, run: aiven-llm login", err)
+	}
+	return rec, err
 }
 
 func (c *Chain) Set(rec Record) (string, error) {
@@ -44,13 +47,12 @@ func (c *Chain) Set(rec Record) (string, error) {
 	return where, nil
 }
 
-// Delete clears both backends. A keychain delete failure only warns when the keychain no longer serves the key:
-// on hosts without one (headless Linux) its Get fails fast and the file is the store.
+// Delete clears both backends. A keychain delete failure only warns when the keychain confirms it no longer holds the key.
 func (c *Chain) Delete(baseURL string) error {
 	ferr := c.Fallback.Delete(baseURL)
 	if err := c.Primary.Delete(baseURL); err != nil {
-		if _, gerr := c.Primary.Get(Canonical(baseURL)); gerr == nil {
-			return errors.Join(err, ferr)
+		if _, gerr := c.Primary.Get(Canonical(baseURL)); !errors.Is(gerr, ErrNotFound) {
+			return errors.Join(fmt.Errorf("the OS keychain may still hold the key: %w (on a host without a keychain, set AIVEN_LLM_KEYSTORE=file)", err), ferr)
 		}
 		fmt.Fprintf(c.Notice, "aiven-llm: could not remove the key from the OS keychain (%v)\n", err)
 	}

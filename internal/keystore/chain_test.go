@@ -5,6 +5,7 @@ package keystore_test
 import (
 	"errors"
 	"io/fs"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ type fakeKeyring struct {
 	recs       map[string]keystore.Record
 	failSet    bool
 	failDelete bool
+	failGet    bool
 	gets       int
 }
 
@@ -26,6 +28,9 @@ func newFakeKeyring() *fakeKeyring { return &fakeKeyring{recs: map[string]keysto
 
 func (f *fakeKeyring) Get(u string) (keystore.Record, error) {
 	f.gets++
+	if f.failGet {
+		return keystore.Record{}, errors.New("keychain did not respond")
+	}
 	if rec, ok := f.recs[keystore.Canonical(u)]; ok {
 		return rec, nil
 	}
@@ -262,5 +267,39 @@ func TestChainWriteFailsWhenStaleFileCanBeNeitherRemovedNorOverwritten(t *testin
 	_, err := c.Set(keystore.Record{BaseURL: gw, Key: "new", WrittenAt: t0.Add(time.Hour)})
 	if err == nil || !strings.Contains(err.Error(), "permission denied") || !strings.Contains(err.Error(), "read-only file system") {
 		t.Fatalf("Set = %v, want both file errors: reads would keep serving the old key", err)
+	}
+}
+
+func TestChainReadReportsKeychainErrorInsteadOfNoKey(t *testing.T) {
+	c, kr, _, _ := newChain(t)
+	kr.failGet = true
+	_, err := c.Get(gw)
+	if err == nil || errors.Is(err, keystore.ErrNotFound) || !strings.Contains(err.Error(), "keychain did not respond") || !strings.Contains(err.Error(), "aiven-llm login") {
+		t.Fatalf("err = %v, want keychain error with login hint", err)
+	}
+}
+
+func TestChainReadDoesNotFallBackPastBrokenKeyFile(t *testing.T) {
+	c, kr, file, _ := newChain(t)
+	_, _ = kr.Set(keystore.Record{BaseURL: gw, Key: "older", WrittenAt: t0})
+	path, _ := file.Set(keystore.Record{BaseURL: gw, Key: "newer", WrittenAt: t0.Add(time.Hour)})
+	if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if rec, err := c.Get(gw); err == nil || errors.Is(err, keystore.ErrNotFound) {
+		t.Fatalf("Get = %+v, %v; want key file error", rec, err)
+	}
+}
+
+func TestChainDeleteReportsUnconfirmedKeychainRemoval(t *testing.T) {
+	c, kr, file, _ := newChain(t)
+	_, _ = file.Set(keystore.Record{BaseURL: gw, Key: "k", WrittenAt: t0})
+	kr.failDelete, kr.failGet = true, true
+	err := c.Delete(gw)
+	if err == nil || !strings.Contains(err.Error(), "may still hold the key") || !strings.Contains(err.Error(), "AIVEN_LLM_KEYSTORE=file") {
+		t.Fatalf("Delete = %v, want unconfirmed-removal error", err)
+	}
+	if _, err := file.Get(gw); !errors.Is(err, keystore.ErrNotFound) {
+		t.Errorf("file record survived: %v", err)
 	}
 }

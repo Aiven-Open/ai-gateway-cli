@@ -25,14 +25,6 @@ type keychain interface {
 	Delete(service, user string) error
 }
 
-type osKeychain struct{}
-
-func (osKeychain) Get(service, user string) (string, error) { return keyring.Get(service, user) }
-func (osKeychain) Set(service, user, password string) error {
-	return keyring.Set(service, user, password)
-}
-func (osKeychain) Delete(service, user string) error { return keyring.Delete(service, user) }
-
 // Keyring keeps records in the OS keychain, one entry per canonical gateway URL.
 type Keyring struct {
 	kc      keychain
@@ -40,7 +32,7 @@ type Keyring struct {
 }
 
 // NewKeyring returns the OS keychain backend.
-func NewKeyring() *Keyring { return &Keyring{kc: osKeychain{}, timeout: keychainTimeout} }
+func NewKeyring() *Keyring { return &Keyring{kc: newOSKeychain(), timeout: keychainTimeout} }
 
 // bounded runs fn and gives up after the keyring's timeout; the abandoned call finishes in the background.
 func bounded[T any](k *Keyring, fn func() (T, error)) (T, error) {

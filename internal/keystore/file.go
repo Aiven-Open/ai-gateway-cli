@@ -20,15 +20,22 @@ type File struct{ dir string }
 // NewFile returns a file backend rooted at the launcher home.
 func NewFile(home string) *File { return &File{dir: filepath.Join(home, "aig-keys")} }
 
-// Get reads the record for baseURL; an unreadable or mismatched file counts as missing.
+// Get reads the record for baseURL; an absent file or one for another gateway counts as missing, an unreadable or corrupt one is an error.
 func (f *File) Get(baseURL string) (Record, error) {
 	canon := Canonical(baseURL)
-	data, err := os.ReadFile(f.path(canon))
-	if err != nil {
+	path := f.path(canon)
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
 		return Record{}, ErrNotFound
 	}
+	if err != nil {
+		return Record{}, fmt.Errorf("read key file: %w", err)
+	}
 	var rec Record
-	if json.Unmarshal(data, &rec) != nil || rec.BaseURL != canon || rec.Key == "" {
+	if json.Unmarshal(data, &rec) != nil || rec.Key == "" {
+		return Record{}, fmt.Errorf("key file %s is corrupt; run: aiven-llm login", path)
+	}
+	if rec.BaseURL != canon {
 		return Record{}, ErrNotFound
 	}
 	return rec, nil

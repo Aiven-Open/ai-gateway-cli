@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Aiven-Open/ai-gateway-cli/internal/keystore"
@@ -57,12 +58,23 @@ func TestFileStoreIgnoresRecordForAnotherGateway(t *testing.T) {
 	}
 }
 
-func TestFileStoreTreatsCorruptRecordAsMissing(t *testing.T) {
-	f := keystore.NewFile(t.TempDir())
-	path, _ := f.Set(keystore.Record{BaseURL: "https://a.example", Key: "ka"})
-	_ = os.WriteFile(path, []byte("{"), 0o600)
-	if _, err := f.Get("https://a.example"); !errors.Is(err, keystore.ErrNotFound) {
-		t.Fatalf("err = %v, want ErrNotFound", err)
+func TestFileStoreReportsUnusableRecord(t *testing.T) {
+	cases := map[string]func(path string) error{
+		"corrupt":    func(p string) error { return os.WriteFile(p, []byte("{"), 0o600) },
+		"unreadable": func(p string) error { return os.Chmod(p, 0) },
+	}
+	for name, breakIt := range cases {
+		t.Run(name, func(t *testing.T) {
+			f := keystore.NewFile(t.TempDir())
+			path, _ := f.Set(keystore.Record{BaseURL: "https://a.example", Key: "ka"})
+			if err := breakIt(path); err != nil {
+				t.Fatal(err)
+			}
+			_, err := f.Get("https://a.example")
+			if err == nil || errors.Is(err, keystore.ErrNotFound) || !strings.Contains(err.Error(), path) {
+				t.Fatalf("err = %v, want error naming %s", err, path)
+			}
+		})
 	}
 }
 
