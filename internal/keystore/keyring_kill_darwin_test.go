@@ -8,6 +8,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -45,5 +48,28 @@ func TestKeychainWriteWithinDeadlineLands(t *testing.T) {
 	}
 	if _, err := os.Stat(marker); err != nil {
 		t.Fatal("write did not land")
+	}
+}
+
+// Through the public Keyring: when Set returns, `security` is gone, so a launcher exiting right after cannot leave it writing.
+func TestKeyringTimeoutReturnsOnlyAfterSecurityExited(t *testing.T) {
+	dir := t.TempDir()
+	path, pidFile := filepath.Join(dir, "security"), filepath.Join(dir, "pid")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\necho $$ > \"$PIDFILE\"\nsleep 5\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PIDFILE", pidFile)
+	k := &Keyring{kc: macKeychain{path: path, timeout: 300 * time.Millisecond}, timeout: 50 * time.Millisecond}
+	if _, err := k.Set(Record{BaseURL: "https://a.example", Key: "k"}); err == nil {
+		t.Fatal("Set succeeded, want timeout")
+	}
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, _ := strconv.Atoi(strings.TrimSpace(string(data)))
+	if syscall.Kill(pid, 0) == nil {
+		_ = syscall.Kill(pid, syscall.SIGKILL)
+		t.Fatalf("security (pid %d) still running after Set returned", pid)
 	}
 }

@@ -10,8 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zalando/go-keyring"
-
 	"github.com/Aiven-Open/ai-gateway-cli/internal/keystore"
 )
 
@@ -190,7 +188,7 @@ func TestChainKeepsGatewaysSeparate(t *testing.T) {
 }
 
 func TestChainOverKeychainRoundTripsAndSurvivesStaleFile(t *testing.T) {
-	keyring.MockInit()
+	keystore.MockOSKeychain(t)
 	home := t.TempDir()
 	file := keystore.NewFile(home)
 	c := &keystore.Chain{Primary: keystore.NewKeyring(), Fallback: file, Notice: &strings.Builder{}}
@@ -208,7 +206,7 @@ func TestChainOverKeychainRoundTripsAndSurvivesStaleFile(t *testing.T) {
 }
 
 func TestNewSelectsBackendByMode(t *testing.T) {
-	keyring.MockInit()
+	keystore.MockOSKeychain(t)
 	notice := &strings.Builder{}
 	rec := keystore.Record{BaseURL: gw, Key: "k", WrittenAt: t0}
 	for mode, want := range map[string]string{"file": ".json", "keyring": "OS keychain", "auto": "OS keychain"} {

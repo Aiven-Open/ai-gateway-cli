@@ -29,9 +29,10 @@ type macKeychain struct {
 	timeout time.Duration
 }
 
-func newOSKeychain() keychain {
-	return macKeychain{path: "/usr/bin/security", timeout: keychainTimeout}
-}
+var newOSKeychain = func() keychain { return macKeychain{path: "/usr/bin/security", timeout: keychainTimeout} }
+
+// selfBounded: run kills `security` at the deadline and reaps it before returning.
+func (macKeychain) selfBounded() {}
 
 func (k macKeychain) Get(service, user string) (string, error) {
 	out, err := k.run("", "find-generic-password", "-s", service, "-wa", user)

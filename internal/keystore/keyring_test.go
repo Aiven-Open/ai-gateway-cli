@@ -7,13 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zalando/go-keyring"
-
 	"github.com/Aiven-Open/ai-gateway-cli/internal/keystore"
 )
 
 func TestKeyringRoundTripsRecordWithOptionalFields(t *testing.T) {
-	keyring.MockInit()
+	keystore.MockOSKeychain(t)
 	k := keystore.NewKeyring()
 	want := keystore.Record{
 		BaseURL: "https://ai.aiven.io", Key: "k1", KeyID: "kid", Project: "proj",

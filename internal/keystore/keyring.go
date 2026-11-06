@@ -25,6 +25,18 @@ type keychain interface {
 	Delete(service, user string) error
 }
 
+// selfBounded is a keychain that enforces the timeout itself and returns only once its call can no longer change state.
+type selfBounded interface{ selfBounded() }
+
+// goKeyring is go-keyring as is.
+type goKeyring struct{}
+
+func (goKeyring) Get(service, user string) (string, error) { return keyring.Get(service, user) }
+func (goKeyring) Set(service, user, password string) error {
+	return keyring.Set(service, user, password)
+}
+func (goKeyring) Delete(service, user string) error { return keyring.Delete(service, user) }
+
 // Keyring keeps records in the OS keychain, one entry per canonical gateway URL.
 type Keyring struct {
 	kc      keychain
@@ -36,6 +48,9 @@ func NewKeyring() *Keyring { return &Keyring{kc: newOSKeychain(), timeout: keych
 
 // bounded runs fn and gives up after the keyring's timeout; the abandoned call finishes in the background.
 func bounded[T any](k *Keyring, fn func() (T, error)) (T, error) {
+	if _, ok := k.kc.(selfBounded); ok {
+		return fn()
+	}
 	type result struct {
 		v   T
 		err error
