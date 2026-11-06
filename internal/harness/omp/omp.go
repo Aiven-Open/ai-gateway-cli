@@ -48,7 +48,8 @@ func Prepare(in Input) harness.Plan {
 	overlay := filepath.Join(in.Home, "omp", "config.yml")
 	provider := map[string]any{"providers": map[string]any{"aiven-gateway": map[string]any{
 		"baseUrl": in.BaseURL + "/v1", "apiKey": "AIVEN_GATEWAY_KEY", "api": "openai-completions",
-		"discovery": map[string]any{"type": "openai-models-list"},
+		"discovery":      map[string]any{"type": "openai-models-list"},
+		"modelOverrides": overrides(in.Table),
 	}}}
 	config := map[string]any{
 		"modelRoles":    map[string]any{"default": "aiven-gateway/" + routerAlias(in.Table)},
@@ -63,6 +64,23 @@ func Prepare(in Input) harness.Plan {
 		Argv:   append([]string{"omp", "--profile", Profile, "--config", overlay, "--tools", routerTools}, in.Args...),
 		Env:    []string{"AIVEN_GATEWAY_KEY=" + in.Key},
 	}
+}
+
+// overrides patches discovered models with the gateway's context window and prices (USD per 1M), which OMP's
+// `openai-models-list` discovery does not read (v18.0.11 `model-discovery.ts`); unknown values keep its defaults.
+func overrides(table []models.Model) map[string]any {
+	out := map[string]any{}
+	for _, m := range table {
+		o := map[string]any{}
+		if m.Context != nil {
+			o["contextWindow"] = *m.Context
+		}
+		if m.Priced() {
+			o["cost"] = map[string]float64{"input": *m.InUSD1M, "output": *m.OutUSD1M}
+		}
+		out[m.Alias] = o
+	}
+	return out
 }
 
 // routerAlias is the cheap tier the router session itself runs on; it is a pinned role default, so a router alias only when the key grants nothing else.

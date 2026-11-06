@@ -81,3 +81,20 @@ func TestOpencodeForwardsArgs(t *testing.T) {
 		t.Errorf("argv = %q, want %q", s.launched().argv, want)
 	}
 }
+
+func TestOpencodeModelsCarryGatewayContextAndPrices(t *testing.T) {
+	s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid)
+	s.run("opencode")
+	got := opencodeConfig(t, s)["provider"].(map[string]any)["aiven-gateway"].(map[string]any)["models"].(map[string]any)
+	// Unknown context or prices are left out rather than written as zero; `output: 0` is OpenCode's own default cap.
+	want := map[string]any{
+		"aiven-model":   map[string]any{"name": "aiven-model (price n/a)", "limit": map[string]any{"context": 1e6, "output": 0.0}},
+		"claude-opus":   map[string]any{"name": "claude-opus ($15.00 in / $75.00 out per 1M tok)", "limit": map[string]any{"context": 1e6, "output": 0.0}, "cost": map[string]any{"input": 15.0, "output": 75.0}},
+		"claude-sonnet": map[string]any{"name": "claude-sonnet ($3.00 in / $15.00 out per 1M tok)", "limit": map[string]any{"context": 1e6, "output": 0.0}, "cost": map[string]any{"input": 3.0, "output": 15.0}},
+		"glm":           map[string]any{"name": "glm (price n/a)", "limit": map[string]any{"context": 1310720.0, "output": 0.0}},
+		"gpt-sol":       map[string]any{"name": "gpt-sol ($1.25 in / $10.00 out per 1M tok)", "cost": map[string]any{"input": 1.25, "output": 10.0}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("models = %v\nwant %v", got, want)
+	}
+}

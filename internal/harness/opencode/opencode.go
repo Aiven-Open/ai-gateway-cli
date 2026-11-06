@@ -10,15 +10,36 @@ import (
 	"github.com/Aiven-Open/ai-gateway-cli/internal/models"
 )
 
+// model is one entry of OpenCode's provider `models` (v1.18.25 `config/provider.ts`): `limit` needs both fields, and
+// `output: 0` is OpenCode's default output cap; `cost` is USD per 1M tokens and needs both fields.
 type model struct {
-	Name string `json:"name"`
+	Name  string `json:"name"`
+	Limit *limit `json:"limit,omitempty"`
+	Cost  *cost  `json:"cost,omitempty"`
+}
+
+type limit struct {
+	Context int `json:"context"`
+	Output  int `json:"output"`
+}
+
+type cost struct {
+	Input  float64 `json:"input"`
+	Output float64 `json:"output"`
 }
 
 // Prepare renders a private config naming every granted alias; the provider reads the key from the environment.
 func Prepare(in harness.Input) harness.Plan {
 	list := map[string]model{}
 	for _, m := range in.Table {
-		list[m.Alias] = model{Name: m.PriceLabel()}
+		e := model{Name: m.PriceLabel()}
+		if m.Context != nil {
+			e.Limit = &limit{Context: *m.Context}
+		}
+		if m.Priced() {
+			e.Cost = &cost{Input: *m.InUSD1M, Output: *m.OutUSD1M}
+		}
+		list[m.Alias] = e
 	}
 	cfg := map[string]any{
 		"$schema": "https://opencode.ai/config.json",

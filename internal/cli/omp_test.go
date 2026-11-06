@@ -56,6 +56,14 @@ func TestOmpWritesOverlayAndProviderModels(t *testing.T) {
 	want := map[string]any{
 		"baseUrl": g.URL + "/v1", "api": "openai-completions", "apiKey": "AIVEN_GATEWAY_KEY",
 		"discovery": map[string]any{"type": "openai-models-list"},
+		// Discovery reads neither `context_window_tokens` nor prices; unknown values are left to its defaults.
+		"modelOverrides": map[string]any{
+			"aiven-model":   map[string]any{"contextWindow": 1e6},
+			"claude-opus":   map[string]any{"contextWindow": 1e6, "cost": map[string]any{"input": 15.0, "output": 75.0}},
+			"claude-sonnet": map[string]any{"contextWindow": 1e6, "cost": map[string]any{"input": 3.0, "output": 15.0}},
+			"glm":           map[string]any{"contextWindow": 1310720.0},
+			"gpt-sol":       map[string]any{"cost": map[string]any{"input": 1.25, "output": 10.0}},
+		},
 	}
 	if !reflect.DeepEqual(provider, want) {
 		t.Errorf("provider = %v, want %v", provider, want)
