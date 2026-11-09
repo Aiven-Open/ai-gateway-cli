@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"testing"
 	"time"
 
@@ -21,6 +22,15 @@ import (
 func TestKeyringAgainstRealMacOSKeychain(t *testing.T) {
 	if os.Getenv("AIVEN_LLM_IT_KEYCHAIN") != "1" {
 		t.Skip("set AIVEN_LLM_IT_KEYCHAIN=1 to use the real keychain")
+	}
+	// keyring.MockInit in other tests swaps go-keyring's backend for the whole process, so run alone in a fresh one.
+	if os.Getenv("AIVEN_LLM_IT_CHILD") != "1" {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestKeyringAgainstRealMacOSKeychain$", "-test.count=1")
+		cmd.Env = append(os.Environ(), "AIVEN_LLM_IT_CHILD=1")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v\n%s", err, out)
+		}
+		return
 	}
 	k := keystore.NewKeyring()
 	gwURL := fmt.Sprintf("https://it-%d.invalid", time.Now().UnixNano())
