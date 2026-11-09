@@ -223,3 +223,43 @@ func TestOmpGeneratedFilesParseAndNameGatewayProvider(t *testing.T) {
 	}
 	readJSON(t, s.ompOverlay())
 }
+
+// OMP 18.0.11 keeps a named profile's plugins under $XDG_DATA_HOME/omp/profiles/<name> once that dir exists.
+func TestOmpFindsPluginWhereOmpLoadsIt(t *testing.T) {
+	cases := []struct {
+		name                         string
+		xdgProfile, xdgPlugin, local bool
+		launches                     bool
+	}{
+		{"XDG profile with plugin", true, true, false, true},
+		{"XDG profile without plugin ignores ~/.omp", true, false, true, false},
+		{"no XDG profile falls back to ~/.omp", false, false, true, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid)
+			s.env.XDGDataHome = filepath.Join(s.fakeHome, ".local", "share")
+			profile := filepath.Join(s.env.XDGDataHome, "omp", "profiles", "aiven-llm")
+			if tc.xdgProfile {
+				mkdir(t, profile)
+			}
+			if tc.xdgPlugin {
+				mkdir(t, filepath.Join(profile, "plugins", "node_modules", "aiven-gateway-router"))
+			}
+			if tc.local {
+				s.ompPlugin()
+			}
+			r := s.run("omp")
+			if got := len(s.runner.calls) == 1; got != tc.launches {
+				t.Errorf("launched %v, want %v; stderr %q", got, tc.launches, r.stderr)
+			}
+		})
+	}
+}
+
+func mkdir(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+}

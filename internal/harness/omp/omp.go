@@ -24,8 +24,19 @@ yet. The plugin is not published yet; OMP launches need it installed in that pro
 `
 
 // PluginInstalled reports whether the router plugin is in the profile; plugins are profile-scoped, so a user-scope install does not count.
-func PluginInstalled(ompHome string) bool {
-	_, err := os.Stat(filepath.Join(ompHome, "profiles", Profile, "plugins", "node_modules", "aiven-gateway-router"))
+// OMP 18.0.11 moves a named profile's data, plugins included, to $XDG_DATA_HOME/omp/profiles/<name> once that dir exists (`utils/src/dirs.ts`).
+func PluginInstalled(ompHome, xdgDataHome string) bool {
+	root := filepath.Join(ompHome, "profiles", Profile)
+	if xdgDataHome != "" {
+		if xdg := filepath.Join(xdgDataHome, "omp", "profiles", Profile); exists(xdg) {
+			root = xdg
+		}
+	}
+	return exists(filepath.Join(root, "plugins", "node_modules", "aiven-gateway-router"))
+}
+
+func exists(path string) bool {
+	_, err := os.Stat(path)
 	return err == nil
 }
 

@@ -3,7 +3,10 @@
 package cli_test
 
 import (
+	"errors"
+	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -470,5 +473,48 @@ func TestOmpInitPromptAcceptsSelectorForm(t *testing.T) {
 	}
 	if len(p.prompts) != 6 {
 		t.Errorf("prompts %q, want one per role", p.prompts)
+	}
+}
+
+func TestOmpInitKeepsExistingFileModes(t *testing.T) {
+	s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid)
+	s.writeProject("config.yml", "tools:\n  approvalMode: write\n")
+	s.writeProject("rules/gateway-router.md", "old\n")
+	for rel, mode := range map[string]os.FileMode{"config.yml": 0o600, "rules/gateway-router.md": 0o640} {
+		if err := os.Chmod(filepath.Join(s.ompDir(), rel), mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if r := s.run("omp", "init"); r.code != 0 {
+		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
+	}
+	for rel, want := range map[string]os.FileMode{"config.yml": 0o600, "rules/gateway-router.md": 0o640, "gateway-router.state.json": 0o644} {
+		if fi, err := os.Stat(filepath.Join(s.ompDir(), rel)); err != nil || fi.Mode().Perm() != want {
+			t.Errorf("%s mode = %v (%v), want %v", rel, fi.Mode().Perm(), err, want)
+		}
+	}
+}
+
+// A failed write restores what was already written, so `--advisor off` on retry still sees the launcher's own keys.
+func TestOmpInitRollsBackWhenLaterWriteFails(t *testing.T) {
+	for _, prior := range []string{"", "tools:\n  approvalMode: write\n"} {
+		t.Run(fmt.Sprintf("prior config %t", prior != ""), func(t *testing.T) {
+			s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid)
+			if prior != "" {
+				s.writeProject("config.yml", prior)
+			}
+			mkdir(t, filepath.Join(s.ompDir(), "gateway-router.state.json")) // a directory cannot be renamed over
+			r := s.run("omp", "init")
+			if r.code != 1 || r.stdout != "" {
+				t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
+			}
+			got, err := os.ReadFile(filepath.Join(s.ompDir(), "config.yml"))
+			switch {
+			case prior == "" && !errors.Is(err, fs.ErrNotExist):
+				t.Errorf("config left behind: %q", got)
+			case prior != "" && string(got) != prior:
+				t.Errorf("config = %q, want %q", got, prior)
+			}
+		})
 	}
 }

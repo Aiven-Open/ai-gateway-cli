@@ -125,3 +125,12 @@ func TestInvalidBaseURLIsRejected(t *testing.T) {
 		}
 	}
 }
+
+func TestXDGDataHomeReadFromEnvironment(t *testing.T) {
+	if env := load(t, []string{"HOME=/home/ada", "XDG_DATA_HOME=/home/ada/.data"}); env.XDGDataHome != "/home/ada/.data" {
+		t.Errorf("XDGDataHome = %q", env.XDGDataHome)
+	}
+	if env := load(t, []string{"HOME=/home/ada"}); env.XDGDataHome != "" {
+		t.Errorf("XDGDataHome = %q, want empty", env.XDGDataHome)
+	}
+}

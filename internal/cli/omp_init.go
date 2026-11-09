@@ -42,7 +42,7 @@ func ompInit(ctx context.Context, args []string, env config.Env, deps Deps) int 
 		return code
 	}
 	// Not a precondition: role mappings can be written before the plugin is installed.
-	if !omp.PluginInstalled(env.OMPHome) {
+	if !omp.PluginInstalled(env.OMPHome, env.XDGDataHome) {
 		fmt.Fprint(deps.Stderr, omp.PluginHint)
 	}
 	fmt.Fprint(deps.Stderr, "\nDone. Start the router with: aiven-llm omp\n")
@@ -248,21 +248,58 @@ func writeProject(project string, p ompinit.Params, deps Deps) int {
 	for _, w := range res.Warnings {
 		fmt.Fprintf(deps.Stderr, "warning: %s\n", w)
 	}
-	files := []struct {
-		path string
-		data []byte
-	}{{p.ConfigPath, res.Config}, {p.StatePath, res.State}, {filepath.Join(dir, "rules", "gateway-router.md"), ompinit.Rule}}
-	// Project files are shared with the team, unlike the launcher's own 0600 files.
+	files := []projectFile{
+		{path: p.ConfigPath, data: res.Config},
+		{path: p.StatePath, data: res.State},
+		{path: filepath.Join(dir, "rules", "gateway-router.md"), data: ompinit.Rule},
+	}
 	if err := os.MkdirAll(filepath.Join(dir, "rules"), 0o755); err != nil {
 		return fail(deps, err.Error())
 	}
+	if err := writeAll(files); err != nil {
+		return fail(deps, err.Error())
+	}
 	for _, f := range files {
-		if err := fsutil.WriteAtomic(f.path, f.data, 0o644); err != nil {
-			return fail(deps, err.Error())
-		}
 		fmt.Fprintln(deps.Stdout, f.path)
 	}
 	return 0
+}
+
+type projectFile struct {
+	path string
+	data []byte
+}
+
+// writeAll writes files in order, each with its current mode or 0644 when new (project files are shared with the team, unlike
+// the launcher's own 0600 files). On failure it restores the files already written, so the sidecar never disagrees with the config.
+func writeAll(files []projectFile) error {
+	type prior struct {
+		path string
+		data []byte // nil: the file did not exist
+		mode fs.FileMode
+	}
+	var done []prior
+	for _, f := range files {
+		// ponytail: an unreadable old file restores as absent; the sidecar is the only one read leniently.
+		old := prior{path: f.path, mode: 0o644}
+		if fi, err := os.Stat(f.path); err == nil {
+			old.mode = fi.Mode().Perm()
+			old.data, _ = os.ReadFile(f.path)
+		}
+		if err := fsutil.WriteAtomic(f.path, f.data, old.mode); err != nil {
+			for i := len(done) - 1; i >= 0; i-- {
+				d := done[i]
+				if d.data == nil {
+					err = errors.Join(err, os.Remove(d.path))
+				} else {
+					err = errors.Join(err, fsutil.WriteAtomic(d.path, d.data, d.mode))
+				}
+			}
+			return err
+		}
+		done = append(done, old)
+	}
+	return nil
 }
 
 // readOptional returns nil for a missing file.

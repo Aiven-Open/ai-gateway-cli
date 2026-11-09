@@ -31,6 +31,8 @@ type Env struct {
 	PiAgentDir string
 	// CodexHome is the user's own Codex profile (`CODEX_HOME`, default `~/.codex`).
 	CodexHome string
+	// XDGDataHome is the raw `XDG_DATA_HOME`, where omp keeps a profile's plugins once that profile's dir exists there.
+	XDGDataHome string
 }
 
 // Load builds Env from an environ-style KEY=VALUE list (os.Environ()); an invalid AIVEN_LLM_BASE_URL is an error.
@@ -55,6 +57,9 @@ func Load(environ []string) (Env, error) {
 		}
 		if v, ok := strings.CutPrefix(kv, "CODEX_HOME="); ok && v != "" {
 			env.CodexHome = v
+		}
+		if v, ok := strings.CutPrefix(kv, "XDG_DATA_HOME="); ok {
+			env.XDGDataHome = v
 		}
 		if v, ok := strings.CutPrefix(kv, "HOME="); ok {
 			home = v

@@ -66,7 +66,7 @@ func launchOmp(ctx context.Context, args []string, env config.Env, deps Deps) in
 	if _, err := deps.Runner.LookPath("omp"); err != nil {
 		return fail(deps, err.Error())
 	}
-	if !omp.PluginInstalled(env.OMPHome) {
+	if !omp.PluginInstalled(env.OMPHome, env.XDGDataHome) {
 		fmt.Fprint(deps.Stderr, "aiven-llm: "+omp.PluginHint)
 		return 1
 	}
