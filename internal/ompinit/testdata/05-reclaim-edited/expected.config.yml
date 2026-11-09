@@ -1,0 +1,14 @@
+modelRoles:
+  advisor: my/own-advisor # user changed
+  architect: aiven-gateway/claude-opus
+  builder: aiven-gateway/claude-sonnet
+  cross-reviewer: aiven-gateway/gpt-5
+  bulk-reader: aiven-gateway/haiku
+  boilerplate-writer: aiven-gateway/haiku
+task:
+  agentModelOverrides:
+    task: "@builder"
+    sonic: "@boilerplate-writer"
+    scout: "@bulk-reader"
+    reviewer: "@cross-reviewer"
+    security-reviewer: "@cross-reviewer"

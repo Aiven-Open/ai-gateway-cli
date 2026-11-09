@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "managed": {
+    "modelRoles.advisor": "aiven-gateway/claude-opus",
+    "advisor.enabled": true
+  }
+}

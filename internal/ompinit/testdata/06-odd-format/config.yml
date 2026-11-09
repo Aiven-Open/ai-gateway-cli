@@ -1,0 +1,23 @@
+---
+# odd file
+defaults: &d
+    a: 1
+    b: "two"
+other:
+    <<: *d
+    block: |
+        line one
+        line two
+    folded: >-
+        folded text
+        here
+modelRoles: {architect: old, keep: me}
+task:
+    agentModelOverrides: {task: "@x"}
+    # comment before key
+
+
+    spaced: yes
+'quoted key': 'it''s'
+empty:
+long: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

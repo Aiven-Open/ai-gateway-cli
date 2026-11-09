@@ -1,0 +1,12 @@
+# mine
+tools:
+  approvalMode: write
+modelRoles:
+  architect: old
+  advisor: aiven-gateway/claude-opus
+advisor:
+  enabled: true
+task:
+  agentAdvisor:
+    builder: aiven-gateway/claude-opus
+  maxParallel: 2

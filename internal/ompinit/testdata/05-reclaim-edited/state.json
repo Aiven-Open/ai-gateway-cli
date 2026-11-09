@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "managed": {
+    "modelRoles.advisor": "aiven-gateway/claude-opus",
+    "advisor.enabled": true,
+    "task.agentAdvisor.builder": "aiven-gateway/claude-opus"
+  }
+}

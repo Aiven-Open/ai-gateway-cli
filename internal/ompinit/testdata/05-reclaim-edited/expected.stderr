@@ -1,0 +1,1 @@
+warning: left modelRoles.advisor alone: it is "my/own-advisor", not the "aiven-gateway/claude-opus" a previous init wrote.

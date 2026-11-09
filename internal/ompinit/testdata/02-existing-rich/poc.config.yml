@@ -1,0 +1,37 @@
+# Project OMP config -- mine
+# second header line
+
+tools:
+  approvalMode: write # keep asking
+  allow:
+    - bash
+    - read
+  # trailing comment in tools
+
+theme: dark
+
+# models block
+modelRoles:
+  default: custom/model # user's own
+  extra: "quoted: value"
+  architect: aiven-gateway/claude-opus
+  builder: aiven-gateway/claude-sonnet
+  cross-reviewer: aiven-gateway/gpt-5
+  bulk-reader: aiven-gateway/haiku
+  boilerplate-writer: aiven-gateway/haiku
+  advisor: aiven-gateway/claude-opus
+
+task:
+  maxParallel: 4
+  agentModelOverrides:
+    custom: "@mine"
+    task: "@builder"
+    sonic: "@boilerplate-writer"
+    scout: "@bulk-reader"
+    reviewer: "@cross-reviewer"
+    security-reviewer: "@cross-reviewer"
+
+notes: 'single quoted'
+list: [ 1, 2, 3 ]
+advisor:
+  enabled: true

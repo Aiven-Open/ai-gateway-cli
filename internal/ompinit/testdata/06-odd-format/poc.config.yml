@@ -1,0 +1,43 @@
+---
+# odd file
+defaults: &d
+  a: 1
+  b: "two"
+other:
+  <<: *d
+  block: |
+    line one
+    line two
+  folded: >-
+    folded text here
+modelRoles:
+  {
+    architect: aiven-gateway/claude-opus,
+    keep: me,
+    builder: aiven-gateway/claude-sonnet,
+    cross-reviewer: aiven-gateway/gpt-5,
+    bulk-reader: aiven-gateway/haiku,
+    boilerplate-writer: aiven-gateway/haiku,
+    advisor: aiven-gateway/claude-opus
+  }
+task:
+  agentModelOverrides:
+    {
+      task: "@builder",
+      sonic: "@boilerplate-writer",
+      scout: "@bulk-reader",
+      reviewer: "@cross-reviewer",
+      security-reviewer: "@cross-reviewer"
+    }
+  # comment before key
+
+
+  spaced: yes
+  agentAdvisor:
+    builder: aiven-gateway/claude-opus
+'quoted key': 'it''s'
+empty:
+long: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\
+  aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+advisor:
+  enabled: true

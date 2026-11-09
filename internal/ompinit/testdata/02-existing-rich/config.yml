@@ -1,0 +1,24 @@
+# Project OMP config -- mine
+# second header line
+
+tools:
+  approvalMode: write   # keep asking
+  allow:
+    - bash
+    - read
+  # trailing comment in tools
+
+theme: dark
+
+# models block
+modelRoles:
+  default: custom/model   # user's own
+  extra: "quoted: value"
+
+task:
+  maxParallel: 4
+  agentModelOverrides:
+    custom: "@mine"
+
+notes: 'single quoted'
+list: [1, 2, 3]

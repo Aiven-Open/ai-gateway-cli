@@ -1,0 +1,114 @@
+// Copyright (c) 2026 Aiven, Helsinki, Finland. https://aiven.io/
+
+package cli
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/Aiven-Open/ai-gateway-cli/internal/config"
+	"github.com/Aiven-Open/ai-gateway-cli/internal/execx"
+	"github.com/Aiven-Open/ai-gateway-cli/internal/fsutil"
+	"github.com/Aiven-Open/ai-gateway-cli/internal/harness"
+	"github.com/Aiven-Open/ai-gateway-cli/internal/harness/claude"
+	"github.com/Aiven-Open/ai-gateway-cli/internal/harness/codex"
+	"github.com/Aiven-Open/ai-gateway-cli/internal/harness/omp"
+	"github.com/Aiven-Open/ai-gateway-cli/internal/harness/opencode"
+	"github.com/Aiven-Open/ai-gateway-cli/internal/harness/pi"
+	"github.com/Aiven-Open/ai-gateway-cli/internal/keystore"
+	"github.com/Aiven-Open/ai-gateway-cli/internal/models"
+)
+
+const isolatedFlag = "--isolated"
+
+func launchClaude(ctx context.Context, args []string, env config.Env, deps Deps) int {
+	key, table, code := grantedModels(ctx, "claude", env, deps)
+	if code != 0 {
+		return code
+	}
+	in := claude.Input{Table: table, Key: key, BaseURL: env.BaseURL, Home: env.Home, WorkDir: env.WorkDir, Args: args}
+	if len(args) > 0 && args[0] == isolatedFlag {
+		in.Isolated, in.Args = true, args[1:]
+	}
+	return launch(claude.Prepare(in), env, deps)
+}
+
+func launchCodex(ctx context.Context, args []string, env config.Env, deps Deps) int {
+	return launchTable(ctx, "codex", args, env, deps, codex.Prepare)
+}
+
+func launchPi(ctx context.Context, args []string, env config.Env, deps Deps) int {
+	return launchTable(ctx, "pi", args, env, deps, func(in harness.Input) (harness.Plan, error) { return pi.Prepare(in), nil })
+}
+
+func launchOpencode(ctx context.Context, args []string, env config.Env, deps Deps) int {
+	return launchTable(ctx, "opencode", args, env, deps, func(in harness.Input) (harness.Plan, error) { return opencode.Prepare(in), nil })
+}
+
+// launchOmp dispatches `omp init`; otherwise it checks the plugin next to the binary, before the gateway call or any write: without role agents the router cannot route.
+func launchOmp(ctx context.Context, args []string, env config.Env, deps Deps) int {
+	if len(args) > 0 && args[0] == "init" {
+		return ompInit(ctx, args[1:], env, deps)
+	}
+	if _, err := deps.Runner.LookPath("omp"); err != nil {
+		return fail(deps, err.Error())
+	}
+	if !omp.PluginInstalled(env.OMPHome) {
+		fmt.Fprint(deps.Stderr, "aiven-llm: "+omp.PluginHint)
+		return 1
+	}
+	key, table, code := grantedModels(ctx, "", env, deps)
+	if code != 0 {
+		return code
+	}
+	return launch(omp.Prepare(omp.Input{Table: table, Key: key, BaseURL: env.BaseURL, Home: env.Home, OMPHome: env.OMPHome, Args: args}), env, deps)
+}
+
+// launchTable launches a harness whose launch needs only the key, the table and pass-through args.
+func launchTable(ctx context.Context, bin string, args []string, env config.Env, deps Deps, prepare func(harness.Input) (harness.Plan, error)) int {
+	key, table, code := grantedModels(ctx, bin, env, deps)
+	if code != 0 {
+		return code
+	}
+	plan, err := prepare(harness.Input{Table: table, Key: key, BaseURL: env.BaseURL, Home: env.Home, Args: args})
+	if err != nil {
+		return fail(deps, err.Error())
+	}
+	return launch(plan, env, deps)
+}
+
+// grantedModels checks harnessBin (unless empty) is installed, then reads the stored key and its model table; a nonzero code means the failure is already reported.
+func grantedModels(ctx context.Context, harnessBin string, env config.Env, deps Deps) (string, []models.Model, int) {
+	if harnessBin != "" {
+		if _, err := deps.Runner.LookPath(harnessBin); err != nil {
+			return "", nil, fail(deps, err.Error())
+		}
+	}
+	rec, err := deps.Keystore.Get(env.BaseURL)
+	if errors.Is(err, keystore.ErrNotFound) {
+		return "", nil, fail(deps, "no key stored. Run: aiven-llm login")
+	}
+	if err != nil {
+		return "", nil, fail(deps, err.Error())
+	}
+	table, err := deps.gateway(env.BaseURL).Models(ctx, rec.Key)
+	if err != nil {
+		return "", nil, failGateway(deps, err)
+	}
+	return rec.Key, table, 0
+}
+
+// launch writes the plan's files, then execs the harness; it returns only when the exec failed.
+func launch(plan harness.Plan, env config.Env, deps Deps) int {
+	for _, f := range plan.Files {
+		if err := fsutil.WriteAtomic(f.Path, f.Data, 0o600); err != nil {
+			return fail(deps, err.Error())
+		}
+	}
+	fmt.Fprint(deps.Stderr, plan.Notice)
+	if err := deps.Runner.Exec(plan.Argv[0], plan.Argv, execx.Merge(env.Environ, plan.Env)); err != nil {
+		return fail(deps, err.Error())
+	}
+	return 0
+}

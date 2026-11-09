@@ -1,0 +1,4 @@
+modelRoles:
+  advisor: my/own-advisor   # user changed
+advisor:
+  enabled: true
