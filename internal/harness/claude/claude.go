@@ -69,6 +69,8 @@ func Prepare(in Input) harness.Plan {
 	env = append(env,
 		"ANTHROPIC_BASE_URL="+in.BaseURL,
 		"ANTHROPIC_API_KEY=",
+		"ANTHROPIC_AUTH_TOKEN=",
+		"ANTHROPIC_CUSTOM_HEADERS=",
 		"CLAUDE_CODE_USE_BEDROCK=",
 		"CLAUDE_CODE_USE_VERTEX=",
 		"CLAUDE_CODE_USE_FOUNDRY=",
@@ -79,7 +81,7 @@ func Prepare(in Input) harness.Plan {
 	env = append(env, slot(t, "ANTHROPIC_DEFAULT_HAIKU_MODEL", s.haiku, ids["HAIKU"])...)
 	env = append(env, slot(t, "ANTHROPIC_DEFAULT_FABLE_MODEL", s.fable, ids["FABLE"])...)
 	env = append(env, slot(t, "ANTHROPIC_CUSTOM_MODEL_OPTION", s.custom, ids["CUSTOM"])...)
-	env = append(env, "ANTHROPIC_AUTH_TOKEN="+in.Key)
+	env = append(env, keyEnv+"="+in.Key)
 	return harness.Plan{
 		Files:  []harness.File{{Path: overlay, Data: overlayJSON(in.BaseURL, main, ids, window)}},
 		Argv:   append([]string{"claude", "--settings", overlay}, in.Args...),
@@ -115,7 +117,11 @@ func OverlayPath(home, workDir string) string {
 	return filepath.Join(home, "claude-settings-"+hex.EncodeToString(sum[:4])+".json")
 }
 
-// overlayJSON is the `--settings` file. It outranks project settings; it never holds the key.
+// keyEnv carries the key to the overlay's `apiKeyHelper`. Settings `env` beats the process environment, so the
+// overlay blanks `ANTHROPIC_AUTH_TOKEN` and custom headers a user's settings may set; the helper outranks OAuth.
+const keyEnv = "AIVEN_GATEWAY_KEY"
+
+// overlayJSON is the `--settings` file. It outranks user and project settings; it never holds the key.
 func overlayJSON(baseURL, main string, ids map[string]string, window string) []byte {
 	env := map[string]string{
 		"ANTHROPIC_BASE_URL":             baseURL,
@@ -126,6 +132,8 @@ func overlayJSON(baseURL, main string, ids map[string]string, window string) []b
 		"ANTHROPIC_DEFAULT_FABLE_MODEL":  ids["FABLE"],
 		"ANTHROPIC_CUSTOM_MODEL_OPTION":  ids["CUSTOM"],
 		"ANTHROPIC_API_KEY":              "",
+		"ANTHROPIC_AUTH_TOKEN":           "",
+		"ANTHROPIC_CUSTOM_HEADERS":       "",
 		"CLAUDE_CODE_USE_BEDROCK":        "",
 		"CLAUDE_CODE_USE_VERTEX":         "",
 		"CLAUDE_CODE_USE_FOUNDRY":        "",
@@ -134,7 +142,7 @@ func overlayJSON(baseURL, main string, ids map[string]string, window string) []b
 	if window != "" {
 		env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = window
 	}
-	return harness.JSON(map[string]any{"model": main, "env": env})
+	return harness.JSON(map[string]any{"model": main, "env": env, "apiKeyHelper": "printenv " + keyEnv})
 }
 
 // slot renders `<prefix>`, `<prefix>_NAME` and `<prefix>_DESCRIPTION`; the last two are blank without an alias.

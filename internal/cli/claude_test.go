@@ -39,8 +39,10 @@ func TestClaudeLaunchesWithGatewayEnvAndOverlay(t *testing.T) {
 	}
 	want := map[string]string{
 		"ANTHROPIC_BASE_URL":                         g.URL,
-		"ANTHROPIC_AUTH_TOKEN":                       keyValid,
+		"AIVEN_GATEWAY_KEY":                          keyValid,
+		"ANTHROPIC_AUTH_TOKEN":                       "",
 		"ANTHROPIC_API_KEY":                          "",
+		"ANTHROPIC_CUSTOM_HEADERS":                   "",
 		"CLAUDE_CODE_USE_BEDROCK":                    "",
 		"ANTHROPIC_MODEL":                            "glm[1m]",
 		"ANTHROPIC_DEFAULT_OPUS_MODEL":               "claude-opus[1m]",
@@ -71,6 +73,8 @@ func TestClaudeLaunchesWithGatewayEnvAndOverlay(t *testing.T) {
 	}
 }
 
+// Settings `env` beats the process environment, so the overlay (the highest layer below managed settings) blanks
+// the user's own token and headers and hands Claude Code the key through `apiKeyHelper`, which reads it from env.
 func TestClaudeOverlayCarriesModelAndEnvButNotKey(t *testing.T) {
 	g := newGatewayDouble(t)
 	s := newSession(t, g).loggedIn(keyValid)
@@ -85,10 +89,15 @@ func TestClaudeOverlayCarriesModelAndEnvButNotKey(t *testing.T) {
 		"ANTHROPIC_DEFAULT_FABLE_MODEL":  "glm[1m]",
 		"ANTHROPIC_CUSTOM_MODEL_OPTION":  "gpt-sol",
 		"ANTHROPIC_API_KEY":              "",
+		"ANTHROPIC_AUTH_TOKEN":           "",
+		"ANTHROPIC_CUSTOM_HEADERS":       "",
 		"CLAUDE_CODE_USE_BEDROCK":        "",
 		"CLAUDE_CODE_USE_VERTEX":         "",
 		"CLAUDE_CODE_USE_FOUNDRY":        "",
 		"AWS_BEARER_TOKEN_BEDROCK":       "",
+	}
+	if overlay["apiKeyHelper"] != "printenv AIVEN_GATEWAY_KEY" {
+		t.Errorf("apiKeyHelper = %v", overlay["apiKeyHelper"])
 	}
 	if overlay["model"] != "glm[1m]" || !reflect.DeepEqual(overlay["env"], wantEnv) {
 		t.Fatalf("overlay = %v", overlay)
@@ -411,7 +420,7 @@ func TestClaudeKeyReachesOnlyChildEnvironment(t *testing.T) {
 				holders = append(holders, kv)
 			}
 		}
-		if want := []string{"ANTHROPIC_AUTH_TOKEN=" + keyValid}; !slices.Equal(holders, want) {
+		if want := []string{"AIVEN_GATEWAY_KEY=" + keyValid}; !slices.Equal(holders, want) {
 			t.Errorf("env entries holding the key = %q, want %q", holders, want)
 		}
 		for _, f := range s.homeFiles() {
