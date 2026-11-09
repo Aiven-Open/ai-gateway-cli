@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/Aiven-Open/ai-gateway-cli/internal/harness"
 	"github.com/Aiven-Open/ai-gateway-cli/internal/models"
@@ -40,7 +41,7 @@ type slots struct{ main, opus, sonnet, haiku, fable, custom string }
 // Prepare picks the alias for each Claude slot and renders the settings overlay and process environment.
 func Prepare(in Input) harness.Plan {
 	t := in.Table
-	s := withPins(defaultSlots(t), in.WorkDir)
+	s, warnings := withPins(defaultSlots(t), t, in.WorkDir)
 	main := withSuffix(t, s.main, mainFloor)
 	// A pool behind the main model can be smaller than 1M, so compact before its limit.
 	window := ""
@@ -80,9 +81,10 @@ func Prepare(in Input) harness.Plan {
 	env = append(env, slot(t, "ANTHROPIC_CUSTOM_MODEL_OPTION", s.custom, ids["CUSTOM"])...)
 	env = append(env, "ANTHROPIC_AUTH_TOKEN="+in.Key)
 	return harness.Plan{
-		Files: []harness.File{{Path: overlay, Data: overlayJSON(in.BaseURL, main, ids, window)}},
-		Argv:  append([]string{"claude", "--settings", overlay}, in.Args...),
-		Env:   env,
+		Files:  []harness.File{{Path: overlay, Data: overlayJSON(in.BaseURL, main, ids, window)}},
+		Argv:   append([]string{"claude", "--settings", overlay}, in.Args...),
+		Env:    env,
+		Notice: strings.Join(warnings, ""),
 	}
 }
 
@@ -102,7 +104,8 @@ func defaultSlots(t []models.Model) slots {
 		s.custom = models.FirstNotIn(t, s.opus, s.sonnet, s.haiku, s.fable)
 	}
 	s.main = cmp.Or(s.main, models.FirstAlias(t))
-	s.opus, s.sonnet, s.haiku = cmp.Or(s.opus, s.main), cmp.Or(s.sonnet, s.main), cmp.Or(s.haiku, s.main)
+	// A blank Fable slot would send Claude Code's built-in Fable id, which the gateway does not serve.
+	s.opus, s.sonnet, s.haiku, s.fable = cmp.Or(s.opus, s.main), cmp.Or(s.sonnet, s.main), cmp.Or(s.haiku, s.main), cmp.Or(s.fable, s.main)
 	return s
 }
 

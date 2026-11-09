@@ -52,9 +52,9 @@ func TestClaudeLaunchesWithGatewayEnvAndOverlay(t *testing.T) {
 		"ANTHROPIC_DEFAULT_HAIKU_MODEL":              "glm[1m]",
 		"ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME":         "glm (gateway)",
 		"ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION":  "price n/a",
-		"ANTHROPIC_DEFAULT_FABLE_MODEL":              "",
-		"ANTHROPIC_DEFAULT_FABLE_MODEL_NAME":         "",
-		"ANTHROPIC_DEFAULT_FABLE_MODEL_DESCRIPTION":  "",
+		"ANTHROPIC_DEFAULT_FABLE_MODEL":              "glm[1m]",
+		"ANTHROPIC_DEFAULT_FABLE_MODEL_NAME":         "glm (gateway)",
+		"ANTHROPIC_DEFAULT_FABLE_MODEL_DESCRIPTION":  "price n/a",
 		"ANTHROPIC_CUSTOM_MODEL_OPTION":              "gpt-sol",
 		"ANTHROPIC_CUSTOM_MODEL_OPTION_NAME":         "gpt-sol (gateway)",
 		"ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION":  "$1.25 in / $10.00 out per 1M tok",
@@ -82,7 +82,7 @@ func TestClaudeOverlayCarriesModelAndEnvButNotKey(t *testing.T) {
 		"ANTHROPIC_DEFAULT_OPUS_MODEL":   "claude-opus[1m]",
 		"ANTHROPIC_DEFAULT_SONNET_MODEL": "glm[1m]",
 		"ANTHROPIC_DEFAULT_HAIKU_MODEL":  "glm[1m]",
-		"ANTHROPIC_DEFAULT_FABLE_MODEL":  "",
+		"ANTHROPIC_DEFAULT_FABLE_MODEL":  "glm[1m]",
 		"ANTHROPIC_CUSTOM_MODEL_OPTION":  "gpt-sol",
 		"ANTHROPIC_API_KEY":              "",
 		"CLAUDE_CODE_USE_BEDROCK":        "",
@@ -144,7 +144,7 @@ func TestClaudeFillsEveryAliasFromClaudeOnlyKey(t *testing.T) {
 		"ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet[1m]",
 		// 200000 is under the 1M floor for sub-aliases: no suffix.
 		"ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku",
-		"ANTHROPIC_DEFAULT_FABLE_MODEL": "",
+		"ANTHROPIC_DEFAULT_FABLE_MODEL": "claude-opus[1m]",
 		// Every alias is taken, so the custom option falls back to the first one.
 		"ANTHROPIC_CUSTOM_MODEL_OPTION": "claude-haiku",
 	})
@@ -285,7 +285,9 @@ func TestClaudeAdoptsProjectPinsAndRecomputesSuffix(t *testing.T) {
 		t.Run(file, func(t *testing.T) {
 			s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid)
 			s.writeProjectSettings(file, pinsAll)
-			s.run("claude")
+			if r := s.run("claude"); r.stderr != "" {
+				t.Errorf("stderr %q", r.stderr)
+			}
 			// A typed `[1m]` is stripped, then added back only where the context warrants it.
 			assertEnv(t, s.launched(), map[string]string{
 				"ANTHROPIC_MODEL":                "claude-opus[1m]",
@@ -344,15 +346,53 @@ func TestClaudeFallsBackPastUnusableLocalToSharedPins(t *testing.T) {
 	assertEnv(t, s.launched(), map[string]string{"ANTHROPIC_DEFAULT_OPUS_MODEL": "gpt-sol"})
 }
 
-func TestClaudePinNotGrantedIsUsedWithoutPrice(t *testing.T) {
+func TestClaudeWarnsAndKeepsDefaultForPinsNotGranted(t *testing.T) {
 	s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid)
-	s.writeProjectSettings("settings.local.json", `{"env":{"ANTHROPIC_DEFAULT_SONNET_MODEL":"ghost-9[1m]"}}`)
-	s.run("claude")
+	s.writeProjectSettings("settings.local.json", `{"model":"opusplan","env":{"ANTHROPIC_DEFAULT_SONNET_MODEL":"ghost-9[1m]"}}`)
+	r := s.run("claude")
 	assertEnv(t, s.launched(), map[string]string{
-		"ANTHROPIC_DEFAULT_SONNET_MODEL":             "ghost-9",
-		"ANTHROPIC_DEFAULT_SONNET_MODEL_NAME":        "ghost-9 (gateway)",
-		"ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION": "price n/a",
+		"ANTHROPIC_MODEL":                     "glm[1m]",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL":      "glm[1m]",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL_NAME": "glm (gateway)",
 	})
+	for _, want := range []string{
+		`aiven-llm: project setting ANTHROPIC_DEFAULT_SONNET_MODEL "ghost-9" is not granted to your key; using glm`,
+		`aiven-llm: project setting model "opusplan" is not granted to your key; using glm`,
+	} {
+		if !strings.Contains(r.stderr, want+"\n") {
+			t.Errorf("stderr %q lacks %q", r.stderr, want)
+		}
+	}
+}
+
+func TestClaudeAdoptsProjectModelSetting(t *testing.T) {
+	cases := []struct{ name, shared, local, main string }{
+		{"shared", `{"model":"gpt-sol"}`, ``, "gpt-sol"},
+		{"local over shared", `{"model":"gpt-sol"}`, `{"model":"claude-sonnet"}`, "claude-sonnet[1m]"},
+		{"env pin over setting in any file", `{"env":{"ANTHROPIC_MODEL":"gpt-sol"}}`, `{"model":"claude-sonnet"}`, "gpt-sol"},
+		{"claude alias resolves through slot", `{"model":"opus"}`, ``, "claude-opus[1m]"},
+		{"alias with suffix", `{"model":"sonnet[1m]"}`, ``, "glm[1m]"},
+		{"alias follows pinned slot", `{"model":"opus","env":{"ANTHROPIC_DEFAULT_OPUS_MODEL":"gpt-sol"}}`, ``, "gpt-sol"},
+		{"fable alias", `{"model":"fable"}`, ``, "glm[1m]"},
+		{"default keeps launcher choice", `{"model":"default"}`, ``, "glm[1m]"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid)
+			s.writeProjectSettings("settings.json", tc.shared)
+			if tc.local != "" {
+				s.writeProjectSettings("settings.local.json", tc.local)
+			}
+			r := s.run("claude")
+			if r.code != 0 || r.stderr != "" {
+				t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
+			}
+			assertEnv(t, s.launched(), map[string]string{"ANTHROPIC_MODEL": tc.main})
+			if got := readJSON(t, claude.OverlayPath(s.env.Home, s.env.WorkDir))["model"]; got != tc.main {
+				t.Errorf("overlay model = %v, want %q", got, tc.main)
+			}
+		})
+	}
 }
 
 func TestClaudeKeyReachesOnlyChildEnvironment(t *testing.T) {
