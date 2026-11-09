@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 
 	"github.com/Aiven-Open/ai-gateway-cli/internal/config"
 	"github.com/Aiven-Open/ai-gateway-cli/internal/execx"
@@ -27,7 +28,7 @@ func launchClaude(ctx context.Context, args []string, env config.Env, deps Deps)
 	if code != 0 {
 		return code
 	}
-	in := claude.Input{Table: table, Key: key, BaseURL: env.BaseURL, Home: env.Home, WorkDir: env.WorkDir}
+	in := claude.Input{Table: table, Key: key, BaseURL: env.BaseURL, Home: generatedHome(env), WorkDir: env.WorkDir}
 	in.Isolated, in.Args = splitIsolated(args)
 	return launch(claude.Prepare(in), env, deps)
 }
@@ -66,15 +67,16 @@ func launchOmp(ctx context.Context, args []string, env config.Env, deps Deps) in
 	if _, err := deps.Runner.LookPath("omp"); err != nil {
 		return fail(deps, err.Error())
 	}
-	if !omp.PluginInstalled(env.OMPHome, env.XDGDataHome) {
-		fmt.Fprint(deps.Stderr, "aiven-llm: "+omp.PluginHint)
+	profile := omp.Profile(env.GatewayScope())
+	if !omp.PluginInstalled(env.OMPHome, env.XDGDataHome, profile) {
+		fmt.Fprint(deps.Stderr, "aiven-llm: "+omp.PluginHint(profile))
 		return 1
 	}
 	key, table, code := grantedModels(ctx, "", env, deps)
 	if code != 0 {
 		return code
 	}
-	return launch(omp.Prepare(omp.Input{Table: table, Key: key, BaseURL: env.BaseURL, Home: env.Home, OMPHome: env.OMPHome, Args: args}), env, deps)
+	return launch(omp.Prepare(omp.Input{Table: table, Key: key, BaseURL: env.BaseURL, Home: generatedHome(env), OMPHome: env.OMPHome, Profile: profile, Args: args}), env, deps)
 }
 
 // launchTable launches a harness whose launch needs only the key, the table and pass-through args; isolatable harnesses take a leading --isolated.
@@ -83,7 +85,7 @@ func launchTable(ctx context.Context, bin string, args []string, isolatable bool
 	if code != 0 {
 		return code
 	}
-	in := harness.Input{Table: table, Key: key, BaseURL: env.BaseURL, Home: env.Home, Args: args}
+	in := harness.Input{Table: table, Key: key, BaseURL: env.BaseURL, Home: generatedHome(env), Args: args}
 	if isolatable {
 		in.Isolated, in.Args = splitIsolated(args)
 	}
@@ -92,6 +94,14 @@ func launchTable(ctx context.Context, bin string, args []string, isolatable bool
 		return fail(deps, err.Error())
 	}
 	return launch(plan, env, deps)
+}
+
+// generatedHome holds a launch's harness config, one per gateway: a running Claude Code rereads its settings, so another gateway's launch must not rewrite them.
+func generatedHome(env config.Env) string {
+	if scope := env.GatewayScope(); scope != "" {
+		return filepath.Join(env.Home, "gateways", scope)
+	}
+	return env.Home
 }
 
 // grantedModels checks harnessBin (unless empty) is installed, then reads the stored key and its model table; a nonzero code means the failure is already reported.

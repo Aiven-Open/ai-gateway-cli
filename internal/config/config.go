@@ -5,6 +5,8 @@ package config
 
 import (
 	"cmp"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/url"
 	"path/filepath"
@@ -88,6 +90,15 @@ func Load(environ []string) (Env, error) {
 }
 
 // expandTilde resolves a leading `~` as pi does for PI_CODING_AGENT_DIR.
+// GatewayScope names the generated config of a gateway other than the default, which keeps the unscoped paths; empty for the default.
+func (e Env) GatewayScope() string {
+	if e.BaseURL == defaultBaseURL {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(e.BaseURL))
+	return hex.EncodeToString(sum[:4])
+}
+
 func expandTilde(path, home string) string {
 	if path == "~" {
 		return home

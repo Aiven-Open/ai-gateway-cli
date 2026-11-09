@@ -59,7 +59,7 @@ func codexConfigOf(t *testing.T, s *session) codexConfig {
 // codexFileConfigOf parses what `codex --isolated` wrote; a parse failure fails the test.
 func codexFileConfigOf(t *testing.T, s *session) codexConfig {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(s.env.Home, "codex", "config.toml"))
+	data, err := os.ReadFile(filepath.Join(s.genHome(), "codex", "config.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,13 +127,13 @@ func TestCodexIsolatedUsesPrivateHome(t *testing.T) {
 	if !slices.Equal(c.argv, []string{"codex", "exec"}) {
 		t.Fatalf("argv %q", c.argv)
 	}
-	if v, _ := c.envVar("CODEX_HOME"); v != filepath.Join(s.env.Home, "codex") {
+	if v, _ := c.envVar("CODEX_HOME"); v != filepath.Join(s.genHome(), "codex") {
 		t.Errorf("CODEX_HOME = %q", v)
 	}
 	if got, want := codexFileConfigOf(t, s), codexWant(g, "gpt-sol"); !reflect.DeepEqual(got, want) {
 		t.Errorf("config = %+v, want %+v", got, want)
 	}
-	if tmp, _ := filepath.Glob(filepath.Join(s.env.Home, "codex", "*.tmp")); len(tmp) != 0 {
+	if tmp, _ := filepath.Glob(filepath.Join(s.genHome(), "codex", "*.tmp")); len(tmp) != 0 {
 		t.Errorf("left %v", tmp)
 	}
 }

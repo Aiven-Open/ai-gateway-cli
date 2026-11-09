@@ -206,7 +206,7 @@ func TestOmpInitRendersWithoutPluginThenHints(t *testing.T) {
 	if r.code != 0 {
 		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
 	}
-	if !strings.Contains(r.stderr, ompPluginHint+"\nDone.") {
+	if !strings.Contains(r.stderr, s.ompPluginHint()+"\nDone.") {
 		t.Errorf("stderr lacks the plugin hint before Done:\n%s", r.stderr)
 	}
 	if !strings.Contains(s.readProject("config.yml"), "  architect: aiven-gateway/") {

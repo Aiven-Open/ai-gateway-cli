@@ -15,7 +15,7 @@ import (
 // piExtensionProvider returns the provider object the generated extension registers.
 func piExtensionProvider(t *testing.T, s *session) map[string]any {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(s.env.Home, "pi", "aiven-gateway.js"))
+	data, err := os.ReadFile(filepath.Join(s.genHome(), "pi", "aiven-gateway.js"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +31,7 @@ func piExtensionProvider(t *testing.T, s *session) map[string]any {
 // piIsolatedProvider returns the provider of the models.json `pi --isolated` wrote.
 func piIsolatedProvider(t *testing.T, s *session) map[string]any {
 	t.Helper()
-	return readJSON(t, filepath.Join(s.env.Home, "pi", "models.json"))["providers"].(map[string]any)["aiven-gateway"].(map[string]any)
+	return readJSON(t, filepath.Join(s.genHome(), "pi", "models.json"))["providers"].(map[string]any)["aiven-gateway"].(map[string]any)
 }
 
 // piModels returns the provider's model entries in order.
@@ -66,7 +66,7 @@ func TestPiLaunchesInOwnProfileWithGatewayExtension(t *testing.T) {
 		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
 	}
 	c := s.launched()
-	ext := filepath.Join(s.env.Home, "pi", "aiven-gateway.js")
+	ext := filepath.Join(s.genHome(), "pi", "aiven-gateway.js")
 	if want := []string{"pi", "-e", ext, "--provider", "aiven-gateway", "--model", "claude-sonnet"}; c.name != "pi" || !slices.Equal(c.argv, want) {
 		t.Fatalf("exec %q %q, want %q", c.name, c.argv, want)
 	}
@@ -84,7 +84,7 @@ func TestPiLaunchesInOwnProfileWithGatewayExtension(t *testing.T) {
 		t.Errorf("ids = %q, want %q", piIDs(p), want)
 	}
 	for _, f := range []string{"models.json", "settings.json"} {
-		if _, err := os.Stat(filepath.Join(s.env.Home, "pi", f)); err == nil {
+		if _, err := os.Stat(filepath.Join(s.genHome(), "pi", f)); err == nil {
 			t.Errorf("wrote %s", f)
 		}
 	}
@@ -100,7 +100,7 @@ func TestPiIsolatedUsesPrivateAgentDir(t *testing.T) {
 	if !slices.Equal(c.argv, []string{"pi", "-p", "hi"}) {
 		t.Fatalf("argv %q", c.argv)
 	}
-	if v, _ := c.envVar("PI_CODING_AGENT_DIR"); v != filepath.Join(s.env.Home, "pi") {
+	if v, _ := c.envVar("PI_CODING_AGENT_DIR"); v != filepath.Join(s.genHome(), "pi") {
 		t.Errorf("PI_CODING_AGENT_DIR = %q", v)
 	}
 	p := piIsolatedProvider(t, s)
@@ -110,7 +110,7 @@ func TestPiIsolatedUsesPrivateAgentDir(t *testing.T) {
 	if want := []string{"aiven-model", "claude-opus", "claude-sonnet", "glm", "gpt-sol"}; !slices.Equal(piIDs(p), want) {
 		t.Errorf("ids = %q, want %q", piIDs(p), want)
 	}
-	settings := readJSON(t, filepath.Join(s.env.Home, "pi", "settings.json"))
+	settings := readJSON(t, filepath.Join(s.genHome(), "pi", "settings.json"))
 	if want := map[string]any{"defaultProvider": "aiven-gateway", "defaultModel": "claude-sonnet"}; !reflect.DeepEqual(settings, want) {
 		t.Errorf("settings = %v, want %v", settings, want)
 	}
@@ -254,8 +254,8 @@ func TestPiSubcommandsGetPlainArgv(t *testing.T) {
 		if got, want := s.launched().argv, append([]string{"pi"}, args...); !slices.Equal(got, want) {
 			t.Errorf("argv = %q, want %q", got, want)
 		}
-		if _, err := os.Stat(filepath.Join(s.env.Home, "pi")); err == nil {
-			t.Errorf("%q: wrote %s", args, filepath.Join(s.env.Home, "pi"))
+		if _, err := os.Stat(filepath.Join(s.genHome(), "pi")); err == nil {
+			t.Errorf("%q: wrote %s", args, filepath.Join(s.genHome(), "pi"))
 		}
 	}
 }

@@ -11,7 +11,7 @@ import (
 
 func opencodeConfig(t *testing.T, s *session) map[string]any {
 	t.Helper()
-	return readJSON(t, filepath.Join(s.env.Home, "opencode", "opencode.json"))
+	return readJSON(t, filepath.Join(s.genHome(), "opencode", "opencode.json"))
 }
 
 func TestOpencodeLaunchesWithGatewayProviderConfig(t *testing.T) {
@@ -22,7 +22,7 @@ func TestOpencodeLaunchesWithGatewayProviderConfig(t *testing.T) {
 		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
 	}
 	c := s.launched()
-	cfgPath := filepath.Join(s.env.Home, "opencode", "opencode.json")
+	cfgPath := filepath.Join(s.genHome(), "opencode", "opencode.json")
 	if c.name != "opencode" || !slices.Equal(c.argv, []string{"opencode"}) {
 		t.Fatalf("exec %q %q", c.name, c.argv)
 	}

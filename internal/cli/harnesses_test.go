@@ -101,3 +101,46 @@ func TestTableHarnessesKeepKeyInEnvOnly(t *testing.T) {
 		})
 	}
 }
+
+// Claude Code rereads its settings while running, so a launch against another gateway must leave the first one's generated config alone.
+func TestLaunchAgainstAnotherGatewayLeavesFirstGatewaysConfig(t *testing.T) {
+	for _, args := range [][]string{{"claude"}, {"claude", "--isolated"}, {"codex"}, {"codex", "--isolated"}, {"pi"}, {"pi", "--isolated"}, {"opencode"}, {"omp"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid).ompPlugin()
+			if r := s.run(args...); r.code != 0 {
+				t.Fatalf("first launch: exit %d, stderr %q", r.code, r.stderr)
+			}
+			first := s.generated()
+			s.env.BaseURL = newGatewayDouble(t).URL
+			s.loggedIn(keyValid).ompPlugin()
+			if r := s.run(args...); r.code != 0 {
+				t.Fatalf("second launch: exit %d, stderr %q", r.code, r.stderr)
+			}
+			if len(first) > 0 && len(s.generated()) <= len(first) {
+				t.Fatalf("second gateway wrote its config over the first one's")
+			}
+			for path, data := range first {
+				if after, _ := os.ReadFile(path); string(after) != data {
+					t.Errorf("second gateway rewrote %s", path)
+				}
+			}
+		})
+	}
+}
+
+// generated maps every file the launcher wrote outside the key store, OMP's profiles included, to its content.
+func (s *session) generated() map[string]string {
+	s.t.Helper()
+	files := map[string]string{}
+	for _, root := range []string{s.env.Home, filepath.Join(s.env.OMPHome, "profiles")} {
+		_ = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() || filepath.Base(filepath.Dir(p)) == "aig-keys" {
+				return nil
+			}
+			data, _ := os.ReadFile(p)
+			files[p] = string(data)
+			return nil
+		})
+	}
+	return files
+}

@@ -42,8 +42,8 @@ func ompInit(ctx context.Context, args []string, env config.Env, deps Deps) int 
 		return code
 	}
 	// Not a precondition: role mappings can be written before the plugin is installed.
-	if !omp.PluginInstalled(env.OMPHome, env.XDGDataHome) {
-		fmt.Fprint(deps.Stderr, omp.PluginHint)
+	if profile := omp.Profile(env.GatewayScope()); !omp.PluginInstalled(env.OMPHome, env.XDGDataHome, profile) {
+		fmt.Fprint(deps.Stderr, omp.PluginHint(profile))
 	}
 	fmt.Fprint(deps.Stderr, "\nDone. Start the router with: aiven-llm omp\n")
 	return 0

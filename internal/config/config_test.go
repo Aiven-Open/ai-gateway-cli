@@ -134,3 +134,15 @@ func TestXDGDataHomeReadFromEnvironment(t *testing.T) {
 		t.Errorf("XDGDataHome = %q, want empty", env.XDGDataHome)
 	}
 }
+
+func TestDefaultGatewayHasNoScopeAndOthersOneEach(t *testing.T) {
+	if got := load(t, nil).GatewayScope(); got != "" {
+		t.Errorf("default gateway scope = %q, want empty", got)
+	}
+	a := load(t, []string{"AIVEN_LLM_BASE_URL=HTTPS://GW.example/"}).GatewayScope()
+	b := load(t, []string{"AIVEN_LLM_BASE_URL=https://gw.example"}).GatewayScope()
+	c := load(t, []string{"AIVEN_LLM_BASE_URL=https://other.example"}).GatewayScope()
+	if a == "" || a != b || a == c {
+		t.Errorf("scopes %q %q %q: want one non-empty scope per canonical URL", a, b, c)
+	}
+}

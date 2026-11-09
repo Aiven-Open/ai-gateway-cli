@@ -14,15 +14,15 @@ import (
 // ompPlugin marks the router plugin installed in the `aiven-llm` OMP profile.
 func (s *session) ompPlugin() *session {
 	s.t.Helper()
-	if err := os.MkdirAll(filepath.Join(s.env.OMPHome, "profiles", "aiven-llm", "plugins", "node_modules", "aiven-gateway-router"), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(s.env.OMPHome, "profiles", s.ompProfile(), "plugins", "node_modules", "aiven-gateway-router"), 0o700); err != nil {
 		s.t.Fatal(err)
 	}
 	return s
 }
 
-func (s *session) ompOverlay() string { return filepath.Join(s.env.Home, "omp", "config.yml") }
+func (s *session) ompOverlay() string { return filepath.Join(s.genHome(), "omp", "config.yml") }
 func (s *session) ompModelsYML() string {
-	return filepath.Join(s.env.OMPHome, "profiles", "aiven-llm", "agent", "models.yml")
+	return filepath.Join(s.env.OMPHome, "profiles", s.ompProfile(), "agent", "models.yml")
 }
 
 func TestOmpLaunchesRouterProfileWithReadOnlyTools(t *testing.T) {
@@ -31,7 +31,7 @@ func TestOmpLaunchesRouterProfileWithReadOnlyTools(t *testing.T) {
 		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
 	}
 	c := s.launched()
-	want := []string{"omp", "--profile", "aiven-llm", "--config", s.ompOverlay(), "--tools", "read,grep,glob,task,todo"}
+	want := []string{"omp", "--profile", s.ompProfile(), "--config", s.ompOverlay(), "--tools", "read,grep,glob,task,todo"}
 	if c.name != "omp" || !slices.Equal(c.argv, want) {
 		t.Fatalf("exec %q %q, want argv %q", c.name, c.argv, want)
 	}
@@ -104,15 +104,17 @@ func TestOmpRouterOnlyKeyFallsBackToRouter(t *testing.T) {
 	}
 }
 
-const ompPluginHint = `aiven-gateway-router is not installed in the aiven-llm profile, so there are no role agents
+func (s *session) ompPluginHint() string {
+	return "aiven-gateway-router is not installed in the " + s.ompProfile() + ` profile, so there are no role agents
 yet. The plugin is not published yet; OMP launches need it installed in that profile.
 `
+}
 
 func TestOmpRequiresPluginAndWritesNothing(t *testing.T) {
 	g := newGatewayDouble(t)
 	s := newSession(t, g).loggedIn(keyValid)
 	r := s.run("omp")
-	if want := "aiven-llm: " + ompPluginHint; r.code != 1 || r.stdout != "" || r.stderr != want {
+	if want := "aiven-llm: " + s.ompPluginHint(); r.code != 1 || r.stdout != "" || r.stderr != want {
 		t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
 	}
 	if n := len(g.journal()); n != 0 {
@@ -157,7 +159,7 @@ func TestOmpRouterToolsExcludeEveryWriteTool(t *testing.T) {
 
 func TestOmpLeavesProfileConfigAlone(t *testing.T) {
 	s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid).ompPlugin()
-	cfg := filepath.Join(s.env.OMPHome, "profiles", "aiven-llm", "agent", "config.yml")
+	cfg := filepath.Join(s.env.OMPHome, "profiles", s.ompProfile(), "agent", "config.yml")
 	if err := os.MkdirAll(filepath.Dir(cfg), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +241,7 @@ func TestOmpFindsPluginWhereOmpLoadsIt(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid)
 			s.env.XDGDataHome = filepath.Join(s.fakeHome, ".local", "share")
-			profile := filepath.Join(s.env.XDGDataHome, "omp", "profiles", "aiven-llm")
+			profile := filepath.Join(s.env.XDGDataHome, "omp", "profiles", s.ompProfile())
 			if tc.xdgProfile {
 				mkdir(t, profile)
 			}

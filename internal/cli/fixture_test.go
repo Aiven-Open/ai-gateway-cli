@@ -17,6 +17,7 @@ import (
 
 	"github.com/Aiven-Open/ai-gateway-cli/internal/cli"
 	"github.com/Aiven-Open/ai-gateway-cli/internal/config"
+	"github.com/Aiven-Open/ai-gateway-cli/internal/harness/omp"
 	"github.com/Aiven-Open/ai-gateway-cli/internal/keystore"
 )
 
@@ -222,6 +223,17 @@ func (s *session) run(args ...string) result {
 	code := cli.Run(context.Background(), args, s.env, s.deps)
 	return result{code, s.out.String(), s.errb.String()}
 }
+
+// genHome is where launches against this session's gateway write harness config.
+func (s *session) genHome() string {
+	if scope := s.env.GatewayScope(); scope != "" {
+		return filepath.Join(s.env.Home, "gateways", scope)
+	}
+	return s.env.Home
+}
+
+// ompProfile is the OMP profile for this session's gateway.
+func (s *session) ompProfile() string { return omp.Profile(s.env.GatewayScope()) }
 
 // loggedIn stores key as `login` would, without going through the launcher.
 func (s *session) loggedIn(key string) *session {

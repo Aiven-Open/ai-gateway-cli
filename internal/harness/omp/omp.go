@@ -11,24 +11,31 @@ import (
 	"github.com/Aiven-Open/ai-gateway-cli/internal/models"
 )
 
-const (
-	// Profile is the OMP profile the router runs in; the plugin is installed there.
-	Profile = "aiven-llm"
-	// routerTools is all the router session may use: edits go through role agents.
-	routerTools = "read,grep,glob,task,todo"
-)
+// routerTools is all the router session may use: edits go through role agents.
+const routerTools = "read,grep,glob,task,todo"
 
-// PluginHint tells how to install the router plugin into the profile.
-const PluginHint = `aiven-gateway-router is not installed in the aiven-llm profile, so there are no role agents
+// Profile is the OMP profile the router runs in for a gateway scope (see `config.Env.GatewayScope`); its
+// `models.yml` names the gateway, so each gateway gets its own, and the plugin is installed per profile.
+func Profile(scope string) string {
+	if scope == "" {
+		return "aiven-llm"
+	}
+	return "aiven-llm-" + scope
+}
+
+// PluginHint tells that the router plugin is missing from profile.
+func PluginHint(profile string) string {
+	return "aiven-gateway-router is not installed in the " + profile + ` profile, so there are no role agents
 yet. The plugin is not published yet; OMP launches need it installed in that profile.
 `
+}
 
 // PluginInstalled reports whether the router plugin is in the profile; plugins are profile-scoped, so a user-scope install does not count.
 // OMP 18.0.11 moves a named profile's data, plugins included, to $XDG_DATA_HOME/omp/profiles/<name> once that dir exists (`utils/src/dirs.ts`).
-func PluginInstalled(ompHome, xdgDataHome string) bool {
-	root := filepath.Join(ompHome, "profiles", Profile)
+func PluginInstalled(ompHome, xdgDataHome, profile string) bool {
+	root := filepath.Join(ompHome, "profiles", profile)
 	if xdgDataHome != "" {
-		if xdg := filepath.Join(xdgDataHome, "omp", "profiles", Profile); exists(xdg) {
+		if xdg := filepath.Join(xdgDataHome, "omp", "profiles", profile); exists(xdg) {
 			root = xdg
 		}
 	}
@@ -49,6 +56,8 @@ type Input struct {
 	Home string
 	// OMPHome is OMP's data directory; the profile's `models.yml` lives under it.
 	OMPHome string
+	// Profile is the OMP profile to run in.
+	Profile string
 	// Args are forwarded to omp after the launcher's own flags.
 	Args []string
 }
@@ -68,11 +77,11 @@ func Prepare(in Input) harness.Plan {
 	}
 	return harness.Plan{
 		Files: []harness.File{
-			{Path: filepath.Join(in.OMPHome, "profiles", Profile, "agent", "models.yml"), Data: harness.JSON(provider)},
+			{Path: filepath.Join(in.OMPHome, "profiles", in.Profile, "agent", "models.yml"), Data: harness.JSON(provider)},
 			{Path: overlay, Data: harness.JSON(config)},
 		},
 		Notice: models.Table(in.Table),
-		Argv:   append([]string{"omp", "--profile", Profile, "--config", overlay, "--tools", routerTools}, in.Args...),
+		Argv:   append([]string{"omp", "--profile", in.Profile, "--config", overlay, "--tools", routerTools}, in.Args...),
 		Env:    []string{"AIVEN_GATEWAY_KEY=" + in.Key},
 	}
 }

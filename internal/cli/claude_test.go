@@ -33,7 +33,7 @@ func TestClaudeLaunchesWithGatewayEnvAndOverlay(t *testing.T) {
 		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
 	}
 	c := s.launched()
-	overlay := claude.OverlayPath(s.env.Home, s.env.WorkDir)
+	overlay := claude.OverlayPath(s.genHome(), s.env.WorkDir)
 	if c.name != "claude" || !slices.Equal(c.argv, []string{"claude", "--settings", overlay}) {
 		t.Fatalf("exec %q %q", c.name, c.argv)
 	}
@@ -75,7 +75,7 @@ func TestClaudeOverlayCarriesModelAndEnvButNotKey(t *testing.T) {
 	g := newGatewayDouble(t)
 	s := newSession(t, g).loggedIn(keyValid)
 	s.run("claude")
-	overlay := readJSON(t, claude.OverlayPath(s.env.Home, s.env.WorkDir))
+	overlay := readJSON(t, claude.OverlayPath(s.genHome(), s.env.WorkDir))
 	wantEnv := map[string]any{
 		"ANTHROPIC_BASE_URL":             g.URL,
 		"ANTHROPIC_MODEL":                "glm[1m]",
@@ -112,10 +112,10 @@ func TestClaudeIsolatedUsesBlankProfileAndIsConsumed(t *testing.T) {
 	s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid)
 	s.run("claude", "--isolated", "--foo")
 	c := s.launched()
-	if got, _ := c.envVar("CLAUDE_CONFIG_DIR"); got != filepath.Join(s.env.Home, "claude") {
+	if got, _ := c.envVar("CLAUDE_CONFIG_DIR"); got != filepath.Join(s.genHome(), "claude") {
 		t.Errorf("CLAUDE_CONFIG_DIR = %q", got)
 	}
-	overlay := claude.OverlayPath(s.env.Home, s.env.WorkDir)
+	overlay := claude.OverlayPath(s.genHome(), s.env.WorkDir)
 	if want := []string{"claude", "--settings", overlay, "--foo"}; !slices.Equal(c.argv, want) {
 		t.Errorf("argv = %q, want %q", c.argv, want)
 	}
@@ -125,7 +125,7 @@ func TestClaudeForwardsArgsAndRecognisesIsolatedOnlyFirst(t *testing.T) {
 	s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid)
 	s.run("claude", "-p", "hi", "--isolated")
 	c := s.launched()
-	overlay := claude.OverlayPath(s.env.Home, s.env.WorkDir)
+	overlay := claude.OverlayPath(s.genHome(), s.env.WorkDir)
 	if want := []string{"claude", "--settings", overlay, "-p", "hi", "--isolated"}; !slices.Equal(c.argv, want) {
 		t.Errorf("argv = %q, want %q", c.argv, want)
 	}
@@ -149,7 +149,7 @@ func TestClaudeFillsEveryAliasFromClaudeOnlyKey(t *testing.T) {
 		"ANTHROPIC_CUSTOM_MODEL_OPTION": "claude-haiku",
 	})
 	assertUnset(t, c, "CLAUDE_CODE_AUTO_COMPACT_WINDOW")
-	if _, ok := readJSON(t, claude.OverlayPath(s.env.Home, s.env.WorkDir))["env"].(map[string]any)["CLAUDE_CODE_AUTO_COMPACT_WINDOW"]; ok {
+	if _, ok := readJSON(t, claude.OverlayPath(s.genHome(), s.env.WorkDir))["env"].(map[string]any)["CLAUDE_CODE_AUTO_COMPACT_WINDOW"]; ok {
 		t.Error("overlay sets CLAUDE_CODE_AUTO_COMPACT_WINDOW")
 	}
 }
@@ -244,7 +244,7 @@ func TestClaudeCompactsAtMainWindowWhenUnderOneMillion(t *testing.T) {
 		"ANTHROPIC_MODEL":                 "glm-fast[1m]",
 		"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "262144",
 	})
-	env := readJSON(t, claude.OverlayPath(s.env.Home, s.env.WorkDir))["env"].(map[string]any)
+	env := readJSON(t, claude.OverlayPath(s.genHome(), s.env.WorkDir))["env"].(map[string]any)
 	if env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] != "262144" {
 		t.Errorf("overlay env = %v", env)
 	}
@@ -296,7 +296,7 @@ func TestClaudeAdoptsProjectPinsAndRecomputesSuffix(t *testing.T) {
 				"ANTHROPIC_DEFAULT_HAIKU_MODEL":  "glm[1m]",
 				"ANTHROPIC_DEFAULT_FABLE_MODEL":  "claude-opus[1m]",
 			})
-			env := readJSON(t, claude.OverlayPath(s.env.Home, s.env.WorkDir))["env"].(map[string]any)
+			env := readJSON(t, claude.OverlayPath(s.genHome(), s.env.WorkDir))["env"].(map[string]any)
 			if env["ANTHROPIC_MODEL"] != "claude-opus[1m]" || env["ANTHROPIC_DEFAULT_OPUS_MODEL"] != "gpt-sol" || env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] != "glm[1m]" {
 				t.Errorf("overlay env = %v", env)
 			}
@@ -388,7 +388,7 @@ func TestClaudeAdoptsProjectModelSetting(t *testing.T) {
 				t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
 			}
 			assertEnv(t, s.launched(), map[string]string{"ANTHROPIC_MODEL": tc.main})
-			if got := readJSON(t, claude.OverlayPath(s.env.Home, s.env.WorkDir))["model"]; got != tc.main {
+			if got := readJSON(t, claude.OverlayPath(s.genHome(), s.env.WorkDir))["model"]; got != tc.main {
 				t.Errorf("overlay model = %v, want %q", got, tc.main)
 			}
 		})
@@ -541,16 +541,16 @@ func TestClaudeOverlayIsPerProject(t *testing.T) {
 	s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid)
 	first := s.env.WorkDir
 	s.run("claude")
-	before, err := os.ReadFile(claude.OverlayPath(s.env.Home, first))
+	before, err := os.ReadFile(claude.OverlayPath(s.genHome(), first))
 	if err != nil {
 		t.Fatal(err)
 	}
 	s.env.WorkDir = filepath.Join(filepath.Dir(first), "other-project")
 	s.run("claude")
-	if claude.OverlayPath(s.env.Home, first) == claude.OverlayPath(s.env.Home, s.env.WorkDir) {
+	if claude.OverlayPath(s.genHome(), first) == claude.OverlayPath(s.genHome(), s.env.WorkDir) {
 		t.Fatal("two projects share one overlay path")
 	}
-	if after, _ := os.ReadFile(claude.OverlayPath(s.env.Home, first)); string(after) != string(before) {
+	if after, _ := os.ReadFile(claude.OverlayPath(s.genHome(), first)); string(after) != string(before) {
 		t.Errorf("launch in another project rewrote the first project's overlay:\n%s", after)
 	}
 }
@@ -558,7 +558,7 @@ func TestClaudeOverlayIsPerProject(t *testing.T) {
 func TestClaudeOverlayOutranksUserSettingsForProviderAndSlotEnv(t *testing.T) {
 	s := newSession(t, newGatewayDouble(t)).loggedIn(keyFable)
 	s.run("claude")
-	env := readJSON(t, claude.OverlayPath(s.env.Home, s.env.WorkDir))["env"].(map[string]any)
+	env := readJSON(t, claude.OverlayPath(s.genHome(), s.env.WorkDir))["env"].(map[string]any)
 	custom, _ := s.launched().envVar("ANTHROPIC_CUSTOM_MODEL_OPTION")
 	for k, want := range map[string]string{
 		"CLAUDE_CODE_USE_VERTEX":        "",
