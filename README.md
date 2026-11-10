@@ -322,7 +322,8 @@ a later login to another gateway changes no configured tool's key. Claude
 Code, Codex, Pi and OMP run a helper that prints that key file and fails
 without it; OpenCode reads the file when it starts. The launcher clears an
 inherited `AIVEN_AI_GATEWAY_KEY` when starting these file-backed tools and
-clears `ANTHROPIC_AUTH_TOKEN` for Claude Code. For compatible manual
+clears `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_CUSTOM_HEADERS` for Claude Code,
+so a credential held in either is not sent to the gateway. For compatible manual
 configuration that reads `AIVEN_AI_GATEWAY_KEY`, launch sets it to the selected
 gateway's validated saved key. Unrelated inherited environment entries stay.
 The generated helpers do not fall back to `AIVEN_AI_GATEWAY_KEY`, which names

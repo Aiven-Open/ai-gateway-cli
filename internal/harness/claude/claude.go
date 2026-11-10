@@ -190,6 +190,7 @@ func wire(in Input, path string) (harness.File, error) {
 		"CLAUDE_CODE_USE_VERTEX":         "",
 		"CLAUDE_CODE_USE_FOUNDRY":        "",
 		"AWS_BEARER_TOKEN_BEDROCK":       "",
+		"ANTHROPIC_CUSTOM_HEADERS":       "",
 	} {
 		env[k] = v
 	}
@@ -273,6 +274,7 @@ func overlayJSON(baseURL, main string, ids map[string]string, name, window strin
 		"CLAUDE_CODE_USE_VERTEX":         "",
 		"CLAUDE_CODE_USE_FOUNDRY":        "",
 		"AWS_BEARER_TOKEN_BEDROCK":       "",
+		"ANTHROPIC_CUSTOM_HEADERS":       "",
 	}
 	maps.Copy(env, windowEnv(name, window))
 	return harness.JSON(map[string]any{"model": main, "env": env})
@@ -337,6 +339,7 @@ func Launch(in Input) (harness.Plan, error) {
 	child := []string{
 		"ANTHROPIC_BASE_URL=" + in.BaseURL, "ANTHROPIC_AUTH_TOKEN=", "ANTHROPIC_API_KEY=",
 		"CLAUDE_CODE_USE_BEDROCK=", "CLAUDE_CODE_USE_VERTEX=", "CLAUDE_CODE_USE_FOUNDRY=", "AWS_BEARER_TOKEN_BEDROCK=",
+		"ANTHROPIC_CUSTOM_HEADERS=",
 		"ANTHROPIC_MODEL=" + main,
 	}
 	w := windowEnv(name, window)
