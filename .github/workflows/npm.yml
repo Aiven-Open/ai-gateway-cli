@@ -1,0 +1,96 @@
+name: npm
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  npm_config_audit: "false"
+  npm_config_fund: "false"
+  npm_config_update_notifier: "false"
+
+jobs:
+  npm-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      # The tests run on the hosted Node, which must meet the package's `engines` floor.
+      - run: node -e "if (Number(process.versions.node.split('.')[0]) < 20) process.exit(1)"
+      - run: npm test --prefix npm
+
+  artifacts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GOENV: "off"
+      GOFLAGS: ""
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Prepare all eight packages
+        shell: bash
+        run: |
+          npm run prepare-packages --prefix npm -- \
+            --out "$RUNNER_TEMP/native-npm-packages"
+      - name: Repeat the build and compare binary bytes for all seven targets
+        shell: bash
+        run: |
+          npm run prepare-packages --prefix npm -- \
+            --out "$RUNNER_TEMP/repeated-npm-packages"
+          npm run check-reproducibility --prefix npm -- \
+            "$RUNNER_TEMP/native-npm-packages" "$RUNNER_TEMP/repeated-npm-packages"
+      - name: Inspect archives and reject corrupt package fixtures
+        env:
+          AIVEN_NPM_PREPARED: ${{ runner.temp }}/native-npm-packages
+        run: npm run test:artifacts --prefix npm
+      - name: Install the packed CLI, then set up and launch each tool
+        shell: bash
+        run: |
+          npm run smoke --prefix npm -- \
+            "$RUNNER_TEMP/native-npm-packages" "$RUNNER_TEMP/native-npm-install"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: npm-packages
+          path: ${{ runner.temp }}/native-npm-packages/artifacts
+          retention-days: 1
+
+  # npm pack on Windows marks only package bins executable, which the artifact check rejects for the native
+  # binaries, so this job installs the packages the Linux job prepared.
+  windows-smoke:
+    needs: artifacts
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: npm-packages
+          path: ${{ runner.temp }}/native-npm-packages/artifacts
+      - name: Install the packed CLI, then set up and launch each tool
+        shell: bash
+        run: |
+          npm run smoke --prefix npm -- \
+            "$RUNNER_TEMP/native-npm-packages" "$RUNNER_TEMP/native-npm-install"

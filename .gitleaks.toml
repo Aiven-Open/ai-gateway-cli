@@ -1,0 +1,15 @@
+# Copyright (c) 2026 Aiven, Helsinki, Finland. https://aiven.io/
+
+[extend]
+useDefault = true
+
+# The Claude Code child environment clears ANTHROPIC_API_KEY with an empty assignment, which
+# generic-api-key reads as a value. Only an empty NAME= entry in that one file is allowed.
+# The path suffix matches both relative Git paths and absolute directory-scan paths.
+[[allowlists]]
+description = "empty environment assignment in the Claude Code child environment"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''(^|/)internal/harness/claude/claude[.]go$''']
+regexTarget = "secret"
+regexes = ['''^[A-Z][A-Z0-9_]*=$''']

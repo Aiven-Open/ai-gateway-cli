@@ -1,0 +1,40 @@
+{
+  "name": "@aiven/ai-gateway",
+  "version": "0.0.0-dev",
+  "description": "Configure and launch coding tools against Aiven AI Gateway",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aiven-open/ai-gateway-cli.git"
+  },
+  "type": "module",
+  "bin": {
+    "aiven-ai-gateway": "./bin/aiven-ai-gateway.mjs"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/launcher.test.mjs test/notices.test.mjs test/reproducibility.test.mjs",
+    "test:artifacts": "node --test test/artifacts.test.mjs",
+    "prepare-packages": "node scripts/prepare.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "check-artifacts": "node scripts/check-artifacts.mjs",
+    "check-reproducibility": "node scripts/check-reproducibility.mjs"
+  },
+  "optionalDependencies": {
+    "@aiven/ai-gateway-linux-x64": "0.0.0-dev",
+    "@aiven/ai-gateway-linux-arm64": "0.0.0-dev",
+    "@aiven/ai-gateway-linux-arm": "0.0.0-dev",
+    "@aiven/ai-gateway-darwin-x64": "0.0.0-dev",
+    "@aiven/ai-gateway-darwin-arm64": "0.0.0-dev",
+    "@aiven/ai-gateway-win32-x64": "0.0.0-dev",
+    "@aiven/ai-gateway-win32-arm64": "0.0.0-dev"
+  }
+}
