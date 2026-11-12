@@ -22,6 +22,11 @@ AI Gateway.
   go install github.com/aiven-open/ai-gateway-cli/cmd/aiven-ai-gateway@latest
   ```
 
+  Put `$(go env GOPATH)/bin` (or `GOBIN`) in `PATH`, or run
+  `go run github.com/aiven-open/ai-gateway-cli/cmd/aiven-ai-gateway@latest <command>`
+  without installing. The Go module path is lowercase
+  `github.com/aiven-open/ai-gateway-cli`.
+
 - **From a local clone**:
 
   ```sh

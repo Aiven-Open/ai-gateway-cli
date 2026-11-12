@@ -75,14 +75,56 @@ func TestUsageListsEveryCommand(t *testing.T) {
 }
 
 func TestVersionPrintsBuildInfo(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		build cli.Build
+		want  string
+	}{
+		{
+			name:  "release build with commit and date",
+			build: cli.Build{Version: "0.1.0-rc.1", Commit: "abc1234", Date: "2026-10-15T18:08:57Z"},
+			want:  "aiven-ai-gateway 0.1.0-rc.1 (commit abc1234, built 2026-10-15T18:08:57Z)\n",
+		},
+		{
+			name:  "module zip build with default sentinels",
+			build: cli.Build{Version: "0.2.0", Commit: "none", Date: "unknown"},
+			want:  "aiven-ai-gateway 0.2.0\n",
+		},
+		{
+			name:  "bare version without vcs metadata",
+			build: cli.Build{Version: "0.2.0"},
+			want:  "aiven-ai-gateway 0.2.0\n",
+		},
+		{
+			name:  "pseudo-version without vcs metadata",
+			build: cli.Build{Version: "0.0.0-20261110135510-9f344f7f3132", Commit: "none", Date: "unknown"},
+			want:  "aiven-ai-gateway 0.0.0-20261110135510-9f344f7f3132\n",
+		},
+		{
+			name:  "commit only",
+			build: cli.Build{Version: "dev", Commit: "abc1234", Date: "unknown"},
+			want:  "aiven-ai-gateway dev (commit abc1234)\n",
+		},
+		{
+			name:  "date only",
+			build: cli.Build{Version: "dev", Commit: "none", Date: "2026-10-15T18:08:57Z"},
+			want:  "aiven-ai-gateway dev (built 2026-10-15T18:08:57Z)\n",
+		},
+	}
 	for _, arg := range []string{"version", "--version"} {
 		t.Run(arg, func(t *testing.T) {
-			var out bytes.Buffer
-			deps := cli.Deps{Stdout: &out, Build: cli.Build{Version: "0.1.0-rc.1", Commit: "abc1234", Date: "2026-10-15T18:08:57Z"}}
-			code := cli.Run(context.Background(), []string{arg}, config.Env{}, deps)
-			want := "aiven-ai-gateway 0.1.0-rc.1 (commit abc1234, built 2026-10-15T18:08:57Z)\n"
-			if code != 0 || out.String() != want {
-				t.Fatalf("code = %d, stdout = %q, want 0, %q", code, out.String(), want)
+			t.Parallel()
+			for _, tc := range tests {
+				t.Run(tc.name, func(t *testing.T) {
+					t.Parallel()
+					var out bytes.Buffer
+					deps := cli.Deps{Stdout: &out, Build: tc.build}
+					code := cli.Run(context.Background(), []string{arg}, config.Env{}, deps)
+					if code != 0 || out.String() != tc.want {
+						t.Fatalf("code = %d, stdout = %q, want 0, %q", code, out.String(), tc.want)
+					}
+				})
 			}
 		})
 	}

@@ -61,6 +61,9 @@ func build(info *debug.BuildInfo) cli.Build {
 		return b
 	}
 	if v := info.Main.Version; v != "" && v != "(devel)" {
+		if len(v) > 1 && v[0] == 'v' && v[1] >= '0' && v[1] <= '9' {
+			v = v[1:]
+		}
 		b.Version = v
 	}
 	for _, s := range info.Settings {

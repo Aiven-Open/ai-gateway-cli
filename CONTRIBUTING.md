@@ -80,7 +80,9 @@ the eight npm tarballs.
   [`THIRD_PARTY_NOTICES`](THIRD_PARTY_NOTICES) matches `go env GOVERSION` and
   every linked module version in `go.mod` across all seven target platforms.
   Update `THIRD_PARTY_NOTICES` in the same commit as any Go toolchain or
-  dependency change.
+  dependency change, then verify with `node --test npm/test/notices.test.mjs`
+  and a full package build:
+  `tmp=$(mktemp -d) && rm -rf "$tmp" && npm run prepare-packages --prefix npm -- --out "$tmp" && rm -rf "$tmp"`.
 - **HTTPS-only gateway origins:** `AIVEN_AI_GATEWAY_BASE_URL` rejects plain
   `http://` (including loopback) and requires a trusted TLS certificate;
   automated tests use in-process gateway doubles, and

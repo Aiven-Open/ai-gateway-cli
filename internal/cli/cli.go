@@ -19,7 +19,7 @@ func Run(ctx context.Context, args []string, env config.Env, deps Deps) int {
 	}
 	switch args[0] {
 	case "--version", "version":
-		_, _ = fmt.Fprintf(deps.Stdout, "aiven-ai-gateway %s (commit %s, built %s)\n", deps.Build.Version, deps.Build.Commit, deps.Build.Date)
+		_, _ = fmt.Fprint(deps.Stdout, formatVersion(deps.Build))
 		return 0
 	case "login":
 		return login(ctx, env, deps)
@@ -91,6 +91,20 @@ func Informational(args, environ []string, deps Deps) (bool, int) {
 		}
 	}
 	return false, 0
+}
+
+func formatVersion(b Build) string {
+	var meta []string
+	if b.Commit != "" && b.Commit != "none" {
+		meta = append(meta, "commit "+b.Commit)
+	}
+	if b.Date != "" && b.Date != "unknown" {
+		meta = append(meta, "built "+b.Date)
+	}
+	if len(meta) == 0 {
+		return fmt.Sprintf("aiven-ai-gateway %s\n", b.Version)
+	}
+	return fmt.Sprintf("aiven-ai-gateway %s (%s)\n", b.Version, strings.Join(meta, ", "))
 }
 
 func splitNative(args []string) ([]string, []string, bool) {
