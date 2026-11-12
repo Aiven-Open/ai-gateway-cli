@@ -1,0 +1,10 @@
+# Copyright (c) 2026 Aiven, Helsinki, Finland. https://aiven.io/
+
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - nolintlint

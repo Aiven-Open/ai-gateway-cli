@@ -1,6 +1,6 @@
 module github.com/aiven-open/ai-gateway-cli
 
-go 1.27.3
+go 1.27.4
 
 require (
 	github.com/aymanbagabas/go-udiff v0.4.1
