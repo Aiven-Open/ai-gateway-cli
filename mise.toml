@@ -1,17 +1,70 @@
 [tools]
 go = "1.27.4"
+node = "22"
+golangci-lint = "2.14.0"
+"go:golang.org/x/vuln/cmd/govulncheck" = "1.9.0"
 
-[tasks.test]
-description = "Vet, gofmt-check and test the Go launcher"
-# `gofmt -l` exits 0 on a diff, so the task fails on its output; `-w` applies it.
+[tasks.build]
+description = "Build dist/aiven-ai-gateway for the host platform"
+run = "CGO_ENABLED=0 go build -trimpath -o dist/aiven-ai-gateway ./cmd/aiven-ai-gateway"
+
+[tasks.fmt]
+description = "Format Go source files with gofmt"
+run = "gofmt -w cmd internal npm"
+
+[tasks.lint]
+description = "Check gofmt, go vet and golangci-lint"
+# gofmt -l exits 0 on a diff, so fail when it prints unformatted paths.
 run = '''
 set -eu
 go vet ./...
-unformatted=$(gofmt -l .)
+unformatted=$(gofmt -l cmd internal npm)
 if [ -n "$unformatted" ]; then
-  echo "gofmt differs (run 'gofmt -w .'):" >&2
+  echo "gofmt differs (run 'mise run fmt' or 'gofmt -w cmd internal npm'):" >&2
   echo "$unformatted" >&2
   exit 1
 fi
-go test ./...
+golangci-lint run ./...
+'''
+
+[tasks.test]
+description = "Vet, gofmt-check and race-test the Go launcher"
+run = '''
+set -eu
+go vet ./...
+unformatted=$(gofmt -l cmd internal npm)
+if [ -n "$unformatted" ]; then
+  echo "gofmt differs (run 'mise run fmt' or 'gofmt -w cmd internal npm'):" >&2
+  echo "$unformatted" >&2
+  exit 1
+fi
+go test -race ./...
+'''
+
+[tasks.test-npm]
+description = "Run the npm wrapper, notice and reproducibility unit tests"
+run = "npm test --prefix npm"
+
+[tasks.check]
+description = "Run all pre-PR Go, lint, vulnerability, secret, npm and tap checks"
+depends = ["lint", "test-npm"]
+run = '''
+set -eu
+go test -race ./...
+govulncheck ./...
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "gitleaks is required for secret scanning (install gitleaks 8.30+)" >&2
+  exit 1
+fi
+gitleaks git --config .gitleaks.toml --no-banner --redact
+bash .github/scripts/publish-tap-test.sh
+'''
+
+[tasks.release-check]
+description = "Validate GoReleaser config, snapshot archives and tap publisher"
+run = '''
+set -eu
+bash .github/scripts/publish-tap-test.sh
+goreleaser check
+goreleaser release --snapshot --clean
 '''
