@@ -206,7 +206,7 @@ assert.equal(modelList.status, 0, modelList.stderr);
 assert(modelList.stderr.startsWith(`Gateway: ${toolEnv.AIVEN_AI_GATEWAY_BASE_URL}\n`), "models omitted the gateway");
 assert(modelList.stdout.includes("claude-sonnet") && !modelList.stdout.includes("Gateway:"), "models stdout changed");
 server.close();
-// Another gateway's key file is named as the README says: a slug of the URL, then 12 hex digits of its SHA-256.
+// Another gateway's key file is named as docs/reference.md says: a slug of the URL, then 12 hex digits of its SHA-256.
 const origin = toolEnv.AIVEN_AI_GATEWAY_BASE_URL;
 const slug = origin.replace(/[^a-z0-9.-]+/g, "-").replace(/^[.-]+|[.-]+$/g, "").slice(0, 40).replace(/[.-]+$/, "");
 const keyName = `${slug}-${createHash("sha256").update(origin).digest("hex").slice(0, 12)}`;
