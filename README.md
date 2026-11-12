@@ -13,7 +13,7 @@ With Node 20 or later, once the npm packages are published:
 installing. See [`npm/README.md`](npm/README.md). The tools it configures read
 their key without it, so they keep working whichever way it was run.
 
-From source, once a release is tagged, with Go 1.27.3 or later (or the default `GOTOOLCHAIN=auto`):
+From source, once a release is tagged, with Go 1.27.4 or later (or the default `GOTOOLCHAIN=auto`):
 
 ```
 go install github.com/aiven-open/ai-gateway-cli/cmd/aiven-ai-gateway@latest
