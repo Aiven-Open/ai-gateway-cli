@@ -46,6 +46,7 @@ func TestClaudeLaunchesWithGatewayEnvAndOverlay(t *testing.T) {
 		"ANTHROPIC_BASE_URL":                         g.URL,
 		"ANTHROPIC_AUTH_TOKEN":                       "",
 		"ANTHROPIC_API_KEY":                          "",
+		"ANTHROPIC_CUSTOM_HEADERS":                   "",
 		"CLAUDE_CODE_USE_BEDROCK":                    "",
 		"ANTHROPIC_MODEL":                            "glm[1m]",
 		"ANTHROPIC_DEFAULT_OPUS_MODEL":               "claude-opus[1m]",
@@ -91,6 +92,7 @@ func TestClaudeOverlayCarriesModelAndEnvButNotKey(t *testing.T) {
 		"CLAUDE_CODE_USE_VERTEX":          "",
 		"CLAUDE_CODE_USE_FOUNDRY":         "",
 		"AWS_BEARER_TOKEN_BEDROCK":        "",
+		"ANTHROPIC_CUSTOM_HEADERS":        "",
 		"CLAUDE_CODE_MAX_CONTEXT_TOKENS":  "",
 		"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "",
 	}
@@ -550,6 +552,7 @@ func TestClaudeOverlayOutranksUserSettingsForProviderAndSlotEnv(t *testing.T) {
 	for k, want := range map[string]string{
 		"CLAUDE_CODE_USE_VERTEX":        "",
 		"CLAUDE_CODE_USE_FOUNDRY":       "",
+		"ANTHROPIC_CUSTOM_HEADERS":      "",
 		"ANTHROPIC_DEFAULT_FABLE_MODEL": "claude-opus-5-5[1m]",
 		"ANTHROPIC_CUSTOM_MODEL_OPTION": custom,
 	} {
@@ -657,7 +660,7 @@ func TestClaudeConnectWritesGatewaySettingsBesideTheUsersOwn(t *testing.T) {
 		"FOO": "bar", "ANTHROPIC_BASE_URL": g.URL, "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus[1m]",
 		"ANTHROPIC_DEFAULT_SONNET_MODEL": "glm[1m]", "ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm[1m]", "ANTHROPIC_DEFAULT_FABLE_MODEL": "",
 		"ANTHROPIC_CUSTOM_MODEL_OPTION": "gpt-sol", "ANTHROPIC_AUTH_TOKEN": "", "ANTHROPIC_API_KEY": "", "CLAUDE_CODE_USE_BEDROCK": "",
-		"CLAUDE_CODE_USE_VERTEX": "", "CLAUDE_CODE_USE_FOUNDRY": "", "AWS_BEARER_TOKEN_BEDROCK": "",
+		"CLAUDE_CODE_USE_VERTEX": "", "CLAUDE_CODE_USE_FOUNDRY": "", "AWS_BEARER_TOKEN_BEDROCK": "", "ANTHROPIC_CUSTOM_HEADERS": "",
 		"CLAUDE_CODE_MAX_CONTEXT_TOKENS": "", "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "",
 	}
 	if !reflect.DeepEqual(got["env"], wantEnv) || got["model"] != "glm[1m]" || !reflect.DeepEqual(got["permissions"], map[string]any{"allow": []any{"Bash(ls)"}}) {
