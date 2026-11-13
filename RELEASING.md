@@ -36,6 +36,40 @@ signing, notarization or installation.
 - Create the `release` environment in this repository with required reviewers, "Prevent self-review" and a deployment tag rule `v*`, and store the secrets above there, not as repository secrets.
 - Add a tag ruleset on `v*` that lets only maintainers create, update or delete such tags. A tag push runs the `release.yaml` of the tagged commit, which need not be on `main`, so the ruleset and the environment reviewers are the gate.
 
+## npm packages
+
+The `npm` job in the same workflow publishes `@aivenio/ai-gateway` and its seven native packages
+(`npm/README.md`). It does not depend on the Homebrew job: each succeeds or fails on its own, and until
+the tap and the signing secrets exist the Homebrew job fails while the `npm` job publishes.
+
+The job prepares all eight packages at the tag's version, inspects the archives and runs the install
+smoke check, and only then publishes: the seven native packages first, then the wrapper, each with
+provenance. A prerelease tag (`-rc.N`) is published under the `next` dist-tag and leaves `latest`
+alone, so `npx @aivenio/ai-gateway@next` runs the candidate.
+
+A published version is never replaced. On a rerun, a package whose published integrity equals the
+rebuilt tarball's is skipped, so a run that failed midway is finished by rerunning it; a package
+whose integrity differs fails the job, and the fix is a new version.
+
+One-time setup:
+
+- Be a member of the `aivenio` organisation on npmjs.com, with two-factor authentication enabled.
+- For the first release only, create a granular access token and store it as `NPM_TOKEN` in the
+  `release` environment. It needs read and write under "Packages and scopes" for the `@aivenio`
+  scope, "Bypass 2FA" enabled (it is off by default, and without it the publish stops at an
+  interactive prompt), and a short expiry. It needs no organisation-management permission.
+- After the first release, add a trusted publisher to each of the eight packages on npmjs.com
+  (repository `Aiven-Open/ai-gateway-cli`, workflow `release.yaml`, environment `release`). Then
+  delete `NPM_TOKEN` from the environment and revoke the token. npm 11 tries trusted publishing
+  first and falls back to the token, so the job needs no change between the two states. When
+  adding a trusted publisher, allow it to publish directly, not only to stage.
+
+To see what a prepared build would publish, without publishing:
+
+```sh
+npm run publish-packages --prefix npm -- /absolute/new/output --dry-run
+```
+
 ## Cutting a release
 
 ```sh
@@ -56,6 +90,14 @@ gh release download aiven-ai-gateway-vX.Y.Z-rc.N -R aiven/homebrew-tap -p '*darw
 codesign --verify --strict --verbose=2 ./aiven-ai-gateway
 spctl --assess --type open --context context:primary-signature --verbose=4 ./aiven-ai-gateway
 ```
+
+The same tags publish to npm. After the rc, check on a clean Mac, a Linux machine and Windows:
+
+```sh
+npx @aivenio/ai-gateway@next --version
+```
+
+The npm macOS binaries are not signed with the Developer ID; the rc shows whether Gatekeeper accepts them.
 
 Then tag the final version and verify on a clean Mac:
 
