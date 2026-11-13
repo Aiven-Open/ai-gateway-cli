@@ -1,4 +1,4 @@
-# @aiven/ai-gateway
+# @aivenio/ai-gateway
 
 This package installs the `aiven-ai-gateway` command. npm selects one
 version-matched native package using its `os`/`cpu` metadata; this package
@@ -6,10 +6,10 @@ contains only JavaScript and documentation. There are no install hooks,
 external binary URLs, telemetry or automatic updates.
 
 ```text
-npx @aiven/ai-gateway
-npx @aiven/ai-gateway setup claude
-npx @aiven/ai-gateway launch codex -- resume
-npm install -g @aiven/ai-gateway
+npx @aivenio/ai-gateway
+npx @aivenio/ai-gateway setup claude
+npx @aivenio/ai-gateway launch codex -- resume
+npm install -g @aivenio/ai-gateway
 aiven-ai-gateway --help
 ```
 
@@ -34,7 +34,7 @@ Use hidden input or `--key-stdin` for credentials.
 Optional dependencies must be enabled. `--omit=optional`, a missing binary or
 a package version or platform mismatch produces an explicit reinstall error.
 Local installs, global installs and npm exec/npx use the same module resolution.
-`npm exec --offline --package=@aiven/ai-gateway@<version> -- aiven-ai-gateway`
+`npm exec --offline --package=@aivenio/ai-gateway@<version> -- aiven-ai-gateway`
 works after the same npm exec/npx invocation has populated its package and
 metadata caches. A global install alone need not populate npm exec's metadata.
 
@@ -75,8 +75,8 @@ matching native tarball into an isolated prefix, with
 
 ```text
 npm install -g --prefix /absolute/test-prefix --offline --ignore-scripts \
-  /absolute/new/output/artifacts/aiven-ai-gateway-0.0.0-dev.tgz \
-  /absolute/new/output/artifacts/aiven-ai-gateway-darwin-arm64-0.0.0-dev.tgz
+  /absolute/new/output/artifacts/aivenio-ai-gateway-0.0.0-dev.tgz \
+  /absolute/new/output/artifacts/aivenio-ai-gateway-darwin-arm64-0.0.0-dev.tgz
 /absolute/test-prefix/bin/aiven-ai-gateway --help
 ```
 

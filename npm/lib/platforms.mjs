@@ -10,7 +10,7 @@ export const targets = [
   { os: "win32", cpu: "arm64", goos: "windows", goarch: "arm64" },
 ];
 
-export const packageName = ({ os, cpu }) => `@aiven/ai-gateway-${os}-${cpu}`;
+export const packageName = ({ os, cpu }) => `@aivenio/ai-gateway-${os}-${cpu}`;
 export const binaryName = ({ os }) => `aiven-ai-gateway${os === "win32" ? ".exe" : ""}`;
 
 export function selectTarget(os, cpu, armVersion) {

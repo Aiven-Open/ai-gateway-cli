@@ -19,20 +19,20 @@ export function resolveBinary() {
   try {
     metadataPath = require.resolve(`${name}/package.json`);
   } catch {
-    throw new Error(`native package ${name} is missing; reinstall @aiven/ai-gateway with optional dependencies enabled (do not use --omit=optional)`);
+    throw new Error(`native package ${name} is missing; reinstall @aivenio/ai-gateway with optional dependencies enabled (do not use --omit=optional)`);
   }
   let native;
   try {
     native = JSON.parse(readFileSync(metadataPath, "utf8"));
     if (!native || typeof native !== "object") throw new Error();
   } catch {
-    throw new Error("invalid native package metadata; reinstall @aiven/ai-gateway");
+    throw new Error("invalid native package metadata; reinstall @aivenio/ai-gateway");
   }
   if (native.name !== name || native.version !== manifest.version ||
       manifest.optionalDependencies[name] !== manifest.version ||
       native.os?.length !== 1 || native.os[0] !== target.os ||
       native.cpu?.length !== 1 || native.cpu[0] !== target.cpu) {
-    throw new Error("native package identity, version or platform mismatch; reinstall @aiven/ai-gateway");
+    throw new Error("native package identity, version or platform mismatch; reinstall @aivenio/ai-gateway");
   }
   let binary;
   try {
@@ -40,7 +40,7 @@ export function resolveBinary() {
     if (!statSync(binary).isFile() || binary === realpathSync(wrapper)) throw new Error();
     accessSync(binary, process.platform === "win32" ? constants.F_OK : constants.X_OK);
   } catch {
-    throw new Error("native binary is missing, not executable or points to the npm wrapper; reinstall @aiven/ai-gateway");
+    throw new Error("native binary is missing, not executable or points to the npm wrapper; reinstall @aivenio/ai-gateway");
   }
   return binary;
 }
@@ -56,7 +56,7 @@ export function run(argv) {
     return;
   }
   const cannotStart = () => {
-    process.stderr.write("aiven-ai-gateway: cannot start native binary; reinstall @aiven/ai-gateway\n");
+    process.stderr.write("aiven-ai-gateway: cannot start native binary; reinstall @aivenio/ai-gateway\n");
     process.exitCode = 1;
   };
   let child;

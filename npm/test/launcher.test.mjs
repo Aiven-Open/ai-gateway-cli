@@ -39,10 +39,10 @@ function installation() {
 test("seven exact platform selections; unsupported CPU/OS and pre-ARMv7 fail", () => {
   assert.equal(targets.length, 7);
   assert.deepEqual(targets.map(packageName), [
-    "@aiven/ai-gateway-linux-x64", "@aiven/ai-gateway-linux-arm64",
-    "@aiven/ai-gateway-linux-arm", "@aiven/ai-gateway-darwin-x64",
-    "@aiven/ai-gateway-darwin-arm64", "@aiven/ai-gateway-win32-x64",
-    "@aiven/ai-gateway-win32-arm64",
+    "@aivenio/ai-gateway-linux-x64", "@aivenio/ai-gateway-linux-arm64",
+    "@aivenio/ai-gateway-linux-arm", "@aivenio/ai-gateway-darwin-x64",
+    "@aivenio/ai-gateway-darwin-arm64", "@aivenio/ai-gateway-win32-x64",
+    "@aivenio/ai-gateway-win32-arm64",
   ]);
   for (const item of targets) assert.deepEqual(selectTarget(item.os, item.cpu, 7), item);
   for (const [os, cpu, arm] of [["freebsd", "x64"], ["linux", "ia32"], ["linux", "arm", 6]]) {
@@ -80,7 +80,7 @@ for (const fault of ["missing-package", "version", "identity", "platform", "miss
     const nativeMetadata = JSON.parse(readFileSync(manifestFile));
     if (fault === "missing-package") rmSync(native, { recursive: true });
     if (fault === "version") nativeMetadata.version = "99.0.0";
-    if (fault === "identity") nativeMetadata.name = "@aiven/wrong";
+    if (fault === "identity") nativeMetadata.name = "@aivenio/wrong";
     if (fault === "platform") nativeMetadata.cpu = ["wrong"];
     if (["version", "identity", "platform"].includes(fault)) writeFileSync(manifestFile, JSON.stringify(nativeMetadata));
     if (fault === "missing-binary") rmSync(binary);
@@ -163,7 +163,7 @@ test("registry fixture installs only matching optional binary; global/local/npx 
   const tarDir = join(workspace, "registry tarballs");
   mkdirSync(tarDir);
   // Pack each metadata variant: npm must never fetch the other six tarballs.
-  const packages = new Map([["@aiven/ai-gateway", { metadata, tarball: pack(root, tarDir) }]]);
+  const packages = new Map([["@aivenio/ai-gateway", { metadata, tarball: pack(root, tarDir) }]]);
   for (const item of targets) {
     const directory = join(workspace, `registry-${item.os}-${item.cpu}`);
     cpSync(native, directory, { recursive: true });
@@ -175,7 +175,7 @@ test("registry fixture installs only matching optional binary; global/local/npx 
   const server = createServer((request, response) => {
     const requested = decodeURIComponent(request.url.slice(1));
     if (requested.startsWith("tarballs/")) {
-      const pkg = [...packages.values()].find((pkg) => requested === `tarballs/${pkg.metadata.name.replace("@aiven/", "")}.tgz`);
+      const pkg = [...packages.values()].find((pkg) => requested === `tarballs/${pkg.metadata.name.replace("@aivenio/", "")}.tgz`);
       if (!pkg) { response.writeHead(404).end(); return; }
       downloaded.push(pkg.metadata.name);
       response.end(readFileSync(pkg.tarball));
@@ -188,7 +188,7 @@ test("registry fixture installs only matching optional binary; global/local/npx 
     response.end(JSON.stringify({
       name: requested, "dist-tags": { latest: metadata.version },
       versions: { [metadata.version]: {
-        ...pkg.metadata, dist: { tarball: `${registry}tarballs/${requested.replace("@aiven/", "")}.tgz`, integrity: `sha512-${integrity}` },
+        ...pkg.metadata, dist: { tarball: `${registry}tarballs/${requested.replace("@aivenio/", "")}.tgz`, integrity: `sha512-${integrity}` },
       } },
     }));
   });
@@ -201,27 +201,27 @@ test("registry fixture installs only matching optional binary; global/local/npx 
     ...env, npm_config_registry: registry,
     npm_config_cache: join(workspace, "registry-cache"),
   };
-  const install = await runAsync(process.execPath, [npmCLI, "install", "-g", "--prefix", prefix, `@aiven/ai-gateway@${metadata.version}`], { env: npmEnv });
+  const install = await runAsync(process.execPath, [npmCLI, "install", "-g", "--prefix", prefix, `@aivenio/ai-gateway@${metadata.version}`], { env: npmEnv });
   assert.equal(install.status, 0, install.stderr);
-  assert.deepEqual(downloaded.sort(), ["@aiven/ai-gateway", name].sort());
+  assert.deepEqual(downloaded.sort(), ["@aivenio/ai-gateway", name].sort());
   const globalRoot = process.platform === "win32" ? prefix : join(prefix, "lib");
-  const globalEntry = join(globalRoot, "node_modules/@aiven/ai-gateway/bin/aiven-ai-gateway.mjs");
+  const globalEntry = join(globalRoot, "node_modules/@aivenio/ai-gateway/bin/aiven-ai-gateway.mjs");
   assert.equal(run(process.execPath, [globalEntry], { env }).status, 0);
   const local = join(workspace, "local project");
   mkdirSync(local);
   writeFileSync(join(local, "package.json"), '{"private":true}');
-  const localInstall = await runAsync(process.execPath, [npmCLI, "install", "--offline", `@aiven/ai-gateway@${metadata.version}`], { cwd: local, env: npmEnv });
+  const localInstall = await runAsync(process.execPath, [npmCLI, "install", "--offline", `@aivenio/ai-gateway@${metadata.version}`], { cwd: local, env: npmEnv });
   assert.equal(localInstall.status, 0, localInstall.stderr);
   const argv = ["launch", "codex", "--", "space here", "", "$HOME;&"];
   // npm exec caches full metadata separately from npm install's abbreviated
   // metadata. Warm the actual npx path before requiring offline reuse.
   const warmed = await runAsync(process.execPath, [
-    npmCLI, "exec", "--yes", `--package=@aiven/ai-gateway@${metadata.version}`, "--", "aiven-ai-gateway",
+    npmCLI, "exec", "--yes", `--package=@aivenio/ai-gateway@${metadata.version}`, "--", "aiven-ai-gateway",
   ], { cwd: workspace, env: npmEnv });
   assert.equal(warmed.status, 0, warmed.stderr);
   for (const args of [
     ["exec", "--offline", "--", "aiven-ai-gateway", ...argv],
-    ["exec", "--offline", "--yes", `--package=@aiven/ai-gateway@${metadata.version}`, "--", "aiven-ai-gateway", ...argv],
+    ["exec", "--offline", "--yes", `--package=@aivenio/ai-gateway@${metadata.version}`, "--", "aiven-ai-gateway", ...argv],
   ]) {
     const result = await runAsync(process.execPath, [npmCLI, ...args], {
       cwd: args.includes("--yes") ? workspace : local,
@@ -230,7 +230,7 @@ test("registry fixture installs only matching optional binary; global/local/npx 
     assert.equal(result.status, 23, result.stderr);
     assert.deepEqual(JSON.parse(result.stdout).Argv, argv);
   }
-  assert.deepEqual(downloaded.sort(), ["@aiven/ai-gateway", name].sort(), "offline runs must not request any tarball");
+  assert.deepEqual(downloaded.sort(), ["@aivenio/ai-gateway", name].sort(), "offline runs must not request any tarball");
   t.diagnostic(JSON.stringify({
     downloaded, target, globalInstallStatus: install.status,
     localInstallStatus: localInstall.status, cachedExecStatus: 23, argv,

@@ -9,7 +9,7 @@ Configure and launch Claude Code, Codex, Pi, OpenCode or OMP against Aiven AI Ga
 On macOS, once the first release is out: `brew install aiven/tap/aiven-ai-gateway` (notarized). Maintainers: see [`RELEASING.md`](RELEASING.md).
 
 With Node 20 or later, once the npm packages are published:
-`npm install -g @aiven/ai-gateway`, or `npx @aiven/ai-gateway` without
+`npm install -g @aivenio/ai-gateway`, or `npx @aivenio/ai-gateway` without
 installing. See [`npm/README.md`](npm/README.md). The tools it configures read
 their key without it, so they keep working whichever way it was run.
 

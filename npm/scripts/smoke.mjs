@@ -18,7 +18,7 @@ const target = selectTarget(process.platform, process.arch, process.config.varia
 const summary = inspectArtifacts(join(prepared, "artifacts"));
 const native = summary.find((item) => item.name === packageName(target));
 const version = native.version;
-const mainTarball = `aiven-ai-gateway-${version}.tgz`;
+const mainTarball = `aivenio-ai-gateway-${version}.tgz`;
 mkdirSync(isolated);
 const home = join(isolated, "home");
 mkdirSync(home);
@@ -54,7 +54,7 @@ const installed = run([npmCLI, "install", "-g", "--prefix", prefix, "--offline",
   join(prepared, "artifacts", mainTarball), join(prepared, "artifacts", native.archive)]);
 assert.equal(installed.status, 0, installed.stderr);
 const globalRoot = isWin ? prefix : join(prefix, "lib");
-const entry = join(globalRoot, "node_modules/@aiven/ai-gateway/bin/aiven-ai-gateway.mjs");
+const entry = join(globalRoot, "node_modules/@aivenio/ai-gateway/bin/aiven-ai-gateway.mjs");
 const bare = run([entry]);
 assert.equal(bare.status, 0, bare.stderr);
 assert.match(bare.stdout, /setup/);

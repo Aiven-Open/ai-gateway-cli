@@ -62,7 +62,7 @@ for (const fault of ["missing-repository", "forbidden-repository", "missing-lice
     const artifacts = join(directory, "artifacts");
     mkdirSync(artifacts, { recursive: true });
     for (const file of readdirSync(join(prepared, "artifacts"))) {
-      if (file !== `aiven-ai-gateway-${JSON.parse(readFileSync(join(prepared, "packages/main/package.json"))).version}.tgz`) {
+      if (file !== `aivenio-ai-gateway-${JSON.parse(readFileSync(join(prepared, "packages/main/package.json"))).version}.tgz`) {
         cpSync(join(prepared, "artifacts", file), join(artifacts, file));
       }
     }
