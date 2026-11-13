@@ -1,7 +1,9 @@
 // Copyright (c) 2026 Aiven, Helsinki, Finland. https://aiven.io/
 
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { inspectArtifacts } from "./artifacts.mjs";
 
 export const integrity = (bytes) => `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
 // A prerelease must never move `latest`.
@@ -47,4 +49,13 @@ export function publishPackages(packages, { npm, dryRun = false }) {
     }
   }
   return done;
+}
+
+// The wrapper pins exact native versions, so it goes last: it must never be installable before they are.
+export function publishOrder(artifacts) {
+  const natives = inspectArtifacts(artifacts).map(({ name, version, archive }) => ({ name, version, file: join(artifacts, archive) }));
+  const nativeFiles = new Set(natives.map(({ file }) => file));
+  const [main] = readdirSync(artifacts).filter((file) => file.endsWith(".tgz"))
+    .map((file) => join(artifacts, file)).filter((file) => !nativeFiles.has(file));
+  return [...natives, { name: "@aivenio/ai-gateway", version: natives[0].version, file: main }];
 }

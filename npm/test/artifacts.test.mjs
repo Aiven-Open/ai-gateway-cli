@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { inspectArtifacts } from "../scripts/artifacts.mjs";
+import { publishOrder } from "../scripts/publish.mjs";
 import { pack, workspace } from "./support.mjs";
 
 const prepared = process.env.AIVEN_NPM_PREPARED;
@@ -13,6 +14,24 @@ after(() => rmSync(workspace, { recursive: true, force: true, maxRetries: 3 }));
 
 test("all eight packages identify their source and licenses; seven contain one executable and provenance", () => {
   assert.equal(inspectArtifacts(join(prepared, "artifacts")).length, 7);
+});
+
+test("publish order puts the seven native packages before the wrapper", () => {
+  const order = publishOrder(join(prepared, "artifacts"));
+  assert.equal(order.length, 8);
+  assert.equal(order.at(-1).name, "@aivenio/ai-gateway");
+  assert(order.slice(0, 7).every(({ name }) => name.startsWith("@aivenio/ai-gateway-")));
+  assert.equal(new Set(order.map(({ version }) => version)).size, 1);
+  for (const { file } of order) assert(readFileSync(file).length > 0);
+});
+
+test("publish order refuses an incomplete tarball set", () => {
+  const artifacts = join(workspace, "incomplete", "artifacts");
+  mkdirSync(artifacts, { recursive: true });
+  for (const file of readdirSync(join(prepared, "artifacts"))) {
+    if (!file.includes("win32-arm64")) cpSync(join(prepared, "artifacts", file), join(artifacts, file));
+  }
+  assert.throws(() => publishOrder(artifacts), /need main plus seven native tarballs/);
 });
 
 for (const fault of [
@@ -53,6 +72,7 @@ for (const fault of [
     }
     pack(native, artifacts);
     assert.throws(() => inspectArtifacts(artifacts));
+    assert.throws(() => publishOrder(artifacts));
   });
 }
 

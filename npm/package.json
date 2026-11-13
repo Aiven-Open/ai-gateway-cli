@@ -25,6 +25,7 @@
     "test:artifacts": "node --test test/artifacts.test.mjs",
     "prepare-packages": "node scripts/prepare.mjs",
     "smoke": "node scripts/smoke.mjs",
+    "publish-packages": "node scripts/publish-packages.mjs",
     "check-artifacts": "node scripts/check-artifacts.mjs",
     "check-reproducibility": "node scripts/check-reproducibility.mjs"
   },
