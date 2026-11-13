@@ -71,7 +71,7 @@ export function inspectArtifacts(directory) {
     assert(!packages.has(metadata.name), "duplicate package");
     packages.set(metadata.name, { metadata, entries, file });
   }
-  const main = packages.get("@aiven/ai-gateway");
+  const main = packages.get("@aivenio/ai-gateway");
   assert(main, "missing main package");
   assert.deepEqual(main.metadata.bin, { "aiven-ai-gateway": "./bin/aiven-ai-gateway.mjs" });
   assert.deepEqual([...main.entries.keys()].sort(), [

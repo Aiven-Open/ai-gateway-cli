@@ -1,5 +1,5 @@
 {
-  "name": "@aiven/ai-gateway",
+  "name": "@aivenio/ai-gateway",
   "version": "0.0.0-dev",
   "description": "Configure and launch coding tools against Aiven AI Gateway",
   "license": "Apache-2.0",
@@ -29,12 +29,12 @@
     "check-reproducibility": "node scripts/check-reproducibility.mjs"
   },
   "optionalDependencies": {
-    "@aiven/ai-gateway-linux-x64": "0.0.0-dev",
-    "@aiven/ai-gateway-linux-arm64": "0.0.0-dev",
-    "@aiven/ai-gateway-linux-arm": "0.0.0-dev",
-    "@aiven/ai-gateway-darwin-x64": "0.0.0-dev",
-    "@aiven/ai-gateway-darwin-arm64": "0.0.0-dev",
-    "@aiven/ai-gateway-win32-x64": "0.0.0-dev",
-    "@aiven/ai-gateway-win32-arm64": "0.0.0-dev"
+    "@aivenio/ai-gateway-linux-x64": "0.0.0-dev",
+    "@aivenio/ai-gateway-linux-arm64": "0.0.0-dev",
+    "@aivenio/ai-gateway-linux-arm": "0.0.0-dev",
+    "@aivenio/ai-gateway-darwin-x64": "0.0.0-dev",
+    "@aivenio/ai-gateway-darwin-arm64": "0.0.0-dev",
+    "@aivenio/ai-gateway-win32-x64": "0.0.0-dev",
+    "@aivenio/ai-gateway-win32-arm64": "0.0.0-dev"
   }
 }
