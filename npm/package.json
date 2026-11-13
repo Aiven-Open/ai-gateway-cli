@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/aiven-open/ai-gateway-cli.git"
+    "url": "https://github.com/Aiven-Open/ai-gateway-cli.git"
   },
   "type": "module",
   "bin": {
@@ -21,7 +21,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test test/launcher.test.mjs test/notices.test.mjs test/reproducibility.test.mjs test/publish.test.mjs",
+    "test": "node --test test/launcher.test.mjs test/notices.test.mjs test/reproducibility.test.mjs test/publish.test.mjs test/prepare.test.mjs",
     "test:artifacts": "node --test test/artifacts.test.mjs",
     "prepare-packages": "node scripts/prepare.mjs",
     "smoke": "node scripts/smoke.mjs",

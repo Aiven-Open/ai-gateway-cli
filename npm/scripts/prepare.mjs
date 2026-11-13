@@ -22,7 +22,8 @@ if (!options["--out"]) throw new Error("--out is required; use a new directory")
 const output = resolve(options["--out"]);
 const main = JSON.parse(readFileSync(join(npmRoot, "package.json"), "utf8"));
 const version = options["--version"] ?? main.version;
-if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?$/.test(version)) {
+const identifier = "(0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*)";
+if (!new RegExp(`^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(-${identifier}(\\.${identifier})*)?$`).test(version)) {
   throw new Error("version must be an explicit semver (no mutable latest reference)");
 }
 const command = "./cmd/aiven-ai-gateway";
