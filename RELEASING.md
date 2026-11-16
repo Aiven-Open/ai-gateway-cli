@@ -49,7 +49,9 @@ alone, so `npx @aivenio/ai-gateway@next` runs the candidate.
 
 A published version is never replaced. On a rerun, a package whose published integrity equals the
 rebuilt tarball's is skipped, so a run that failed midway is finished by rerunning it; a package
-whose integrity differs fails the job, and the fix is a new version.
+whose integrity differs fails the job, and the fix is a new version. Use "Re-run failed jobs" (or
+`gh run rerun <run-id> --job <job-id>`), not "Re-run all jobs": once the Homebrew job publishes,
+rerunning it fails, because signing makes its rebuilt archives differ.
 
 One-time setup:
 
@@ -64,7 +66,8 @@ One-time setup:
   first and falls back to the token, so the job needs no change between the two states. When
   adding a trusted publisher, allow it to publish directly, not only to stage.
 
-To see what a prepared build would publish, without publishing:
+To see what a prepared build would publish, without publishing (it asks npmjs.com about each
+package, so CI does not run it):
 
 ```sh
 npm run publish-packages --prefix npm -- /absolute/new/output --dry-run
@@ -77,7 +80,8 @@ git tag vX.Y.Z origin/main
 git push origin vX.Y.Z
 ```
 
-Approve the run in the `release` environment.
+Approve the run in the `release` environment. "Prevent self-review" means the maintainer who pushed
+the tag cannot approve it; the other one must.
 
 A published version is never replaced. A rerun accepts a tap release only when it holds exactly the new build's archives and `checksums.txt`, byte for byte, and fails otherwise; signing makes rebuilt bytes differ, so a version whose release was published but whose run failed is fixed by releasing a new version. A run that failed before publishing leaves a draft release, which has no tag yet: delete that draft, then rerun.
 
@@ -98,6 +102,11 @@ npx @aivenio/ai-gateway@next --version
 ```
 
 The npm macOS binaries are not signed with the Developer ID; the rc shows whether Gatekeeper accepts them.
+
+The registry normally makes the first version of a new package its `latest` too, even when it is
+published under `next`. Check
+with `npm dist-tag ls @aivenio/ai-gateway` after the rc: until the final version is published, a plain
+`npm install @aivenio/ai-gateway` installs the candidate.
 
 Then tag the final version and verify on a clean Mac:
 

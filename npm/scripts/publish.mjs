@@ -22,7 +22,7 @@ function publishedIntegrity(npm, { name, version }) {
   }
   if (view.status === 0 && typeof output === "string" && output.startsWith("sha512-")) return output;
   if (view.status !== 0 && output?.error?.code === "E404") return undefined;
-  throw new Error(`registry lookup failed: ${view.stderr.trim() || view.stdout.trim()}`);
+  throw new Error(`registry lookup failed: ${view.stderr.trim() || view.stdout.trim() || view.error?.message}`);
 }
 
 // Publishes in the given order and stops at the first failure. A published version is never replaced: the same
@@ -35,7 +35,7 @@ export function publishPackages(packages, { npm, dryRun = false }) {
       if (published === undefined) {
         if (!dryRun) {
           const result = npm(["publish", pkg.file, "--access", "public", "--provenance", "--tag", distTag(pkg.version)]);
-          if (result.status !== 0) throw new Error(`publish failed: ${result.stderr.trim()}`);
+          if (result.status !== 0) throw new Error(`publish failed: ${result.stderr.trim() || result.error?.message}`);
         }
         done.push({ name: pkg.name, action: dryRun ? "would publish" : "published" });
       } else if (published === integrity(readFileSync(pkg.file))) {

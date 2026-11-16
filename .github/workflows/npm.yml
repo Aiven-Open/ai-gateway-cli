@@ -66,11 +66,6 @@ jobs:
         run: |
           npm run smoke --prefix npm -- \
             "$RUNNER_TEMP/native-npm-packages" "$RUNNER_TEMP/native-npm-install"
-      - name: Dry-run the publisher against the registry
-        shell: bash
-        run: |
-          npm run publish-packages --prefix npm -- \
-            "$RUNNER_TEMP/native-npm-packages" --dry-run
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: npm-packages
