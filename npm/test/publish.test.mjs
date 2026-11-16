@@ -104,3 +104,11 @@ test("a dry run looks up every package and publishes none", () => {
   assert.equal(publishes().length, 0);
   assert.deepEqual(done, names.map((name) => ({ name, action: "would publish" })));
 });
+
+test("a timed-out lookup or publish names the timeout", () => {
+  const timeout = { status: null, stdout: "", stderr: "", error: new Error("spawnSync node ETIMEDOUT") };
+  assert.throws(() => publishPackages(packages(), { npm: registry({ view: timeout }).npm }), /registry lookup failed: spawnSync node ETIMEDOUT/);
+  const { npm } = registry();
+  const slow = (args) => (args[0] === "publish" ? timeout : npm(args));
+  assert.throws(() => publishPackages(packages(), { npm: slow }), /publish failed: spawnSync node ETIMEDOUT/);
+});
