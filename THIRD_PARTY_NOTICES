@@ -4,7 +4,7 @@ The components below are linked into the distributed binaries. Their
 copyright and license texts are reproduced from the stated versions.
 The application's own license is in LICENSE.
 
-Component: Go go1.27.3
+Component: Go go1.27.4
 Component: golang.org/x/sys v0.49.0
 Component: golang.org/x/term v0.47.0
 
