@@ -1,9 +1,10 @@
 # Copyright (c) 2026 Aiven, Helsinki, Finland. https://aiven.io/
 
-# Signs, notarizes and publishes the `aiven-ai-gateway` launcher (`RELEASING.md`). The release,
-# tagged `aiven-ai-gateway-<tag>`, and the Homebrew cask land in `aiven/homebrew-tap`, written with
-# `HOMEBREW_TAP_TOKEN`, so this repository's `GITHUB_TOKEN` stays read-only. The signing material
-# lives in the `release` environment, whose required reviewers gate every run.
+# Publishes the `aiven-ai-gateway` launcher (`RELEASING.md`): the `release` job signs, notarizes and
+# publishes to the Homebrew tap, and the `npm` job publishes the npm packages. Neither needs the other.
+# The tap release, tagged `aiven-ai-gateway-<tag>`, and the Homebrew cask land in `aiven/homebrew-tap`,
+# written with `HOMEBREW_TAP_TOKEN`, so this repository's `GITHUB_TOKEN` stays read-only. The signing
+# material lives in the `release` environment, whose required reviewers gate every run.
 name: Release aiven-ai-gateway
 
 on:
@@ -56,3 +57,70 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: .github/scripts/publish-tap.sh dist
+
+  # Independent of the Homebrew job: npm ships even when signing or the tap is unavailable.
+  npm:
+    runs-on: ubuntu-24.04
+    environment: release
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      # Trusted publishing and provenance.
+      id-token: write
+    env:
+      GOENV: "off"
+      GOFLAGS: ""
+      npm_config_audit: "false"
+      npm_config_fund: "false"
+      npm_config_update_notifier: "false"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require tagged commit on main
+        run: |
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - name: Require an npm that supports trusted publishing (11.5.1)
+        run: |
+          node -e "const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(process.argv[1]); const ok = m && (+m[1] > 11 || (+m[1] === 11 && (+m[2] > 5 || (+m[2] === 5 && +m[3] >= 1)))); if (!ok) { console.error('npm ' + process.argv[1] + ' is not a release at or above 11.5.1'); process.exit(1); }" "$(npm --version)"
+
+      # prepare-packages rejects anything that is not strict semver, before it builds.
+      - name: Prepare all eight packages at the tag's version
+        run: |
+          npm run prepare-packages --prefix npm -- \
+            --out "$RUNNER_TEMP/npm-release" --version "${GITHUB_REF_NAME#v}"
+
+      - name: Inspect the archives
+        env:
+          AIVEN_NPM_PREPARED: ${{ runner.temp }}/npm-release
+        run: npm run test:artifacts --prefix npm
+
+      - name: Install the packed CLI, then set up and launch each tool
+        run: |
+          npm run smoke --prefix npm -- \
+            "$RUNNER_TEMP/npm-release" "$RUNNER_TEMP/npm-release-install"
+
+      # Only the first release has a token. npm tries trusted publishing first and falls back to a configured
+      # token, so the same job serves both states. The build and checks above never see the token.
+      - name: Use the first-release token when present
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -n "$NPM_TOKEN" ]; then
+            printf '//registry.npmjs.org/:_authToken=%s\n' "$NPM_TOKEN" > "$RUNNER_TEMP/npmrc"
+            echo "NPM_CONFIG_USERCONFIG=$RUNNER_TEMP/npmrc" >> "$GITHUB_ENV"
+          fi
+
+      - name: Publish the seven native packages, then the wrapper
+        run: npm run publish-packages --prefix npm -- "$RUNNER_TEMP/npm-release"

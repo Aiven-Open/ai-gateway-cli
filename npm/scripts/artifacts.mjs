@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { binaryName, packageName, targets } from "../lib/platforms.mjs";
 
 export const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
-const repository = { type: "git", url: "https://github.com/aiven-open/ai-gateway-cli.git" };
+const repository = { type: "git", url: "https://github.com/Aiven-Open/ai-gateway-cli.git" };
 const root = fileURLToPath(new URL("../../", import.meta.url));
 
 export function readTarball(file) {

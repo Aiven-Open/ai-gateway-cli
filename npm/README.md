@@ -95,6 +95,7 @@ use a native Go fixture and a loopback registry to check npm's package
 selection, global and local installation, offline execution, argv, exit
 status, streams, signals and resolution failures.
 
-Publish the seven native packages at the exact version before this package,
-so that no install of this package resolves a native package that does not
-exist yet.
+`npm run publish-packages --prefix npm -- /absolute/new/output` publishes a prepared build: the seven
+native packages at the exact version before this package, so that no install of this package
+resolves a native package that does not exist yet. The release workflow runs it
+([`RELEASING.md`](../RELEASING.md)); `--dry-run` reports what it would publish.
