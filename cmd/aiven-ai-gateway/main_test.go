@@ -24,13 +24,74 @@ import (
 )
 
 func TestBuildFallsBackToModuleVersionAndVCSStamp(t *testing.T) {
-	info := &debug.BuildInfo{
-		Main:     debug.Module{Version: "v0.2.0"},
-		Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: "abc1234"}, {Key: "vcs.time", Value: "2026-10-28T12:00:00Z"}},
+	tests := []struct {
+		name string
+		info *debug.BuildInfo
+		want cli.Build
+	}{
+		{
+			name: "vcs local build",
+			info: &debug.BuildInfo{
+				Main:     debug.Module{Version: "v0.2.0"},
+				Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: "abc1234"}, {Key: "vcs.time", Value: "2026-10-28T12:00:00Z"}},
+			},
+			want: cli.Build{Version: "0.2.0", Commit: "abc1234", Date: "2026-10-28T12:00:00Z"},
+		},
+		{
+			name: "tagged module zip without vcs settings",
+			info: &debug.BuildInfo{Main: debug.Module{Version: "v0.2.0"}},
+			want: cli.Build{Version: "0.2.0", Commit: "none", Date: "unknown"},
+		},
+		{
+			name: "prerelease module zip",
+			info: &debug.BuildInfo{Main: debug.Module{Version: "v0.2.0-rc.1"}},
+			want: cli.Build{Version: "0.2.0-rc.1", Commit: "none", Date: "unknown"},
+		},
+		{
+			name: "pseudo-version module zip",
+			info: &debug.BuildInfo{Main: debug.Module{Version: "v0.0.0-20261110135510-9f344f7f3132"}},
+			want: cli.Build{Version: "0.0.0-20261110135510-9f344f7f3132", Commit: "none", Date: "unknown"},
+		},
+		{
+			name: "dirty module version",
+			info: &debug.BuildInfo{Main: debug.Module{Version: "v0.2.0+dirty"}},
+			want: cli.Build{Version: "0.2.0+dirty", Commit: "none", Date: "unknown"},
+		},
+		{
+			name: "incompatible module version",
+			info: &debug.BuildInfo{Main: debug.Module{Version: "v2.0.0+incompatible"}},
+			want: cli.Build{Version: "2.0.0+incompatible", Commit: "none", Date: "unknown"},
+		},
+		{
+			name: "devel module with vcs settings",
+			info: &debug.BuildInfo{
+				Main:     debug.Module{Version: "(devel)"},
+				Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: "abc1234"}, {Key: "vcs.time", Value: "2026-10-28T12:00:00Z"}},
+			},
+			want: cli.Build{Version: "dev", Commit: "abc1234", Date: "2026-10-28T12:00:00Z"},
+		},
+		{
+			name: "devel module without vcs settings",
+			info: &debug.BuildInfo{Main: debug.Module{Version: "(devel)"}},
+			want: cli.Build{Version: "dev", Commit: "none", Date: "unknown"},
+		},
+		{
+			name: "empty module version",
+			info: &debug.BuildInfo{},
+			want: cli.Build{Version: "dev", Commit: "none", Date: "unknown"},
+		},
+		{
+			name: "nil build info",
+			info: nil,
+			want: cli.Build{Version: "dev", Commit: "none", Date: "unknown"},
+		},
 	}
-	want := cli.Build{Version: "v0.2.0", Commit: "abc1234", Date: "2026-10-28T12:00:00Z"}
-	if got := build(info); got != want {
-		t.Errorf("build = %+v, want %+v", got, want)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := build(tc.info); got != tc.want {
+				t.Errorf("build = %+v, want %+v", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -41,10 +102,15 @@ func TestBuildKeepsDevForLocalBuild(t *testing.T) {
 }
 
 func TestBuildPrefersLdflags(t *testing.T) {
-	version = "0.2.0"
-	t.Cleanup(func() { version = "dev" })
-	if got := build(&debug.BuildInfo{Main: debug.Module{Version: "v9.9.9"}}); got.Version != "0.2.0" {
-		t.Errorf("version = %q", got.Version)
+	version, commit, date = "0.2.0", "9f344f7", "2026-11-10T13:55:10Z"
+	t.Cleanup(func() { version, commit, date = "dev", "none", "unknown" })
+	info := &debug.BuildInfo{
+		Main:     debug.Module{Version: "v9.9.9"},
+		Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: "other"}, {Key: "vcs.time", Value: "2026-01-01T00:00:00Z"}},
+	}
+	want := cli.Build{Version: "0.2.0", Commit: "9f344f7", Date: "2026-11-10T13:55:10Z"}
+	if got := build(info); got != want {
+		t.Errorf("build = %+v, want %+v", got, want)
 	}
 }
 

@@ -64,6 +64,9 @@ jobs:
             exit 1
           fi
       - run: go test -race ./...
+      - name: Install into a clean GOBIN and smoke test
+        shell: bash
+        run: .github/scripts/go-install-smoke.sh
 
   windows-exec:
     runs-on: windows-2025
@@ -78,3 +81,6 @@ jobs:
       - run: go vet ./...
       # Native helper processes check argv/env/streams, PID handoff, statuses, home lookup and key file ACLs.
       - run: go test -race ./...
+      - name: Install into a clean GOBIN and smoke test
+        shell: bash
+        run: .github/scripts/go-install-smoke.sh
