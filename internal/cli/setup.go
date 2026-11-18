@@ -44,10 +44,11 @@ var setupTools = map[string]struct {
 // moved refuses redirects that would make setup and the Console's native instructions name different files.
 func moved(env config.Env, tool string) error {
 	for _, kv := range env.Environ {
-		if name, v, _ := strings.Cut(kv, "="); v != "" && slices.ContainsFunc(setupTools[tool].moved, func(m string) bool {
-			return config.SameVar(name, m)
-		}) {
-			return fmt.Errorf("%s is set, so %s would not read the config aiven-ai-gateway writes; unset it and rerun, or configure %s by hand", name, tool, tool)
+		name, v, _ := strings.Cut(kv, "=")
+		matches := func(m string) bool { return config.SameVar(name, m) }
+		if v != "" && slices.ContainsFunc(setupTools[tool].moved, matches) {
+			return fmt.Errorf("%s is set, so %s would not read the config aiven-ai-gateway writes; "+
+				"unset it and rerun, or configure %s by hand", name, tool, tool)
 		}
 	}
 	return nil
@@ -182,13 +183,15 @@ func setup(ctx context.Context, args []string, env config.Env, deps Deps) int {
 	}
 	if blocked(valid, plans, table) {
 		run.table = table
-		run.credential = "not saved by this run; existing key files unchanged; a selected tool's configured model is not granted by this key"
+		run.credential = "not saved by this run; existing key files unchanged; " +
+			"a selected tool's configured model is not granted by this key"
 		return run.finish()
 	}
 	valid = checkProtocols(ctx, gw, key, valid, plans, table, run)
 	run.table = table
 	if len(valid) == 0 {
-		run.credential = "not saved by this run; existing key files unchanged; no selected tool passed its basic protocol checks"
+		run.credential = "not saved by this run; existing key files unchanged; " +
+			"no selected tool passed its basic protocol checks"
 		return run.finish()
 	}
 	if err := ctx.Err(); err != nil {

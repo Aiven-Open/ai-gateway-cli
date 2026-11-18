@@ -114,7 +114,8 @@ func parseTOML(src []byte) ([]tomlEntry, error) {
 			valueEnd := int(e.Raw.Offset + e.Raw.Length)
 			entries = append(entries, tomlEntry{
 				array: array, path: slices.Concat(table, keys), table: table,
-				start: lineStart(src, int(e.Raw.Offset)), end: lineEnd(src, valueEnd), valueStart: value, valueEnd: valueEnd,
+				start: lineStart(src, int(e.Raw.Offset)), end: lineEnd(src, valueEnd),
+				valueStart: value, valueEnd: valueEnd,
 			})
 		}
 	}
@@ -144,7 +145,8 @@ func splice(src []byte, entries []tomlEntry, want, have map[string]any) ([]byte,
 				firstHeader = i
 			}
 			current = &owner{end: e.end}
-			if v, ok := lookup(want, e.path); e.array == nil && !isTable(v, ok) || e.array != nil && !isArray(lookup(want, e.array)) {
+			v, ok := lookup(want, e.path)
+			if e.array == nil && !isTable(v, ok) || e.array != nil && !isArray(lookup(want, e.array)) {
 				end := len(src)
 				for _, next := range entries[i+1:] {
 					if next.header {

@@ -137,7 +137,8 @@ func Setup(in Input) (harness.Plan, error) {
 	if in.UserHome == "" {
 		return harness.Plan{}, config.ErrNoHome
 	}
-	if _, err := harness.ReadObject(filepath.Join(in.UserHome, ".claude", "settings.json")); err != nil {
+	settings := filepath.Join(in.UserHome, ".claude", "settings.json")
+	if _, err := harness.ReadObject(settings); err != nil {
 		return harness.Plan{}, err
 	}
 	if in.WorkDir != "" {
@@ -254,7 +255,9 @@ func defaultSlots(t []models.Model) slots {
 		s.custom = models.FirstNotIn(t, s.opus, s.sonnet, s.haiku, s.fable)
 	}
 	s.main = cmp.Or(s.main, models.FirstAlias(t))
-	s.opus, s.sonnet, s.haiku = cmp.Or(s.opus, s.main), cmp.Or(s.sonnet, s.main), cmp.Or(s.haiku, s.main)
+	s.opus = cmp.Or(s.opus, s.main)
+	s.sonnet = cmp.Or(s.sonnet, s.main)
+	s.haiku = cmp.Or(s.haiku, s.main)
 	return s
 }
 

@@ -38,7 +38,8 @@ func parseLaunch(args []string) (launchOptions, error) {
 		case o.tool == "" && setupTools[a].prepare != nil:
 			o.tool = a
 		default:
-			return launchOptions{}, errors.New("launch: name one harness and put native arguments after --. Run: aiven-ai-gateway launch --help")
+			return launchOptions{}, errors.New("launch: name one harness and put native " +
+				"arguments after --. Run: aiven-ai-gateway launch --help")
 		}
 	}
 	return o, nil
@@ -115,7 +116,9 @@ func launchPi(ctx context.Context, args []string, env config.Env, deps Deps, p p
 }
 
 func launchOpencode(ctx context.Context, args []string, env config.Env, deps Deps, p presenter) int {
-	ready := func(home, baseURL string) (bool, error) { return opencode.Ready(home, env.ConfigHome, baseURL) }
+	ready := func(home, baseURL string) (bool, error) {
+		return opencode.Ready(home, env.ConfigHome, baseURL)
+	}
 	return launchTable(ctx, "opencode", args, env, deps, p, ready, opencode.Launch)
 }
 

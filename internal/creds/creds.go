@@ -80,9 +80,11 @@ func Helper(origin, goos string) string {
 // [Environment]::Exit: Claude Code runs the helper with stdin an open pipe, which keeps powershell.exe from exiting by
 // itself. Exit skips PowerShell's output pipeline, so the key goes to Console.Out.
 func PowerShell(origin string) string {
-	path := `[IO.Path]::Combine([Environment]::GetEnvironmentVariable('USERPROFILE'), '` + Rel(origin) + `')`
-	return `if ([IO.File]::Exists(` + path + `)) { [Console]::Out.WriteLine([IO.File]::ReadAllText(` + path +
-		`).Trim()); [Environment]::Exit(0) } else { [Environment]::Exit(1) }`
+	path := `[IO.Path]::Combine([Environment]::GetEnvironmentVariable('USERPROFILE'), '` +
+		Rel(origin) + `')`
+	return `if ([IO.File]::Exists(` + path + `)) { ` +
+		`[Console]::Out.WriteLine([IO.File]::ReadAllText(` + path + `).Trim()); ` +
+		`[Environment]::Exit(0) } else { [Environment]::Exit(1) }`
 }
 
 // Command is the program and arguments a tool runs, without a shell, to print the key for the gateway at origin:

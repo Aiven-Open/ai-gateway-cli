@@ -215,7 +215,8 @@ func checkedYAML(path string, file *ast.File, before map[string]any, parent, key
 		return nil, fmt.Errorf("decode expected %s: %w", path, err)
 	}
 	if !reflect.DeepEqual(after, normalized) {
-		return nil, fmt.Errorf("%s: the edit would change unrelated YAML aliases; make the owned mapping independent, then retry", path)
+		return nil, fmt.Errorf("%s: the edit would change unrelated YAML aliases; "+
+			"make the owned mapping independent, then retry", path)
 	}
 	return data, nil
 }

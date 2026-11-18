@@ -43,7 +43,8 @@ func Setup(in harness.Input) (harness.Plan, error) {
 	} {
 		if _, err := os.Stat(legacy.native); errors.Is(err, os.ErrNotExist) {
 			if _, err := os.Lstat(legacy.path); err == nil {
-				return harness.Plan{}, fmt.Errorf("%s awaits native OMP migration; run omp once, then rerun setup. If migration fails, fix the legacy file first", legacy.path)
+				return harness.Plan{}, fmt.Errorf("%s awaits native OMP migration; run omp once, then "+
+					"rerun setup. If migration fails, fix the legacy file first", legacy.path)
 			} else if !errors.Is(err, os.ErrNotExist) {
 				return harness.Plan{}, fmt.Errorf("inspect %s: %w", legacy.path, err)
 			}

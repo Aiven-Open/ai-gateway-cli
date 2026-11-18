@@ -23,7 +23,8 @@ import (
 var errNotGranted = errors.New("which this key does not grant")
 
 func notGranted(path, model string) error {
-	return fmt.Errorf("%s selects %s, %w; choose a granted model there (aiven-ai-gateway models lists them), then rerun setup", path, model, errNotGranted)
+	return fmt.Errorf("%s selects %s, %w; choose a granted model there "+
+		"(aiven-ai-gateway models lists them), then rerun setup", path, model, errNotGranted)
 }
 
 type protocolCheck struct {
@@ -53,7 +54,8 @@ func toolChecks(tool string, table []models.Model, plan harness.Plan) ([]protoco
 			byProtocol[models.ModelProtocol(alias)] = alias
 		}
 		var checks []protocolCheck
-		for _, protocol := range []models.Protocol{models.ChatCompletions, models.Messages, models.Responses} {
+		protocols := []models.Protocol{models.ChatCompletions, models.Messages, models.Responses}
+		for _, protocol := range protocols {
 			if alias := byProtocol[protocol]; alias != "" {
 				checks = append(checks, protocolCheck{protocol: protocol, model: alias})
 			}
@@ -79,7 +81,8 @@ func toolChecks(tool string, table []models.Model, plan harness.Plan) ([]protoco
 			if _, granted := models.Find(table, alias); !granted {
 				return nil, notGranted(f.Path, alias)
 			}
-			if check := (protocolCheck{protocol: models.Messages, model: alias}); !slices.ContainsFunc(checks, check.same) {
+			check := protocolCheck{protocol: models.Messages, model: alias}
+			if !slices.ContainsFunc(checks, check.same) {
 				checks = append(checks, check)
 			}
 		}

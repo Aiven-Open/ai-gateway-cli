@@ -219,7 +219,8 @@ func (r *setupRun) finish() int {
 		u.heading("Or start the native tool directly")
 		for _, o := range ready {
 			if !u.command(2, directCommand(o.tool, r.table, o.asDefault && o.status == statusConfigured)) {
-				u.line(2, toolLabel(o.tool)+": direct command unavailable because an argument contains terminal controls.")
+				u.line(2, toolLabel(o.tool)+": direct command unavailable because an argument "+
+					"contains terminal controls.")
 				u.line(2, "Use aiven-ai-gateway launch "+o.tool+" instead; its arguments remain literal.")
 			}
 		}

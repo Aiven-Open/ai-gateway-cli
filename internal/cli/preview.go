@@ -135,8 +135,9 @@ func applySnapshot(env config.Env, table []models.Model, tool string, asDefault 
 	for i := range plan.Files {
 		for _, f := range snapshot.Files {
 			if f.Path == plan.Files[i].Path {
-				plan.Files[i].Before, plan.Files[i].Existed, plan.Files[i].Inspected = f.Before, f.Existed, f.Inspected
-				plan.Files[i].Parents, plan.Files[i].Perm = f.Parents, f.Perm
+				pf := &plan.Files[i]
+				pf.Before, pf.Existed, pf.Inspected = f.Before, f.Existed, f.Inspected
+				pf.Parents, pf.Perm = f.Parents, f.Perm
 			}
 		}
 		if !plan.Files[i].Inspected {
@@ -163,7 +164,8 @@ func inspectFile(path string) ([]byte, os.FileMode, bool, error) {
 
 func unchanged(f harness.File) error {
 	for _, parent := range f.Parents {
-		if info, err := os.Lstat(parent); err == nil && (!info.IsDir() || info.Mode()&os.ModeSymlink != 0) {
+		info, err := os.Lstat(parent)
+		if err == nil && (!info.IsDir() || info.Mode()&os.ModeSymlink != 0) {
 			return fmt.Errorf("%s is not a regular directory; nothing further was overwritten, rerun setup", parent)
 		} else if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("inspect %s: %w", parent, err)

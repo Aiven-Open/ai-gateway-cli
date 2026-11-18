@@ -57,7 +57,8 @@ func Informational(args, environ []string, deps Deps) (bool, int) {
 		return true, fail(deps, "connect was removed. Run: aiven-ai-gateway setup <harness>")
 	}
 	if cmd == "omp" && len(args) > 1 && args[1] == "init" {
-		return true, fail(deps, "omp init was removed; existing project files are left as they are. Run: aiven-ai-gateway setup omp")
+		return true, fail(deps, "omp init was removed; existing project files are left as they are. "+
+			"Run: aiven-ai-gateway setup omp")
 	}
 	if slices.Contains(toolNames, cmd) {
 		return true, fail(deps, "session shortcut removed. Run: aiven-ai-gateway launch "+cmd)

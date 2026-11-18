@@ -51,7 +51,8 @@ func SavedCredential(home string) error {
 		return err
 	}
 	if _, ok := auth["aiven"]; ok {
-		return fmt.Errorf("%s holds a credential saved for aiven, which Pi sends instead of the gateway key; run /logout in pi and choose aiven, then retry", path)
+		return fmt.Errorf("%s holds a credential saved for aiven, which Pi sends instead of the "+
+			"gateway key; run /logout in pi and choose aiven, then retry", path)
 	}
 	return nil
 }
@@ -101,7 +102,8 @@ func Setup(in harness.Input) (harness.Plan, error) {
 	files := []harness.File{{Path: path, Data: data, Backup: true, Models: true}}
 	if in.Default {
 		settings["defaultProvider"], settings["defaultModel"] = "aiven", models.SonnetOrFirst(in.Table)
-		if data, err = harness.Edit(settingsPath, harness.Strip(settingsSrc, harness.Strict), settings); err != nil {
+		stripped := harness.Strip(settingsSrc, harness.Strict)
+		if data, err = harness.Edit(settingsPath, stripped, settings); err != nil {
 			return harness.Plan{}, err
 		}
 		files = append(files, harness.File{Path: settingsPath, Data: data, Backup: true})
@@ -203,7 +205,8 @@ func WindowsShell(environ []string, exists func(string) bool, lookPath func(stri
 	}
 	path, err := lookPath("bash.exe")
 	if err != nil {
-		return "", errors.New("pi runs its key helper in Git Bash on Windows, and none was found; install Git for Windows, then rerun")
+		return "", errors.New("pi runs its key helper in Git Bash on Windows, and none was found; " +
+			"install Git for Windows, then rerun")
 	}
 	root := strings.TrimRight(get("SystemRoot"), `\/`)
 	legacy := root == "" && legacyWSL.MatchString(path)
@@ -211,7 +214,8 @@ func WindowsShell(environ []string, exists func(string) bool, lookPath func(stri
 		legacy = legacy || root != "" && strings.EqualFold(strings.ReplaceAll(path, "/", `\`), root+`\`+dir+`\bash.exe`)
 	}
 	if legacy {
-		return "", fmt.Errorf("pi would run its key helper in WSL through %s rather than Git Bash; install Git for Windows, then rerun", path)
+		return "", fmt.Errorf("pi would run its key helper in WSL through %s rather than Git Bash; "+
+			"install Git for Windows, then rerun", path)
 	}
 	return path, nil
 }

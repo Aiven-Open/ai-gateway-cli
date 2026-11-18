@@ -45,7 +45,11 @@ var launcherForms = func() []*regexp.Regexp {
 	_, args := creds.Command(origin, runtime.GOOS)
 	rel := regexp.QuoteMeta(creds.File) + "|" + regexp.QuoteMeta(creds.Dir) + "/[a-z0-9.-]+"
 	var forms []*regexp.Regexp
-	for _, v := range []string{pi.APIKey(origin), omp.APIKey(origin), opencode.APIKey(origin), claude.APIKeyHelper(origin), args[len(args)-1]} {
+	helpers := []string{
+		pi.APIKey(origin), omp.APIKey(origin), opencode.APIKey(origin),
+		claude.APIKeyHelper(origin), args[len(args)-1],
+	}
+	for _, v := range helpers {
 		quoted := strings.ReplaceAll(regexp.QuoteMeta(v), regexp.QuoteMeta(creds.Rel(origin)), "(?:"+rel+")")
 		forms = append(forms, regexp.MustCompile("^"+quoted+"$"))
 	}
@@ -96,14 +100,16 @@ func collapseModels(text, summary string) (string, string) {
 		}
 		in := "      "
 		for j := i + 1; j < len(lines) && strings.HasPrefix(lines[j], in); j++ {
-			if head := strings.TrimSuffix(lines[j], "\n"); head != in+`"models": [` && head != in+`"models": {` {
+			head := strings.TrimSuffix(lines[j], "\n")
+			if head != in+`"models": [` && head != in+`"models": {` {
 				continue
 			}
 			for k := j + 1; k < len(lines) && strings.HasPrefix(lines[k], in); k++ {
 				switch end := strings.TrimSuffix(lines[k], "\n")[len(in):]; end {
 				case "]", "],", "}", "},":
-					return strings.Join(lines[j:k+1], ""), strings.Join(lines[:j], "") + in + `"models": ` + summary +
-						end[1:] + "\n" + strings.Join(lines[k+1:], "")
+					block := strings.Join(lines[j:k+1], "")
+					before, after := strings.Join(lines[:j], ""), strings.Join(lines[k+1:], "")
+					return block, before + in + `"models": ` + summary + end[1:] + "\n" + after
 				}
 			}
 		}
@@ -140,8 +146,9 @@ func collapseYAMLModels(text, summary string) (string, string) {
 		if end == i {
 			return "", text
 		}
-		return strings.Join(lines[i:end+1], ""), strings.Join(lines[:i], "") + "    models: " + summary + "\n" +
-			strings.Join(lines[end+1:], "")
+		block := strings.Join(lines[i:end+1], "")
+		before, after := strings.Join(lines[:i], ""), strings.Join(lines[end+1:], "")
+		return block, before + "    models: " + summary + "\n" + after
 	}
 	return "", text
 }
@@ -331,8 +338,8 @@ func (r redactor) listString(b *strings.Builder, text string, i int, field strin
 	}
 	body, closed := text[i+len(delim):end], strings.HasPrefix(text[end:], delim)
 	if closed && !multi {
-		if rest := strings.TrimLeft(text[end+1:], " \t"); rest != "" && (rest[0] == ':' || rest[0] == '=') ||
-			r.keeps(field, delim+body+delim) {
+		rest := strings.TrimLeft(text[end+1:], " \t")
+		if rest != "" && (rest[0] == ':' || rest[0] == '=') || r.keeps(field, delim+body+delim) {
 			b.WriteString(text[i : end+1])
 			return end + 1
 		}

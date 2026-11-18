@@ -14,7 +14,8 @@ import (
 // toolNames are the tools setup can configure, in menu order; each is also the name of its binary.
 var toolNames = []string{"pi", "opencode", "codex", "claude", "omp"}
 
-const laterHint = "To configure a harness later, run: aiven-ai-gateway setup <pi|opencode|codex|claude|omp>"
+const laterHint = "To configure a harness later, run: " +
+	"aiven-ai-gateway setup <pi|opencode|codex|claude|omp>"
 
 // pickTools asks which tools to configure, offering those found on PATH, or every tool when none is. Cancelling
 // returns errCancelled; choosing none returns no tools.
@@ -76,7 +77,8 @@ func parsePick(answer string, offered []string) ([]string, bool) {
 		return offered, true
 	}
 	var picked []string
-	for field := range strings.FieldsFuncSeq(answer, func(r rune) bool { return r == ',' || r == ' ' }) {
+	sep := func(r rune) bool { return r == ',' || r == ' ' }
+	for field := range strings.FieldsFuncSeq(answer, sep) {
 		name := field
 		if n, err := strconv.Atoi(field); err == nil && n >= 1 && n <= len(offered) {
 			name = offered[n-1]
