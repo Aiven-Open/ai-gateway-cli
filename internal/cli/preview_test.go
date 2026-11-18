@@ -21,7 +21,11 @@ import (
 
 var (
 	previewNow   = time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
-	previewTable = []models.Model{{Alias: "claude-sonnet-5-5"}, {Alias: "glm-5"}, {Alias: "gpt-6.1-sol"}}
+	previewTable = []models.Model{
+		{Alias: "claude-sonnet-5-5"},
+		{Alias: "glm-5"},
+		{Alias: "gpt-6.1-sol"},
+	}
 )
 
 // lineAnswers answers ReadLine from a queue, running hook before each prompt; an exhausted queue is end of input.
@@ -71,7 +75,12 @@ func readTestFile(t *testing.T, path string) string {
 }
 
 // configure snapshots pi's write set and runs configureTool on it, returning the outcome and stderr.
-func configure(t *testing.T, env config.Env, deps Deps, yes, asDefault bool) (targetOutcome, string) {
+func configure(
+	t *testing.T,
+	env config.Env,
+	deps Deps,
+	yes, asDefault bool,
+) (targetOutcome, string) {
 	t.Helper()
 	plan, err := prepareSnapshot(env, previewTable, "pi", asDefault)
 	if err != nil {
@@ -107,10 +116,20 @@ func TestConfigureToolNamesTheBackupItKeeps(t *testing.T) {
 	if got := readTestFile(t, path); !strings.Contains(got, `"glm-5"`) {
 		t.Errorf("models.json = %q, want the gateway models", got)
 	}
-	if info, err := os.Stat(path); err != nil || runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+	if info, err := os.Stat(
+		path,
+	); err != nil ||
+		runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Errorf("models.json mode: %v, %v", info, err)
 	}
-	if out, stderr = configure(t, env, Deps{}, true, false); out.status != statusUnchanged || !strings.Contains(stderr, "Already configured") {
+	if out, stderr = configure(
+		t,
+		env,
+		Deps{},
+		true,
+		false,
+	); out.status != statusUnchanged ||
+		!strings.Contains(stderr, "Already configured") {
 		t.Errorf("rerun: outcome %+v, stderr %q", out, stderr)
 	}
 }
@@ -156,7 +175,13 @@ func TestConfigureToolWritesXDGConfigHomeOutsideUserHome(t *testing.T) {
 	if out.status != statusConfigured {
 		t.Fatalf("outcome %+v, stderr %q", out, stderr.String())
 	}
-	if got := readTestFile(t, filepath.Join(env.ConfigHome, "opencode/opencode.json")); !strings.Contains(got, `"aiven"`) {
+	if got := readTestFile(
+		t,
+		filepath.Join(env.ConfigHome, "opencode/opencode.json"),
+	); !strings.Contains(
+		got,
+		`"aiven"`,
+	) {
 		t.Errorf("opencode.json = %q, want Aiven provider", got)
 	}
 	link := filepath.Join(t.TempDir(), "xdg-link")
@@ -164,7 +189,13 @@ func TestConfigureToolWritesXDGConfigHomeOutsideUserHome(t *testing.T) {
 		t.Fatal(err)
 	}
 	env.ConfigHome = link
-	if _, err := prepareSnapshot(env, previewTable, "opencode", false); err == nil || !strings.Contains(err.Error(), link+" is not a regular directory") {
+	if _, err := prepareSnapshot(
+		env,
+		previewTable,
+		"opencode",
+		false,
+	); err == nil ||
+		!strings.Contains(err.Error(), link+" is not a regular directory") {
 		t.Errorf("snapshot through symlinked XDG_CONFIG_HOME: %v", err)
 	}
 }
@@ -175,11 +206,15 @@ func TestConfigureToolKeepsCommentsAndSummarisesTheModels(t *testing.T) {
 	const before = "{\n  // local models\n  \"providers\": {\n    \"local\": {\"baseUrl\": \"http://localhost\"}, // mine\n  },\n}\n"
 	writeTestFile(t, path, before)
 	out, stderr := configure(t, env, Deps{}, true, false)
-	if out.status != statusConfigured || !strings.Contains(stderr, "[3 models: claude-sonnet-5-5, glm-5, … +1 more]") {
+	if out.status != statusConfigured ||
+		!strings.Contains(stderr, "[3 models: claude-sonnet-5-5, glm-5, … +1 more]") {
 		t.Fatalf("outcome %+v, stderr %q", out, stderr)
 	}
 	got := readTestFile(t, path)
-	if !strings.HasPrefix(got, "{\n  // local models\n  \"providers\": {\n    \"local\": {\"baseUrl\": \"http://localhost\"}, // mine\n    \"aiven\": {\n") {
+	if !strings.HasPrefix(
+		got,
+		"{\n  // local models\n  \"providers\": {\n    \"local\": {\"baseUrl\": \"http://localhost\"}, // mine\n    \"aiven\": {\n",
+	) {
 		t.Errorf("models.json = %q", got)
 	}
 }
@@ -196,11 +231,19 @@ func TestConfigureToolSummarisesTheOMPModels(t *testing.T) {
 	deps := Deps{Stderr: &stderr, Now: func() time.Time { return previewNow }}
 	out := targetOutcome{tool: "omp"}
 	configureTool(deps, newPresenter(env, deps, true), true, &out, plan.Files, previewTable)
-	if out.status != statusConfigured || !strings.Contains(stderr.String(), "+    models: [3 models: claude-sonnet-5-5, glm-5, … +1 more]\n") ||
+	if out.status != statusConfigured ||
+		!strings.Contains(
+			stderr.String(),
+			"+    models: [3 models: claude-sonnet-5-5, glm-5, … +1 more]\n",
+		) ||
 		strings.Contains(stderr.String(), "gpt-6.1-sol") {
 		t.Fatalf("outcome %+v, stderr %q", out, stderr.String())
 	}
-	if got := readTestFile(t, path); !strings.HasPrefix(got, "# local models\n") || !strings.Contains(got, "id: gpt-6.1-sol") {
+	if got := readTestFile(
+		t,
+		path,
+	); !strings.HasPrefix(got, "# local models\n") ||
+		!strings.Contains(got, "id: gpt-6.1-sol") {
 		t.Errorf("models.yml = %q, want every gateway model", got)
 	}
 }
@@ -265,10 +308,14 @@ func TestConfigureToolStopsWhenAFileChangesAfterInspection(t *testing.T) {
 	}
 	const edited = `{"providers":{"edited":{}}}`
 	var stderr strings.Builder
-	deps := Deps{Stderr: &stderr, Prompter: &lineAnswers{answers: []string{"y"}, hook: func() { writeTestFile(t, path, edited) }}}
+	deps := Deps{
+		Stderr:   &stderr,
+		Prompter: &lineAnswers{answers: []string{"y"}, hook: func() { writeTestFile(t, path, edited) }},
+	}
 	out := targetOutcome{tool: "pi"}
 	configureTool(deps, newPresenter(env, deps, true), false, &out, plan.Files, previewTable)
-	if out.status != statusFailed || !strings.Contains(out.reason, path+" changed since inspection") || len(out.written) != 0 {
+	if out.status != statusFailed || !strings.Contains(out.reason, path+" changed since inspection") ||
+		len(out.written) != 0 {
 		t.Fatalf("outcome %+v, stderr %q", out, stderr.String())
 	}
 	if got := readTestFile(t, path); got != edited {
@@ -289,7 +336,9 @@ func TestConfigureToolStopsWhenAFileChangesAfterInspection(t *testing.T) {
 		deps.Prompter = &lineAnswers{answers: []string{"y"}, hook: func() { _ = os.Chmod(path, 0o600) }}
 		out = targetOutcome{tool: "pi"}
 		configureTool(deps, newPresenter(env, deps, true), false, &out, plan.Files, previewTable)
-		if out.status != statusFailed || !strings.Contains(out.reason, path+" changed since inspection") || len(out.written) != 0 {
+		if out.status != statusFailed ||
+			!strings.Contains(out.reason, path+" changed since inspection") ||
+			len(out.written) != 0 {
 			t.Fatalf("mode change outcome %+v, stderr %q", out, stderr.String())
 		}
 		if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o600 {
@@ -307,7 +356,13 @@ func TestConfigureToolChecksEveryFileBeforeTouchingAny(t *testing.T) {
 	for _, during := range []string{"prompt", "write"} {
 		t.Run(during, func(t *testing.T) {
 			env := previewEnv(t)
-			modelsPath, settings := filepath.Join(env.UserHome, ".pi/agent/models.json"), filepath.Join(env.UserHome, ".pi/agent/settings.json")
+			modelsPath, settings := filepath.Join(
+				env.UserHome,
+				".pi/agent/models.json",
+			), filepath.Join(
+				env.UserHome,
+				".pi/agent/settings.json",
+			)
 			writeTestFile(t, settings, `{"theme":"dark"}`)
 			plan, err := prepareSnapshot(env, previewTable, "pi", true)
 			if err != nil {
@@ -331,7 +386,8 @@ func TestConfigureToolChecksEveryFileBeforeTouchingAny(t *testing.T) {
 			}
 			out := targetOutcome{tool: "pi", asDefault: true}
 			configureTool(deps, newPresenter(env, deps, true), false, &out, plan.Files, previewTable)
-			if out.status != want.status || strings.Join(out.written, ",") != strings.Join(want.written, ",") ||
+			if out.status != want.status ||
+				strings.Join(out.written, ",") != strings.Join(want.written, ",") ||
 				!strings.Contains(out.reason, settings+" changed since inspection") {
 				t.Fatalf("outcome %+v, stderr %q", out, stderr.String())
 			}
@@ -359,8 +415,13 @@ func TestWriteFilesKeepsAnEditMadeWhileTheBackupIsTaken(t *testing.T) {
 	const edited = `{"providers":{"edited":{}}}`
 	backup := fsutil.BackupPath(path, previewNow)
 	// The name is picked after the first check, so only the check before the replace sees this edit.
-	completed, err := writeFiles(plan.Files, func(string) string { writeTestFile(t, path, edited); return backup }, Deps{})
-	if err == nil || !strings.Contains(err.Error(), path+" changed since inspection") || len(completed) != 0 {
+	completed, err := writeFiles(
+		plan.Files,
+		func(string) string { writeTestFile(t, path, edited); return backup },
+		Deps{},
+	)
+	if err == nil || !strings.Contains(err.Error(), path+" changed since inspection") ||
+		len(completed) != 0 {
 		t.Fatalf("completed %v, err %v", completed, err)
 	}
 	if got := readTestFile(t, path); got != edited {
@@ -375,11 +436,19 @@ func TestWriteFilesKeepsAnEditMadeWhileTheBackupIsTaken(t *testing.T) {
 			t.Fatal(err)
 		}
 		backup2 := fsutil.BackupPath(path, previewNow)
-		completed, err = writeFiles(plan.Files, func(string) string { _ = os.Chmod(path, 0o600); return backup2 }, Deps{})
-		if err == nil || !strings.Contains(err.Error(), path+" changed since inspection") || len(completed) != 0 {
+		completed, err = writeFiles(
+			plan.Files,
+			func(string) string { _ = os.Chmod(path, 0o600); return backup2 },
+			Deps{},
+		)
+		if err == nil || !strings.Contains(err.Error(), path+" changed since inspection") ||
+			len(completed) != 0 {
 			t.Fatalf("mode change completed %v, err %v", completed, err)
 		}
-		if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o600 || readTestFile(t, path) != edited {
+		if info, err := os.Stat(
+			path,
+		); err != nil || info.Mode().Perm() != 0o600 ||
+			readTestFile(t, path) != edited {
 			t.Errorf("models.json = %v (%v), want 0600 and content kept", info, err)
 		}
 	}
@@ -404,7 +473,12 @@ func TestWriteFilesRefusesASymlinkSwappedBeforeBackup(t *testing.T) {
 		}
 		return path + ".bak"
 	}
-	if _, err := writeFiles(plan.Files[:1], swap, Deps{}); err == nil || !strings.Contains(err.Error(), "is a symlink") {
+	if _, err := writeFiles(
+		plan.Files[:1],
+		swap,
+		Deps{},
+	); err == nil ||
+		!strings.Contains(err.Error(), "is a symlink") {
 		t.Fatalf("writeFiles through swapped symlink: %v", err)
 	}
 	if _, err := os.Stat(path + ".bak"); !errors.Is(err, os.ErrNotExist) {
@@ -439,10 +513,17 @@ func TestWriteFilesStaysInTheInspectedDirectoryWhenItsPathIsReplaced(t *testing.
 	if entries, _ := os.ReadDir(elsewhere); len(entries) != 0 {
 		t.Errorf("wrote through the symlink: %v", entries)
 	}
-	if got := readTestFile(t, filepath.Join(moved, "models.json")); got == before || !strings.Contains(got, `"aiven"`) {
+	if got := readTestFile(
+		t,
+		filepath.Join(moved, "models.json"),
+	); got == before ||
+		!strings.Contains(got, `"aiven"`) {
 		t.Errorf("models.json = %q, want it replaced in the directory inspected", got)
 	}
-	if got := readTestFile(t, filepath.Join(moved, "models.json.aiven-20261028T120000Z.bak")); got != before {
+	if got := readTestFile(
+		t,
+		filepath.Join(moved, "models.json.aiven-20261028T120000Z.bak"),
+	); got != before {
 		t.Errorf("backup = %q, want the inspected content", got)
 	}
 }
@@ -458,11 +539,18 @@ func TestConfigureToolKeepsThePreviewedBackupNameWhenAnotherRunTakesIt(t *testin
 		t.Fatal(err)
 	}
 	var stderr strings.Builder
-	deps := Deps{Stderr: &stderr, Now: func() time.Time { return previewNow },
-		Prompter: &lineAnswers{answers: []string{"y"}, hook: func() { writeTestFile(t, taken, "another run") }}}
+	deps := Deps{
+		Stderr: &stderr,
+		Now:    func() time.Time { return previewNow },
+		Prompter: &lineAnswers{
+			answers: []string{"y"},
+			hook:    func() { writeTestFile(t, taken, "another run") },
+		},
+	}
 	out := targetOutcome{tool: "pi"}
 	configureTool(deps, newPresenter(env, deps, true), false, &out, plan.Files, previewTable)
-	if out.status != statusFailed || !strings.Contains(stderr.String(), "(previous version: "+taken+")") ||
+	if out.status != statusFailed ||
+		!strings.Contains(stderr.String(), "(previous version: "+taken+")") ||
 		!strings.Contains(out.reason, taken+" already exists; retry") {
 		t.Fatalf("outcome %+v, stderr %q", out, stderr.String())
 	}
@@ -473,7 +561,13 @@ func TestConfigureToolKeepsThePreviewedBackupNameWhenAnotherRunTakesIt(t *testin
 
 func TestConfigureToolReportsAPartialWrite(t *testing.T) {
 	env := previewEnv(t)
-	modelsPath, settings := filepath.Join(env.UserHome, ".pi/agent/models.json"), filepath.Join(env.UserHome, ".pi/agent/settings.json")
+	modelsPath, settings := filepath.Join(
+		env.UserHome,
+		".pi/agent/models.json",
+	), filepath.Join(
+		env.UserHome,
+		".pi/agent/settings.json",
+	)
 	const before = `{"theme":"dark"}`
 	writeTestFile(t, settings, before)
 	deps := Deps{WriteFile: func(path string, data []byte, perm os.FileMode) error {
@@ -483,10 +577,14 @@ func TestConfigureToolReportsAPartialWrite(t *testing.T) {
 		return fsutil.WriteAtomic(path, data, perm)
 	}}
 	out, stderr := configure(t, env, deps, true, true)
-	if out.status != statusPartial || len(out.written) != 1 || out.written[0] != modelsPath+" (new file)" {
+	if out.status != statusPartial || len(out.written) != 1 ||
+		out.written[0] != modelsPath+" (new file)" {
 		t.Fatalf("outcome %+v, stderr %q", out, stderr)
 	}
-	if !strings.Contains(stderr, "partially configured; completed "+modelsPath+" (new file); remaining operation failed: replace "+settings) ||
+	if !strings.Contains(
+		stderr,
+		"partially configured; completed "+modelsPath+" (new file); remaining operation failed: replace "+settings,
+	) ||
 		!strings.Contains(stderr, "Native default: Aiven becomes the default for Pi") {
 		t.Errorf("stderr %q", stderr)
 	}
@@ -513,7 +611,8 @@ func TestPrepareSnapshotRefusesRedirectedParents(t *testing.T) {
 		t.Fatal(err)
 	}
 	agent := filepath.Join(env.UserHome, ".pi/agent")
-	if f := plan.Files[0]; !f.Inspected || f.Existed || strings.Join(f.Parents, ",") != agent+","+filepath.Dir(agent) {
+	if f := plan.Files[0]; !f.Inspected || f.Existed ||
+		strings.Join(f.Parents, ",") != agent+","+filepath.Dir(agent) {
 		t.Fatalf("snapshot %+v", f)
 	}
 	elsewhere := filepath.Join(t.TempDir(), "agent")
@@ -531,13 +630,20 @@ func TestPrepareSnapshotRefusesRedirectedParents(t *testing.T) {
 	deps := Deps{Stderr: &stderr}
 	out := targetOutcome{tool: "pi"}
 	configureTool(deps, newPresenter(env, deps, true), true, &out, plan.Files, previewTable)
-	if out.status != statusFailed || !strings.Contains(out.reason, agent+" is not a regular directory") {
+	if out.status != statusFailed ||
+		!strings.Contains(out.reason, agent+" is not a regular directory") {
 		t.Errorf("outcome %+v, stderr %q", out, stderr.String())
 	}
 	if entries, _ := os.ReadDir(elsewhere); len(entries) != 0 {
 		t.Errorf("wrote through the link: %v", entries)
 	}
-	if _, err := prepareSnapshot(env, previewTable, "pi", false); err == nil || !strings.Contains(err.Error(), agent+" is not a regular directory") {
+	if _, err := prepareSnapshot(
+		env,
+		previewTable,
+		"pi",
+		false,
+	); err == nil ||
+		!strings.Contains(err.Error(), agent+" is not a regular directory") {
 		t.Errorf("snapshot through a link: %v", err)
 	}
 }
@@ -576,10 +682,14 @@ func TestPrepareSnapshotRefusesRedirectedOMPHome(t *testing.T) {
 			deps := Deps{Stderr: &stderr}
 			out := targetOutcome{tool: "omp", asDefault: true}
 			configureTool(deps, newPresenter(env, deps, true), true, &out, plan.Files, previewTable)
-			if out.status != statusFailed || !strings.Contains(out.reason, ompHome+" is not a regular directory") {
+			if out.status != statusFailed ||
+				!strings.Contains(out.reason, ompHome+" is not a regular directory") {
 				t.Errorf("outcome %+v, stderr %q", out, stderr.String())
 			}
-			if entries, err := os.ReadDir(filepath.Join(elsewhere, "agent")); err != nil || len(entries) != 0 {
+			if entries, err := os.ReadDir(
+				filepath.Join(elsewhere, "agent"),
+			); err != nil ||
+				len(entries) != 0 {
 				t.Errorf("files written through redirected OMP home: %v, err %v", entries, err)
 			}
 		})
@@ -612,16 +722,26 @@ func TestYAMLPreviewRedactsCredentialsOnBothSides(t *testing.T) {
 					t.Errorf("credential shown: %q / %q", from, to)
 				}
 			}
-			if !strings.Contains(to, "apiKey: "+creds.EnvVar) || !strings.Contains(from, "baseUrl: https://example.invalid/v1") {
+			if !strings.Contains(to, "apiKey: "+creds.EnvVar) ||
+				!strings.Contains(from, "baseUrl: https://example.invalid/v1") {
 				t.Errorf("redacted too much: %q / %q", from, to)
 			}
 		})
 	}
-	if from, _ := shown(harness.File{Path: "/x/models.yml"}, []byte("a: [b\n"), nil); from != "<redacted: YAML preview unavailable>\n" {
+	if from, _ := shown(
+		harness.File{Path: "/x/models.yml"},
+		[]byte("a: [b\n"),
+		nil,
+	); from != "<redacted: YAML preview unavailable>\n" {
 		t.Errorf("unparsable YAML shown as %q", from)
 	}
 	later := "theme: dark\n---\ndefaultValue: &credential SYNTHETIC_later_document\napiKey: *credential\n"
-	if from, to := shown(harness.File{Path: "/x/models.yml", Data: []byte(later + "x: 1\n")}, []byte(later), nil); strings.Contains(from+to, "SYNTHETIC") || !strings.Contains(from, "theme: dark") {
+	if from, to := shown(
+		harness.File{Path: "/x/models.yml", Data: []byte(later + "x: 1\n")},
+		[]byte(later),
+		nil,
+	); strings.Contains(from+to, "SYNTHETIC") ||
+		!strings.Contains(from, "theme: dark") {
 		t.Errorf("aliased credential in a later document: %q / %q", from, to)
 	}
 }

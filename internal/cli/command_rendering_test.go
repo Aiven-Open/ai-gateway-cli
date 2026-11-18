@@ -34,7 +34,15 @@ func TestEarlyHelpPlainFlagBoundaryGrid(t *testing.T) {
 						Stdout: &out, Stderr: &errOut, Term: Terminal{StdoutTTY: stdoutTTY},
 					})
 					if !handled || code != 0 || errOut.Len() != 0 || out.String() != reference.String() {
-						t.Errorf("%q/TTY=%v: handled=%v code=%d out=%q err=%q", args, stdoutTTY, handled, code, out.String(), errOut.String())
+						t.Errorf(
+							"%q/TTY=%v: handled=%v code=%d out=%q err=%q",
+							args,
+							stdoutTTY,
+							handled,
+							code,
+							out.String(),
+							errOut.String(),
+						)
 					}
 				}
 			}
@@ -51,7 +59,11 @@ func TestEarlyHelpPlainFlagBoundaryGrid(t *testing.T) {
 		}
 	}
 	var out bytes.Buffer
-	handled, code := Informational([]string{"launch", "claude", "--", "--plain", "--help"}, nil, Deps{Stdout: &out})
+	handled, code := Informational(
+		[]string{"launch", "claude", "--", "--plain", "--help"},
+		nil,
+		Deps{Stdout: &out},
+	)
 	if handled || code != 0 || out.Len() != 0 {
 		t.Fatalf("native help intercepted: handled=%v code=%d out=%q", handled, code, out.String())
 	}
@@ -61,7 +73,17 @@ func TestEarlyHelpPlainFlagBoundaryGrid(t *testing.T) {
 func TestCommandRenderingEquivalenceGrid(t *testing.T) {
 	t.Parallel()
 	style := regexp.MustCompile("\x1b\\[[0-9;]*m")
-	words := []string{"", "two words", "名前", "café", "👩\u200d💻", "it's", "$(id)", "`id`", `model; touch "$HOME/shell-marker"; #`}
+	words := []string{
+		"",
+		"two words",
+		"名前",
+		"café",
+		"👩\u200d💻",
+		"it's",
+		"$(id)",
+		"`id`",
+		`model; touch "$HOME/shell-marker"; #`,
+	}
 	for r := rune(0x20); r < 0x7f; r++ {
 		words = append(words, "before"+string(r)+"after")
 	}
@@ -72,7 +94,17 @@ func TestCommandRenderingEquivalenceGrid(t *testing.T) {
 	for r := rune(0x7f); r <= 0x9f; r++ {
 		controls = append(controls, string(r))
 	}
-	controls = append(controls, "\u061c", "\u200e", "\u200f", "\u202a", "\u202e", "\u2066", "\u2069", "\xff")
+	controls = append(
+		controls,
+		"\u061c",
+		"\u200e",
+		"\u200f",
+		"\u202a",
+		"\u202e",
+		"\u2066",
+		"\u2069",
+		"\xff",
+	)
 	for _, tool := range []string{"pi", "opencode", "omp"} {
 		for _, control := range controls {
 			for _, id := range []string{control + "model", "mo" + control + "del", "model" + control} {
@@ -81,7 +113,13 @@ func TestCommandRenderingEquivalenceGrid(t *testing.T) {
 					u := newUI(&out, colored, nil, !colored)
 					u.command(0, directCommand(tool, []models.Model{{Alias: id}}, false))
 					if out.Len() != 0 {
-						t.Fatalf("%s/color=%v/control=%q advertised altered command %q", tool, colored, id, out.String())
+						t.Fatalf(
+							"%s/color=%v/control=%q advertised altered command %q",
+							tool,
+							colored,
+							id,
+							out.String(),
+						)
 					}
 				}
 			}

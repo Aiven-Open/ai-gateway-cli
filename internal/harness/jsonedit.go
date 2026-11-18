@@ -317,7 +317,8 @@ func (e jsonEditor) object(n jsonNode, want map[string]any, indent string) ([]by
 	for j, i := range kept {
 		m := n.members[i]
 		// A member that shared its line with a removed one now opens the line, so it takes the line's indentation.
-		if i > 0 && !bytes.HasSuffix(tail(i-1), []byte("\n")) && bytes.HasSuffix(b.Bytes(), []byte("\n")) {
+		if i > 0 && !bytes.HasSuffix(tail(i-1), []byte("\n")) &&
+			bytes.HasSuffix(b.Bytes(), []byte("\n")) {
 			b.WriteString(lineIndent(e.src, m.start))
 		}
 		b.Write(head(i))

@@ -80,10 +80,13 @@ func makeCertificate() error {
 		return err
 	}
 	server := &x509.Certificate{
-		SerialNumber: big.NewInt(2), Subject: pkix.Name{CommonName: "127.0.0.1"},
-		NotBefore: now.Add(-time.Minute), NotAfter: now.Add(time.Hour),
-		IPAddresses: []net.IP{net.ParseIP("127.0.0.1")},
-		KeyUsage:    x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		SerialNumber: big.NewInt(2),
+		Subject:      pkix.Name{CommonName: "127.0.0.1"},
+		NotBefore:    now.Add(-time.Minute),
+		NotAfter:     now.Add(time.Hour),
+		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
 	serverDER, err := x509.CreateCertificate(rand.Reader, server, ca, &serverKey.PublicKey, caKey)
 	if err != nil {

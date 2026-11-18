@@ -25,7 +25,8 @@ func isBatch(path string) bool {
 // consume one ^ and leave \" outside cmd.exe quotes for the target binary. Splitting after % when followed by an
 // identifier character keeps cmd.exe from expanding %VAR% on the /c line.
 func BatchCmdLine(comspec, path string, args []string) (string, error) {
-	if comspec == "" || path == "" || strings.ContainsAny(comspec, "\r\n\x00\"") || strings.ContainsAny(path, "\r\n\x00\"%") {
+	if comspec == "" || path == "" || strings.ContainsAny(comspec, "\r\n\x00\"") ||
+		strings.ContainsAny(path, "\r\n\x00\"%") {
 		return "", errors.New("cannot quote batch interpreter or script path")
 	}
 	var inner strings.Builder
@@ -34,7 +35,9 @@ func BatchCmdLine(comspec, path string, args []string) (string, error) {
 	inner.WriteByte('"')
 	for _, arg := range args {
 		if strings.ContainsAny(arg, "\r\n\x00") {
-			return "", errors.New("cannot pass an argument containing a newline or NUL to a Windows batch file")
+			return "", errors.New(
+				"cannot pass an argument containing a newline or NUL to a Windows batch file",
+			)
 		}
 		inner.WriteByte(' ')
 		writeBatchArg(&inner, arg)

@@ -25,7 +25,11 @@ func TestListedModelsAppearInCLIAndCatalogueConfigurations(t *testing.T) {
 	g := newGatewayDouble(t)
 	g.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			_, _ = w.Write([]byte(`{"data":[{"id":"private-customer-model","display_name":"Private customer display","owned_by":"Private customer"},{"id":"claude-sonnet"},{"id":"gpt-6.1-sol"},{"id":"gpt-oss-120b"}]}`))
+			_, _ = w.Write(
+				[]byte(
+					`{"data":[{"id":"private-customer-model","display_name":"Private customer display","owned_by":"Private customer"},{"id":"claude-sonnet"},{"id":"gpt-6.1-sol"},{"id":"gpt-oss-120b"}]}`,
+				),
+			)
 			return
 		}
 		_, _ = w.Write([]byte(`{"choices":[],"content":[],"output":[]}`))
@@ -44,7 +48,8 @@ func TestListedModelsAppearInCLIAndCatalogueConfigurations(t *testing.T) {
 				if r.code != 0 {
 					t.Fatalf("%v: code=%d stderr=%s", args, r.code, r.stderr)
 				}
-				if (args[0] == "login" || args[0] == "models") && !strings.Contains(r.stdout, "private-customer-model") {
+				if (args[0] == "login" || args[0] == "models") &&
+					!strings.Contains(r.stdout, "private-customer-model") {
 					t.Fatalf("%v did not show a listed model", args)
 				}
 			}
@@ -57,7 +62,8 @@ func TestListedModelsAppearInCLIAndCatalogueConfigurations(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if (tool == "pi" || tool == "omp" || tool == "opencode") && !strings.Contains(string(data), "private-customer-model") {
+				if (tool == "pi" || tool == "omp" || tool == "opencode") &&
+					!strings.Contains(string(data), "private-customer-model") {
 					t.Fatal("catalogue configuration omitted a listed entry")
 				}
 			}
@@ -74,7 +80,9 @@ func TestCancellationAfterASuccessfulProtocolPreventsAllWrites(t *testing.T) {
 	defer cancel()
 	g.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			_, _ = w.Write([]byte(`{"data":[{"id":"claude-sonnet"},{"id":"gpt-6.1-sol"},{"id":"gpt-oss-120b"}]}`))
+			_, _ = w.Write(
+				[]byte(`{"data":[{"id":"claude-sonnet"},{"id":"gpt-6.1-sol"},{"id":"gpt-oss-120b"}]}`),
+			)
 			return
 		}
 		if r.URL.Path == "/v1/chat/completions" {
@@ -103,7 +111,8 @@ func TestFailedProtocolCheckPreservesSavedKeyAndReportsNoNewSave(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := s.run("setup", "claude", "--yes")
-	if r.code != 1 || !strings.Contains(r.stderr, "not saved by this run; existing key files unchanged") {
+	if r.code != 1 ||
+		!strings.Contains(r.stderr, "not saved by this run; existing key files unchanged") {
 		t.Fatalf("misleading failed-check summary: code=%d stderr=%s", r.code, r.stderr)
 	}
 	if after, err := os.ReadFile(s.keyPath()); err != nil || string(after) != string(keyBefore) {
@@ -125,7 +134,9 @@ func TestSetupChecksConfiguredProtocolsAndWritesOnlyReadyTools(t *testing.T) {
 				counts[r.URL.Path]++
 				mu.Unlock()
 				if r.Method == http.MethodGet {
-					_, _ = w.Write([]byte(`{"data":[{"id":"claude-sonnet"},{"id":"gpt-6.1-sol"},{"id":"gpt-oss-120b"}]}`))
+					_, _ = w.Write(
+						[]byte(`{"data":[{"id":"claude-sonnet"},{"id":"gpt-6.1-sol"},{"id":"gpt-oss-120b"}]}`),
+					)
 					return
 				}
 				var body map[string]any
@@ -141,7 +152,8 @@ func TestSetupChecksConfiguredProtocolsAndWritesOnlyReadyTools(t *testing.T) {
 				case "/v1/chat/completions":
 					// Pi and OMP check Chat Completions with gpt-oss-120b, OpenCode with claude-sonnet: one model's
 					// refusal must not fail a tool that checked another.
-					if body["model"] != "gpt-oss-120b" && body["model"] != "claude-sonnet" || body["max_tokens"] != float64(1) {
+					if body["model"] != "gpt-oss-120b" && body["model"] != "claude-sonnet" ||
+						body["max_tokens"] != float64(1) {
 						t.Errorf("chat body = %v", body)
 					}
 					if body["model"] == "claude-sonnet" {
@@ -191,15 +203,23 @@ func TestSetupChecksConfiguredProtocolsAndWritesOnlyReadyTools(t *testing.T) {
 					t.Errorf("missing %q in %s", want, r.stderr)
 				}
 			}
-			if strings.Contains(r.stderr, "refused that key") || strings.Contains(r.stderr, "rejected the key") || strings.Contains(r.stderr, keyValid) {
+			if strings.Contains(r.stderr, "refused that key") ||
+				strings.Contains(r.stderr, "rejected the key") ||
+				strings.Contains(r.stderr, keyValid) {
 				t.Errorf("request refusal misclassified or key exposed: %s", r.stderr)
 			}
 			for _, tool := range []string{"pi", "omp"} {
-				if data, err := os.ReadFile(filepath.Join(s.fakeHome, toolFiles[tool])); err != nil || string(data) != "{}" {
+				if data, err := os.ReadFile(
+					filepath.Join(s.fakeHome, toolFiles[tool]),
+				); err != nil ||
+					string(data) != "{}" {
 					t.Errorf("failed %s changed: %q %v", tool, data, err)
 				}
 			}
-			if data, err := os.ReadFile(filepath.Join(s.fakeHome, toolFiles["opencode"])); err != nil || string(data) == "{}" {
+			if data, err := os.ReadFile(
+				filepath.Join(s.fakeHome, toolFiles["opencode"]),
+			); err != nil ||
+				string(data) == "{}" {
 				t.Errorf("ready opencode not written: %q %v", data, err)
 			}
 			for _, tool := range []string{"claude", "codex"} {
@@ -211,7 +231,12 @@ func TestSetupChecksConfiguredProtocolsAndWritesOnlyReadyTools(t *testing.T) {
 			defer mu.Unlock()
 			for endpoint, want := range map[string]int{"/v1/models": 1, "/v1/chat/completions": 2, "/v1/messages": 1, "/v1/responses": 1} {
 				if counts[endpoint] != want {
-					t.Errorf("%s count = %d, want %d: one per distinct protocol and model", endpoint, counts[endpoint], want)
+					t.Errorf(
+						"%s count = %d, want %d: one per distinct protocol and model",
+						endpoint,
+						counts[endpoint],
+						want,
+					)
 				}
 			}
 		})
@@ -227,7 +252,11 @@ func TestPiAndOmpConfigureModelProtocolsWithoutCompatibilityOverrides(t *testing
 			s := newSession(t, g).stdin(keyValid)
 			g.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodGet {
-					_, _ = w.Write([]byte(`{"data":[{"id":"claude-sonnet"},{"id":"gpt-6.1-sol"},{"id":"gpt-oss-120b"},{"id":"deepseek-v3.2"}]}`))
+					_, _ = w.Write(
+						[]byte(
+							`{"data":[{"id":"claude-sonnet"},{"id":"gpt-6.1-sol"},{"id":"gpt-oss-120b"},{"id":"deepseek-v3.2"}]}`,
+						),
+					)
 					return
 				}
 				_, _ = w.Write([]byte(`{"choices":[],"content":[],"output":[]}`))
@@ -248,7 +277,12 @@ func TestPiAndOmpConfigureModelProtocolsWithoutCompatibilityOverrides(t *testing
 			if !ok || len(entries) != 4 {
 				t.Fatalf("missing explicit protocol models: %v", provider)
 			}
-			want := map[string]string{"claude-sonnet": "anthropic-messages", "gpt-6.1-sol": "openai-responses", "gpt-oss-120b": "openai-completions", "deepseek-v3.2": "openai-completions"}
+			want := map[string]string{
+				"claude-sonnet": "anthropic-messages",
+				"gpt-6.1-sol":   "openai-responses",
+				"gpt-oss-120b":  "openai-completions",
+				"deepseek-v3.2": "openai-completions",
+			}
 			for _, entry := range entries {
 				m := entry.(map[string]any)
 				api := want[m["id"].(string)]
@@ -302,7 +336,11 @@ func TestUnknownOnlyCatalogueUsesChatRegardlessOfDisplayOwner(t *testing.T) {
 			s := newSession(t, g).stdin(keyValid)
 			g.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodGet {
-					_, _ = w.Write([]byte(`{"data":[{"id":"private-router","owned_by":"Anthropic","display_name":"Claude Haiku"}]}`))
+					_, _ = w.Write(
+						[]byte(
+							`{"data":[{"id":"private-router","owned_by":"Anthropic","display_name":"Claude Haiku"}]}`,
+						),
+					)
 					return
 				}
 				if r.URL.Path != "/v1/chat/completions" {
@@ -403,7 +441,8 @@ func TestSetupRefusesAConfiguredModelTheKeyDoesNotGrant(t *testing.T) {
 				args = []string{"setup", "--key-stdin"}
 			}
 			r := s.run(args...)
-			if r.code == 0 || !strings.Contains(r.stderr, "claude-retired") && !strings.Contains(r.stderr, "gpt-retired") ||
+			if r.code == 0 ||
+				!strings.Contains(r.stderr, "claude-retired") && !strings.Contains(r.stderr, "gpt-retired") ||
 				!strings.Contains(r.stderr, "does not grant") {
 				t.Fatalf("exit %d, stderr %s", r.code, r.stderr)
 			}
@@ -432,7 +471,8 @@ func TestSetupChecksTheModelOfEveryClaudeSettingsFileItWrites(t *testing.T) {
 	s.writeUserSettings("settings.json", `{"model":"claude-retired"}`)
 	s.deps.Prompter = &callbackPrompter{answers: []string{"y"}}
 	r := s.run("setup", "claude", "--key-stdin")
-	if r.code == 0 || !strings.Contains(r.stderr, "claude-retired") || !strings.Contains(r.stderr, "does not grant") {
+	if r.code == 0 || !strings.Contains(r.stderr, "claude-retired") ||
+		!strings.Contains(r.stderr, "does not grant") {
 		t.Fatalf("exit %d, stdout %s, stderr %s", r.code, r.stdout, r.stderr)
 	}
 	if _, err := os.Stat(s.keyPath()); !os.IsNotExist(err) {
@@ -447,7 +487,9 @@ func TestAuthenticationFailureStopsTheRemainingChecks(t *testing.T) {
 	var sent []string
 	g.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			_, _ = w.Write([]byte(`{"data":[{"id":"claude-sonnet"},{"id":"gpt-6.1-sol"},{"id":"gpt-oss-120b"}]}`))
+			_, _ = w.Write(
+				[]byte(`{"data":[{"id":"claude-sonnet"},{"id":"gpt-6.1-sol"},{"id":"gpt-oss-120b"}]}`),
+			)
 			return
 		}
 		mu.Lock()

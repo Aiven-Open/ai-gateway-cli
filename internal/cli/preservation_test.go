@@ -104,14 +104,22 @@ env_key = 'OLD_CREDENTIAL_REFERENCE'
 	}
 	providers := after["model_providers"].(map[string]any)
 	aiven := providers["aiven"].(map[string]any)
-	if providers["unrelated"] == nil || aiven["request_max_retries"] != int64(7) || aiven["env_key"] != nil {
+	if providers["unrelated"] == nil || aiven["request_max_retries"] != int64(7) ||
+		aiven["env_key"] != nil {
 		t.Fatal("provider merge lost unrelated settings or kept conflicting key wiring")
 	}
 	beforeLaunch := configurationSnapshot(t, s.fakeHome, s.env.WorkDir)
 	if r := s.run("launch", "codex"); r.code != 0 {
 		t.Fatal(r.stderr)
 	}
-	if afterLaunch := configurationSnapshot(t, s.fakeHome, s.env.WorkDir); !reflect.DeepEqual(beforeLaunch, afterLaunch) {
+	if afterLaunch := configurationSnapshot(
+		t,
+		s.fakeHome,
+		s.env.WorkDir,
+	); !reflect.DeepEqual(
+		beforeLaunch,
+		afterLaunch,
+	) {
 		t.Fatal("launch changed the preserved dedicated profile")
 	}
 }
@@ -129,7 +137,14 @@ func TestCodexSetupRejectsMalformedConsumedProfileBeforeEffects(t *testing.T) {
 			if r := s.run("setup", "codex", "--key-stdin", "--yes"); r.code == 0 || len(g.journal()) != 0 {
 				t.Fatalf("invalid consumed profile reached gateway: %s", r.stderr)
 			}
-			if after := configurationSnapshot(t, s.fakeHome, s.env.WorkDir); !reflect.DeepEqual(before, after) {
+			if after := configurationSnapshot(
+				t,
+				s.fakeHome,
+				s.env.WorkDir,
+			); !reflect.DeepEqual(
+				before,
+				after,
+			) {
 				t.Fatal("invalid consumed profile changed files or credentials")
 			}
 		})
@@ -170,7 +185,14 @@ func TestClaudeLaunchResolvesCanonicalUserAndProjectPins(t *testing.T) {
 			if model, _ := call.envVar("ANTHROPIC_MODEL"); model != tc.want {
 				t.Fatal("child environment and inline selected models disagree")
 			}
-			if after := configurationSnapshot(t, s.fakeHome, s.env.WorkDir); !reflect.DeepEqual(before, after) {
+			if after := configurationSnapshot(
+				t,
+				s.fakeHome,
+				s.env.WorkDir,
+			); !reflect.DeepEqual(
+				before,
+				after,
+			) {
 				t.Fatal("resolving native pins changed configuration")
 			}
 		})

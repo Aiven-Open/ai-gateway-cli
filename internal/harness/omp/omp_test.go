@@ -30,7 +30,11 @@ const (
 
 // granted holds one model per protocol, out of order.
 func granted() []models.Model {
-	return []models.Model{{Alias: "glm"}, {Alias: "gpt-sol", Name: "GPT Sol"}, {Alias: "claude-sonnet", Name: "Claude Sonnet"}}
+	return []models.Model{
+		{Alias: "glm"},
+		{Alias: "gpt-sol", Name: "GPT Sol"},
+		{Alias: "claude-sonnet", Name: "Claude Sonnet"},
+	}
 }
 
 func input(t *testing.T) harness.Input {
@@ -85,8 +89,11 @@ func aivenOf(t *testing.T, f harness.File) map[string]any {
 func TestSetupAddsTheProviderWithEachModelOnItsProtocol(t *testing.T) {
 	in := input(t)
 	plan := setUp(t, in)
-	if len(plan.Files) != 1 || plan.Files[0].Path != agentPath(in.UserHome, "models.yml") || !plan.Files[0].Backup ||
-		!plan.Files[0].Models || plan.Argv != nil || plan.Env != nil {
+	if len(plan.Files) != 1 || plan.Files[0].Path != agentPath(in.UserHome, "models.yml") ||
+		!plan.Files[0].Backup ||
+		!plan.Files[0].Models ||
+		plan.Argv != nil ||
+		plan.Env != nil {
 		t.Fatalf("plan = %+v", plan)
 	}
 	aiven := aivenOf(t, plan.Files[0])
@@ -98,7 +105,8 @@ func TestSetupAddsTheProviderWithEachModelOnItsProtocol(t *testing.T) {
 		entry("glm", "glm", "openai-completions", baseURL+"/v1"),
 		entry("gpt-sol", "GPT Sol", "openai-responses", baseURL+"/v1"),
 	}
-	if aiven["baseUrl"] != baseURL+"/v1" || aiven["auth"] != "apiKey" || !strings.HasPrefix(aiven["apiKey"].(string), "!") ||
+	if aiven["baseUrl"] != baseURL+"/v1" || aiven["auth"] != "apiKey" ||
+		!strings.HasPrefix(aiven["apiKey"].(string), "!") ||
 		!reflect.DeepEqual(aiven["models"], want) {
 		t.Errorf("aiven = %v", aiven)
 	}
@@ -112,7 +120,12 @@ func TestAPIKeyRunsTheKeyHelper(t *testing.T) {
 	in := input(t)
 	helper := strings.TrimPrefix(aivenOf(t, setUp(t, in).Files[0])["apiKey"].(string), "!")
 	// Only another gateway's key file first: the helper must not read it.
-	if _, err := creds.Write(in.UserHome, config.DefaultBaseURL, "sk-test-other", fsutil.WriteAtomic); err != nil {
+	if _, err := creds.Write(
+		in.UserHome,
+		config.DefaultBaseURL,
+		"sk-test-other",
+		fsutil.WriteAtomic,
+	); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
@@ -143,13 +156,21 @@ providers:
     x: 1
 other: true
 `)
-	write(t, agentPath(in.UserHome, "config.yaml"), "enabledModels: [local/*]\nmodelRoles:\n  default: local/qwen\n  smol: local/tiny\n")
+	write(
+		t,
+		agentPath(in.UserHome, "config.yaml"),
+		"enabledModels: [local/*]\nmodelRoles:\n  default: local/qwen\n  smol: local/tiny\n",
+	)
 	plan := setUp(t, in)
 	if len(plan.Files) != 1 || plan.Files[0].Path != agentPath(in.UserHome, "models.yaml") {
 		t.Fatalf("plan = %+v", plan)
 	}
 	got := decode(t, plan.Files[0])
-	if got["other"] != true || !reflect.DeepEqual(got["providers"].(map[string]any)["local"], map[string]any{"baseUrl": "http://localhost"}) {
+	if got["other"] != true ||
+		!reflect.DeepEqual(
+			got["providers"].(map[string]any)["local"],
+			map[string]any{"baseUrl": "http://localhost"},
+		) {
 		t.Errorf("models.yaml = %v", got)
 	}
 	if aiven := aivenOf(t, plan.Files[0]); aiven["x"] != nil || len(aiven["models"].([]any)) != 3 {
@@ -162,10 +183,14 @@ other: true
 	}
 	in.Default = true
 	plan = setUp(t, in)
-	if len(plan.Files) != 2 || plan.Files[1].Path != agentPath(in.UserHome, "config.yaml") || !plan.Files[1].Backup {
+	if len(plan.Files) != 2 || plan.Files[1].Path != agentPath(in.UserHome, "config.yaml") ||
+		!plan.Files[1].Backup {
 		t.Fatalf("plan = %+v", plan)
 	}
-	want := map[string]any{"enabledModels": []any{"local/*"}, "modelRoles": map[string]any{"default": "aiven/claude-sonnet", "smol": "local/tiny"}}
+	want := map[string]any{
+		"enabledModels": []any{"local/*"},
+		"modelRoles":    map[string]any{"default": "aiven/claude-sonnet", "smol": "local/tiny"},
+	}
 	if got := decode(t, plan.Files[1]); !reflect.DeepEqual(got, want) {
 		t.Errorf("config.yaml = %v, want %v", got, want)
 	}
@@ -270,7 +295,11 @@ func TestReadyChecksEachModelsProtocolAndTheKeySource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	write(t, wired, strings.ReplaceAll(string(data), creds.Rel(baseURL), creds.Rel(config.DefaultBaseURL)))
+	write(
+		t,
+		wired,
+		strings.ReplaceAll(string(data), creds.Rel(baseURL), creds.Rel(config.DefaultBaseURL)),
+	)
 	if _, err := omp.Ready(in.UserHome, baseURL); err == nil {
 		t.Error("Ready with another gateway's key helper")
 	}

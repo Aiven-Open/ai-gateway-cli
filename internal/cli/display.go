@@ -24,11 +24,17 @@ import (
 var (
 	// multiFields are TOML multi-line strings: a basic one ends at the first unescaped """, a literal one at '''.
 	multiFields = []*regexp.Regexp{
-		regexp.MustCompile(`(?is)(` + redact.Name + `["']?\s*=\s*)(""")((?:[^"\\]|\\.|"{1,2}(?:[^"\\]|\\.))*)(""")`),
+		regexp.MustCompile(
+			`(?is)(` + redact.Name + `["']?\s*=\s*)(""")((?:[^"\\]|\\.|"{1,2}(?:[^"\\]|\\.))*)(""")`,
+		),
 		regexp.MustCompile(`(?is)(` + redact.Name + `["']?\s*=\s*)(''')(.*?)(''')`),
 	}
-	secretField  = regexp.MustCompile(`(?i)(` + redact.Name + `["']?\s*[:=]\s*)("(?:[^"\\\n]|\\.)*"|'[^'\n]*')`)
-	numberField  = regexp.MustCompile(`(?i)(` + redact.Name + `["']?\s*[:=][ \t]*)([+-]?\.?\d[^\s,\]}#/]*)`)
+	secretField = regexp.MustCompile(
+		`(?i)(` + redact.Name + `["']?\s*[:=]\s*)("(?:[^"\\\n]|\\.)*"|'[^'\n]*')`,
+	)
+	numberField = regexp.MustCompile(
+		`(?i)(` + redact.Name + `["']?\s*[:=][ \t]*)([+-]?\.?\d[^\s,\]}#/]*)`,
+	)
 	listField    = regexp.MustCompile(`(?i)(` + redact.Name + `["']?\s*[:=]\s*)[\[{]`)
 	placeholder  = regexp.MustCompile(`<redacted (\d+)>`)
 	blockComment = regexp.MustCompile(`(?s)((?:^|\s)/\*)((?:[^*]|\*+[^*/])*)(\*+/)`)
@@ -50,7 +56,11 @@ var launcherForms = func() []*regexp.Regexp {
 		claude.APIKeyHelper(origin), args[len(args)-1],
 	}
 	for _, v := range helpers {
-		quoted := strings.ReplaceAll(regexp.QuoteMeta(v), regexp.QuoteMeta(creds.Rel(origin)), "(?:"+rel+")")
+		quoted := strings.ReplaceAll(
+			regexp.QuoteMeta(v),
+			regexp.QuoteMeta(creds.Rel(origin)),
+			"(?:"+rel+")",
+		)
 		forms = append(forms, regexp.MustCompile("^"+quoted+"$"))
 	}
 	return forms
@@ -58,7 +68,8 @@ var launcherForms = func() []*regexp.Regexp {
 
 // launcherValue reports whether v is a value aiven-ai-gateway writes into a credential field.
 func launcherValue(v string) bool {
-	return v == creds.EnvVar || slices.ContainsFunc(launcherForms, func(re *regexp.Regexp) bool { return re.MatchString(v) })
+	return v == creds.EnvVar ||
+		slices.ContainsFunc(launcherForms, func(re *regexp.Regexp) bool { return re.MatchString(v) })
 }
 
 // shown renders both sides of a config change for its preview. A user's config can hold keys of their own, which a
@@ -95,7 +106,8 @@ func collapseModels(text, summary string) (string, string) {
 			parent = strings.TrimSpace(l)
 		}
 		// Only pi's providers.aiven and OpenCode's provider.aiven hold the gateway models.
-		if strings.TrimSuffix(l, "\n") != `    "aiven": {` || parent != `"providers": {` && parent != `"provider": {` {
+		if strings.TrimSuffix(l, "\n") != `    "aiven": {` ||
+			parent != `"providers": {` && parent != `"provider": {` {
 			continue
 		}
 		in := "      "
@@ -137,9 +149,11 @@ func collapseYAMLModels(text, summary string) (string, string) {
 		end := i
 		for k := i + 1; k < len(lines); k++ {
 			next := strings.TrimSuffix(lines[k], "\n")
-			if strings.HasPrefix(next, "    - ") || strings.HasPrefix(next, "      ") && strings.TrimSpace(next) != "" {
+			if strings.HasPrefix(next, "    - ") ||
+				strings.HasPrefix(next, "      ") && strings.TrimSpace(next) != "" {
 				end = k
-			} else if strings.TrimSpace(next) != "" && !strings.HasPrefix(next, "    #") {
+			} else if strings.TrimSpace(next) != "" &&
+				!strings.HasPrefix(next, "    #") {
 				break
 			}
 		}
@@ -167,7 +181,13 @@ type redactor struct {
 
 // newRedactor returns a redactor for texts, the sides of one diff.
 func newRedactor(reference func(field, value string) bool, texts ...string) redactor {
-	r := redactor{seen: map[string]int{}, reference: reference, marker: "\x00", taken: map[int]bool{}, last: new(int)}
+	r := redactor{
+		seen:      map[string]int{},
+		reference: reference,
+		marker:    "\x00",
+		taken:     map[int]bool{},
+		last:      new(int),
+	}
 	for _, text := range texts {
 		for strings.Contains(text, r.marker) {
 			r.marker += "\x00"
@@ -301,7 +321,8 @@ func (r redactor) lists(text string) string {
 				}
 				tok, rest := text[i:end], strings.TrimLeft(text[end:], " \t")
 				// A number can be a key, such as a PIN; other bare words are field names, booleans and the like.
-				number := digit(tok[0]) || len(tok) > 1 && strings.IndexByte("+-.", tok[0]) >= 0 && digit(tok[1])
+				number := digit(tok[0]) ||
+					len(tok) > 1 && strings.IndexByte("+-.", tok[0]) >= 0 && digit(tok[1])
 				if number && (rest == "" || rest[0] != '=' && rest[0] != ':') {
 					b.WriteString(r.hide(tok))
 				} else {
@@ -363,7 +384,8 @@ func (r redactor) blank(text string) string {
 
 // bare reports whether c can start a TOML bare key or literal.
 func bare(c byte) bool {
-	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || digit(c) || strings.IndexByte("_+.-", c) >= 0
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || digit(c) ||
+		strings.IndexByte("_+.-", c) >= 0
 }
 
 func digit(c byte) bool { return c >= '0' && c <= '9' }

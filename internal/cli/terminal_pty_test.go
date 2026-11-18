@@ -107,7 +107,8 @@ func termios(t *testing.T, f *os.File) *unix.Termios {
 
 // cooked reports the line discipline a shell leaves: echo, line editing, signals and newline translation.
 func cooked(tio *unix.Termios) bool {
-	return tio.Lflag&unix.ECHO != 0 && tio.Lflag&unix.ICANON != 0 && tio.Lflag&unix.ISIG != 0 && tio.Oflag&unix.OPOST != 0
+	return tio.Lflag&unix.ECHO != 0 && tio.Lflag&unix.ICANON != 0 && tio.Lflag&unix.ISIG != 0 &&
+		tio.Oflag&unix.OPOST != 0
 }
 
 // probedWriter forwards to the terminal and records its modes at each write, so ordering is checked at the moment
@@ -283,14 +284,16 @@ func TestPTYInlineSelectRestoresTheTerminalAndUsesNoAlternateScreen(t *testing.T
 			// Also cover keys queued together, as a fast typist or a paste sends them.
 			p.typeKeys(t, tc.keys)
 			r := <-got
-			if !errors.Is(r.err, tc.err) || tc.err == nil && r.err != nil || !slices.Equal(r.picked, tc.picked) {
+			if !errors.Is(r.err, tc.err) || tc.err == nil && r.err != nil ||
+				!slices.Equal(r.picked, tc.picked) {
 				t.Fatalf("Select = %v, %v; want %v, %v", r.picked, r.err, tc.picked, tc.err)
 			}
 			// Exact equality. This descriptor is polled, which clears darwin's PENDIN; the child test covers that flag.
 			if after := *termios(t, p.tty); after != before {
 				t.Errorf("modes after Select = %+v, want %+v", after, before)
 			}
-			if out := p.output(); strings.Contains(out, "\x1b[?1049h") || strings.Contains(out, "\x1b[?47h") {
+			if out := p.output(); strings.Contains(out, "\x1b[?1049h") ||
+				strings.Contains(out, "\x1b[?47h") {
 				t.Errorf("switched to the alternate screen: %q", out)
 			}
 		})
@@ -339,7 +342,11 @@ func TestPTYInlineSelectDecodesSeparateWrites(t *testing.T) {
 			p := openPTY(t)
 			before := *termios(t, p.tty)
 			draws := make(chan struct{}, 16)
-			prompter := terminalPrompter{in: p.tty, stderr: choiceDrawWriter{p.tty, draws}, lines: bufio.NewReader(p.tty)}
+			prompter := terminalPrompter{
+				in:     p.tty,
+				stderr: choiceDrawWriter{p.tty, draws},
+				lines:  bufio.NewReader(p.tty),
+			}
 			c := toolChoice(false)
 			c.options = append(c.options, option{label: "名前"})
 			type result struct {
@@ -430,7 +437,10 @@ func TestPTYCtrlCDuringSecretInputRestoresTheTerminalAndExits130(t *testing.T) {
 	}
 	p := openPTY(t)
 	before := *termios(t, p.ptmx)
-	cmd := exec.Command(os.Args[0], "-test.run=^TestPTYCtrlCDuringSecretInputRestoresTheTerminalAndExits130$")
+	cmd := exec.Command(
+		os.Args[0],
+		"-test.run=^TestPTYCtrlCDuringSecretInputRestoresTheTerminalAndExits130$",
+	)
 	cmd.Env = append(os.Environ(), "AIG_PTY_CHILD=1")
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = p.tty, p.tty, p.tty
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 0}
@@ -521,7 +531,8 @@ func TestPTYInlineSelectInAChildRestoresTheExactModes(t *testing.T) {
 			if after := *termios(t, p.ptmx); after != before {
 				t.Errorf("modes after the list = %+v, want %+v", after, before)
 			}
-			if out := p.output(); tc.output == "" && strings.Contains(out, "answered") || !strings.Contains(out, tc.output) {
+			if out := p.output(); tc.output == "" && strings.Contains(out, "answered") ||
+				!strings.Contains(out, tc.output) {
 				t.Errorf("output %q, want %q", out, tc.output)
 			}
 		})
@@ -539,7 +550,10 @@ func TestPTYSignalDuringInlineSelectRestoresTheTerminalAndExits130(t *testing.T)
 		t.Run(sig.String(), func(t *testing.T) {
 			p := openPTY(t)
 			before := *termios(t, p.ptmx)
-			cmd := exec.Command(os.Args[0], "-test.run=^TestPTYSignalDuringInlineSelectRestoresTheTerminalAndExits130$")
+			cmd := exec.Command(
+				os.Args[0],
+				"-test.run=^TestPTYSignalDuringInlineSelectRestoresTheTerminalAndExits130$",
+			)
 			cmd.Env = append(os.Environ(), "AIG_PTY_CHILD=1")
 			cmd.Stdin, cmd.Stdout, cmd.Stderr = p.tty, p.tty, p.tty
 			cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 0}

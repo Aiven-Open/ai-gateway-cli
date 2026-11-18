@@ -86,12 +86,22 @@ func setUp(t *testing.T, in harness.Input) harness.Plan {
 func TestSetupAddsTheProviderWithEachModelOnItsProtocol(t *testing.T) {
 	in := input(t)
 	plan := setUp(t, in)
-	if len(plan.Files) != 1 || plan.Files[0].Path != agentPath(in, "models.json") || !plan.Files[0].Backup || !plan.Files[0].Models ||
-		plan.Argv != nil || plan.Env != nil {
+	if len(plan.Files) != 1 || plan.Files[0].Path != agentPath(in, "models.json") ||
+		!plan.Files[0].Backup ||
+		!plan.Files[0].Models ||
+		plan.Argv != nil ||
+		plan.Env != nil {
 		t.Fatalf("plan = %+v", plan)
 	}
 	entry := func(id, name, api, url string) map[string]any {
-		return map[string]any{"id": id, "name": name, "api": api, "baseUrl": url, "reasoning": true, "input": []any{"text", "image"}}
+		return map[string]any{
+			"id":        id,
+			"name":      name,
+			"api":       api,
+			"baseUrl":   url,
+			"reasoning": true,
+			"input":     []any{"text", "image"},
+		}
 	}
 	sonnet := entry("claude-sonnet", "Claude Sonnet", "anthropic-messages", baseURL)
 	sonnet["contextWindow"], sonnet["maxTokens"] = 1e6, 64000.0
@@ -99,7 +109,10 @@ func TestSetupAddsTheProviderWithEachModelOnItsProtocol(t *testing.T) {
 	sol := entry("gpt-sol", "GPT Sol", "openai-responses", baseURL+"/v1")
 	sol["cost"] = map[string]any{"input": 1.25, "output": 10.0, "cacheRead": 0.0, "cacheWrite": 0.0}
 	want := map[string]any{"providers": map[string]any{"aiven": map[string]any{
-		"baseUrl": baseURL + "/v1", "api": "openai-completions", "apiKey": pi.APIKey(baseURL), "models": []any{sonnet, glm, sol},
+		"baseUrl": baseURL + "/v1",
+		"api":     "openai-completions",
+		"apiKey":  pi.APIKey(baseURL),
+		"models":  []any{sonnet, glm, sol},
 	}}}
 	if got := decode(t, plan.Files[0]); !reflect.DeepEqual(got, want) {
 		t.Errorf("models.json = %v\nwant %v", got, want)
@@ -108,21 +121,32 @@ func TestSetupAddsTheProviderWithEachModelOnItsProtocol(t *testing.T) {
 
 func TestSetupKeepsOtherProvidersAndTheDefaultUnlessAsked(t *testing.T) {
 	in := input(t)
-	write(t, agentPath(in, "models.json"), `{"providers":{"local":{"baseUrl":"http://localhost"},"aiven":{"models":[{"id":"old"}],"x":1}},"other":true}`)
+	write(
+		t,
+		agentPath(in, "models.json"),
+		`{"providers":{"local":{"baseUrl":"http://localhost"},"aiven":{"models":[{"id":"old"}],"x":1}},"other":true}`,
+	)
 	write(t, agentPath(in, "settings.json"), `{"defaultProvider":"local","theme":"dark"}`)
 	got := decode(t, setUp(t, in).Files[0])
 	providers := got["providers"].(map[string]any)
 	aiven := providers["aiven"].(map[string]any)
-	if got["other"] != true || !reflect.DeepEqual(providers["local"], map[string]any{"baseUrl": "http://localhost"}) ||
-		aiven["x"] != nil || len(aiven["models"].([]any)) != 3 {
+	if got["other"] != true ||
+		!reflect.DeepEqual(providers["local"], map[string]any{"baseUrl": "http://localhost"}) ||
+		aiven["x"] != nil ||
+		len(aiven["models"].([]any)) != 3 {
 		t.Errorf("models.json = %v", got)
 	}
 	in.Default = true
 	plan := setUp(t, in)
-	if len(plan.Files) != 2 || plan.Files[1].Path != agentPath(in, "settings.json") || !plan.Files[1].Backup {
+	if len(plan.Files) != 2 || plan.Files[1].Path != agentPath(in, "settings.json") ||
+		!plan.Files[1].Backup {
 		t.Fatalf("plan = %+v", plan)
 	}
-	want := map[string]any{"defaultProvider": "aiven", "defaultModel": "claude-sonnet", "theme": "dark"}
+	want := map[string]any{
+		"defaultProvider": "aiven",
+		"defaultModel":    "claude-sonnet",
+		"theme":           "dark",
+	}
 	if got := decode(t, plan.Files[1]); !reflect.DeepEqual(got, want) {
 		t.Errorf("settings.json = %v, want %v", got, want)
 	}
@@ -139,7 +163,10 @@ func TestSetupEditsBothFilesInPlace(t *testing.T) {
 	plan := setUp(t, in)
 	cfg, err := harness.ReadObject(agentPath(in, "models.json"))
 	aiven, _ := cfg["providers"].(map[string]any)["aiven"].(map[string]any)
-	if got := string(plan.Files[0].Data); err != nil || !strings.HasPrefix(got, "{\n\"providers\": {\n"+local+",\n") ||
+	if got := string(
+		plan.Files[0].Data,
+	); err != nil ||
+		!strings.HasPrefix(got, "{\n\"providers\": {\n"+local+",\n") ||
 		aiven["apiKey"] != pi.APIKey(baseURL) {
 		t.Errorf("models.json (%v) =\n%s", err, got)
 	}
@@ -206,7 +233,12 @@ func TestAPIKeyRunsTheKeyHelper(t *testing.T) {
 	}
 	home := t.TempDir()
 	// Only another gateway's key file first: the helper must not read it.
-	if _, err := creds.Write(home, config.DefaultBaseURL, "sk-test-other", fsutil.WriteAtomic); err != nil {
+	if _, err := creds.Write(
+		home,
+		config.DefaultBaseURL,
+		"sk-test-other",
+		fsutil.WriteAtomic,
+	); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
@@ -273,7 +305,11 @@ func TestReadyChecksEachModelsProtocolAndTheKeySource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	write(t, wired, strings.ReplaceAll(string(data), creds.Rel(baseURL), creds.Rel(config.DefaultBaseURL)))
+	write(
+		t,
+		wired,
+		strings.ReplaceAll(string(data), creds.Rel(baseURL), creds.Rel(config.DefaultBaseURL)),
+	)
 	if _, err := pi.Ready(in.UserHome, baseURL); err == nil {
 		t.Error("Ready with another gateway's key helper")
 	}
@@ -327,7 +363,11 @@ func TestWindowsShellFindsTheBashPiRunsTheHelperIn(t *testing.T) {
 		x86Bash = `C:\Program Files (x86)\Git\bin\bash.exe`
 		msys    = `C:\msys64\usr\bin\bash.exe`
 	)
-	environ := []string{`programfiles=C:\Program Files`, `ProgramFiles(x86)=C:\Program Files (x86)`, `SystemRoot=C:\Windows`}
+	environ := []string{
+		`programfiles=C:\Program Files`,
+		`ProgramFiles(x86)=C:\Program Files (x86)`,
+		`SystemRoot=C:\Windows`,
+	}
 	for name, tc := range map[string]struct {
 		environ []string
 		files   []string

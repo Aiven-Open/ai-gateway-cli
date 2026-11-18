@@ -96,7 +96,9 @@ func Launch(in harness.Input) (harness.Plan, error) {
 			found = found || m["id"] == models.SonnetOrFirst(in.Table)
 		}
 		if !found {
-			return harness.Plan{}, errors.New("selected default is absent from the configured catalogue; refresh with setup")
+			return harness.Plan{}, errors.New(
+				"selected default is absent from the configured catalogue; refresh with setup",
+			)
 		}
 	}
 	return harness.Plan{Argv: append([]string{"omp"}, args...)}, nil
@@ -134,7 +136,8 @@ func Ready(home, baseURL string) (bool, error) {
 		return false, err
 	}
 	list, _ := p["models"].([]any)
-	if p["apiKey"] != APIKey(baseURL) && p["apiKey"] != creds.EnvVar || p["auth"] != "apiKey" || len(list) == 0 {
+	if p["apiKey"] != APIKey(baseURL) && p["apiKey"] != creds.EnvVar || p["auth"] != "apiKey" ||
+		len(list) == 0 {
 		return false, errors.New("normal OMP models YAML has no compatible Aiven provider")
 	}
 	for _, entry := range list {

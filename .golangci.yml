@@ -7,4 +7,24 @@ linters:
   enable:
     - bodyclose
     - errorlint
+    - lll
     - nolintlint
+  settings:
+    lll:
+      line-length: 100
+      tab-width: 1
+  exclusions:
+    rules:
+      - path: _test\.go$
+        linters: [lll]
+      - source: '^\s*//'
+        linters: [lll]
+
+formatters:
+  enable:
+    - gofmt
+    - golines
+  settings:
+    golines:
+      max-len: 100
+      tab-len: 1

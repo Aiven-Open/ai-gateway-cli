@@ -46,8 +46,10 @@ func TestReadObjectAcceptsJSONCAndKeepsNumbersVerbatim(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if obj["url"] != "http://host/*not a comment*/" || obj["n"] != json.Number("1.50") || obj["esc"] != `a"//b` ||
-		obj["comma"] != "a,]" || obj["dir"] != `C:\` {
+	if obj["url"] != "http://host/*not a comment*/" || obj["n"] != json.Number("1.50") ||
+		obj["esc"] != `a"//b` ||
+		obj["comma"] != "a,]" ||
+		obj["dir"] != `C:\` {
 		t.Errorf("object = %v", obj)
 	}
 	if list, ok := obj["list"].([]any); !ok || len(list) != 2 {
@@ -75,11 +77,17 @@ func TestReadObjectRefusesWhatIsNotOneObject(t *testing.T) {
 		if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := harness.ReadObject(path); err == nil || !strings.Contains(err.Error(), "is not a JSON object") {
+		if _, err := harness.ReadObject(
+			path,
+		); err == nil ||
+			!strings.Contains(err.Error(), "is not a JSON object") {
 			t.Errorf("%s: err = %v, want refusal", name, err)
 		}
 	}
-	if _, err := harness.ReadObject(t.TempDir()); err == nil || !strings.Contains(err.Error(), "is not a regular file") {
+	if _, err := harness.ReadObject(
+		t.TempDir(),
+	); err == nil ||
+		!strings.Contains(err.Error(), "is not a regular file") {
 		t.Errorf("directory: err = %v, want a refusal", err)
 	}
 }
@@ -97,7 +105,12 @@ func TestObjectAddsAnAbsentObjectAndRefusesAnotherType(t *testing.T) {
 	if inner, ok := parent["new"].(map[string]any); !ok || inner["b"] != 2 {
 		t.Errorf("absent key not added to parent: %v", parent)
 	}
-	if _, err := harness.Object(parent, "str", "f"); err == nil || !strings.Contains(err.Error(), `f: "str" is not a JSON object`) {
+	if _, err := harness.Object(
+		parent,
+		"str",
+		"f",
+	); err == nil ||
+		!strings.Contains(err.Error(), `f: "str" is not a JSON object`) {
 		t.Errorf("string: err = %v", err)
 	}
 }

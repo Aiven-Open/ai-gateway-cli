@@ -109,7 +109,11 @@ func mergeConfig(path, parent, key string, value any) ([]byte, error) {
 		}
 		mapping, ok := mappingNode(entry.Value)
 		if !ok {
-			return nil, fmt.Errorf("%s: %s must be a direct YAML mapping; fix or move it, then retry", path, parent)
+			return nil, fmt.Errorf(
+				"%s: %s must be a direct YAML mapping; fix or move it, then retry",
+				path,
+				parent,
+			)
 		}
 		patch, err := yaml.Marshal(map[string]any{key: value})
 		if err != nil {
@@ -191,7 +195,13 @@ func keyName(node ast.MapKeyNode) string {
 	return node.String()
 }
 
-func checkedYAML(path string, file *ast.File, before map[string]any, parent, key string, value any) ([]byte, error) {
+func checkedYAML(
+	path string,
+	file *ast.File,
+	before map[string]any,
+	parent, key string,
+	value any,
+) ([]byte, error) {
 	data := []byte(file.String())
 	var after map[string]any
 	if err := yaml.Unmarshal(data, &after); err != nil {

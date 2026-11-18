@@ -22,7 +22,9 @@ func TestTableHarnessesFailBeforeGatewayOrWritesWhenBinaryMissing(t *testing.T) 
 			s := newSession(t, g).loggedIn(keyValid)
 			s.runner.missing = []string{h}
 			r := s.run("launch", h)
-			if want := "aiven-ai-gateway: " + h + " is required but not installed; install it, then run aiven-ai-gateway setup " + h + "\n"; r.code != 1 || r.stdout != "" || r.stderr != want {
+			if want := "aiven-ai-gateway: " + h + " is required but not installed; install it, then run aiven-ai-gateway setup " + h + "\n"; r.code != 1 ||
+				r.stdout != "" ||
+				r.stderr != want {
 				t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
 			}
 			if n := len(g.journal()); n != 0 {
@@ -43,8 +45,22 @@ func TestTableHarnessesExecNothingWhenLaunchCannotProceed(t *testing.T) {
 		name, key, want string
 	}{
 		{"no key", "", "aiven-ai-gateway: no key stored. Run: aiven-ai-gateway login\n"},
-		{"gateway rejects key", "sk-bad", catalogueFailed("the gateway rejected the key", "key rejected by gateway (401): Authentication Error. Create a key in Aiven Console and run: aiven-ai-gateway login")},
-		{"key grants no models", keyEmpty, catalogueFailed("the key grants no models", "key grants no models. Create a key in Aiven Console and run: aiven-ai-gateway login")},
+		{
+			"gateway rejects key",
+			"sk-bad",
+			catalogueFailed(
+				"the gateway rejected the key",
+				"key rejected by gateway (401): Authentication Error. Create a key in Aiven Console and run: aiven-ai-gateway login",
+			),
+		},
+		{
+			"key grants no models",
+			keyEmpty,
+			catalogueFailed(
+				"the key grants no models",
+				"key grants no models. Create a key in Aiven Console and run: aiven-ai-gateway login",
+			),
+		},
 	}
 	for _, h := range tableHarnesses {
 		for _, tc := range cases {
@@ -71,7 +87,14 @@ func TestTableHarnessesExecNothingWhenLaunchCannotProceed(t *testing.T) {
 				if len(s.runner.calls) != 0 {
 					t.Errorf("exec'd %v", s.runner.calls)
 				}
-				if after := configurationSnapshot(t, s.fakeHome, s.env.WorkDir); !reflect.DeepEqual(before, after) {
+				if after := configurationSnapshot(
+					t,
+					s.fakeHome,
+					s.env.WorkDir,
+				); !reflect.DeepEqual(
+					before,
+					after,
+				) {
 					t.Error("launch changed files")
 				}
 			})
@@ -86,7 +109,11 @@ func writeFile(t *testing.T, path, text string) {
 }
 
 var userConfigs = map[string]struct{ path, key string }{
-	"pi": {".pi/agent/models.json", "providers"}, "opencode": {".config/opencode/opencode.json", "provider"},
+	"pi": {
+		".pi/agent/models.json",
+		"providers",
+	},
+	"opencode": {".config/opencode/opencode.json", "provider"},
 }
 
 func TestUserConfigMergeKeepsOtherProvidersAndRefusesMalformed(t *testing.T) {
@@ -108,14 +135,20 @@ func TestUserConfigMergeKeepsOtherProvidersAndRefusesMalformed(t *testing.T) {
 			// Pi reads // comments and trailing commas in models.json, but not block comments.
 			kept = strings.Replace(kept, "/*block*/", "", 1)
 		}
-		if bak != before || !strings.HasPrefix(string(data), kept) || providers["other"] == nil || providers["aiven"] == nil {
+		if bak != before || !strings.HasPrefix(string(data), kept) || providers["other"] == nil ||
+			providers["aiven"] == nil {
 			t.Errorf("%s merged = %s, bak = %s", h, data, bak)
 		}
 		for _, bad := range []string{`{"broken`, `null`, `{}]`, `{"` + uc.key + `":[]}`, `{"keep":1/*x*/2}`, `{}/*unfinished`, `{"keep":1}/*`} {
 			s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid)
 			p := filepath.Join(s.fakeHome, uc.path)
 			writeFile(t, p, bad)
-			if r := s.run("setup", h, "--yes"); r.code != 1 || !strings.Contains(r.stderr, "not a JSON object") || len(s.runner.calls) != 0 {
+			if r := s.run(
+				"setup",
+				h,
+				"--yes",
+			); r.code != 1 || !strings.Contains(r.stderr, "not a JSON object") ||
+				len(s.runner.calls) != 0 {
 				t.Fatalf("%s/%s: exit %d, stderr %q", h, bad, r.code, r.stderr)
 			}
 		}

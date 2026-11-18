@@ -69,7 +69,13 @@ func TestPlainOMPLegacyMigrationRefusesBeforeNetworkOrWrites(t *testing.T) {
 			r := s.run("setup", "omp", "--key-stdin", "--yes")
 			if r.code != 1 || !strings.Contains(r.stderr, "run omp once") || len(g.journal()) != 0 ||
 				!slices.Equal(before, s.homeFiles()) {
-				t.Fatalf("legacy preflight: %d %s requests=%d files=%v", r.code, r.stderr, len(g.journal()), s.homeFiles())
+				t.Fatalf(
+					"legacy preflight: %d %s requests=%d files=%v",
+					r.code,
+					r.stderr,
+					len(g.journal()),
+					s.homeFiles(),
+				)
 			}
 			if got, _ := os.ReadFile(path); string(got) != `{"keep":"legacy"}` {
 				t.Fatal("legacy JSON changed")

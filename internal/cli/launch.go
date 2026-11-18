@@ -66,7 +66,10 @@ func launchCommand(ctx context.Context, args []string, env config.Env, deps Deps
 		tool = picked
 	}
 	if _, err := deps.Runner.LookPath(tool); err != nil {
-		return fail(deps, tool+" is required but not installed; install it, then run aiven-ai-gateway setup "+tool)
+		return fail(
+			deps,
+			tool+" is required but not installed; install it, then run aiven-ai-gateway setup "+tool,
+		)
 	}
 	if err := moved(env, tool); err != nil {
 		return fail(deps, err.Error())
@@ -95,7 +98,15 @@ func launchClaude(ctx context.Context, args []string, env config.Env, deps Deps,
 	if code != 0 {
 		return code
 	}
-	plan, err := claude.Launch(claude.Input{Table: table, BaseURL: env.BaseURL, UserHome: env.UserHome, WorkDir: env.WorkDir, Args: args})
+	plan, err := claude.Launch(
+		claude.Input{
+			Table:    table,
+			BaseURL:  env.BaseURL,
+			UserHome: env.UserHome,
+			WorkDir:  env.WorkDir,
+			Args:     args,
+		},
+	)
 	if err != nil {
 		return setupRequired(deps, "claude", err)
 	}
@@ -115,7 +126,13 @@ func launchPi(ctx context.Context, args []string, env config.Env, deps Deps, p p
 	return launchTable(ctx, "pi", args, env, deps, p, pi.Ready, pi.Launch)
 }
 
-func launchOpencode(ctx context.Context, args []string, env config.Env, deps Deps, p presenter) int {
+func launchOpencode(
+	ctx context.Context,
+	args []string,
+	env config.Env,
+	deps Deps,
+	p presenter,
+) int {
 	ready := func(home, baseURL string) (bool, error) {
 		return opencode.Ready(home, env.ConfigHome, baseURL)
 	}
@@ -127,7 +144,16 @@ func launchOmp(ctx context.Context, args []string, env config.Env, deps Deps, p 
 }
 
 // launchTable launches a harness whose launch needs only the key, the table and pass-through args.
-func launchTable(ctx context.Context, bin string, args []string, env config.Env, deps Deps, p presenter, ready func(string, string) (bool, error), prepare func(harness.Input) (harness.Plan, error)) int {
+func launchTable(
+	ctx context.Context,
+	bin string,
+	args []string,
+	env config.Env,
+	deps Deps,
+	p presenter,
+	ready func(string, string) (bool, error),
+	prepare func(harness.Input) (harness.Plan, error),
+) int {
 	needsEnv, err := ready(env.UserHome, env.BaseURL)
 	if err != nil {
 		return setupRequired(deps, bin, err)
@@ -141,7 +167,15 @@ func launchTable(ctx context.Context, bin string, args []string, env config.Env,
 	if code != 0 {
 		return code
 	}
-	plan, err := prepare(harness.Input{Table: table, BaseURL: env.BaseURL, UserHome: env.UserHome, ConfigHome: env.ConfigHome, Args: args})
+	plan, err := prepare(
+		harness.Input{
+			Table:      table,
+			BaseURL:    env.BaseURL,
+			UserHome:   env.UserHome,
+			ConfigHome: env.ConfigHome,
+			Args:       args,
+		},
+	)
 	if err != nil {
 		return setupRequired(deps, bin, err)
 	}
@@ -152,11 +186,20 @@ func launchTable(ctx context.Context, bin string, args []string, env config.Env,
 }
 
 func setupRequired(deps Deps, tool string, err error) int {
-	return fail(deps, tool+" setup is missing or incompatible: "+err.Error()+". Run: aiven-ai-gateway setup "+tool)
+	return fail(
+		deps,
+		tool+" setup is missing or incompatible: "+err.Error()+". Run: aiven-ai-gateway setup "+tool,
+	)
 }
 
 // grantedModels checks harnessBin (unless empty) is installed, then reads the stored key and its model table; a nonzero code means the failure is already reported.
-func grantedModels(ctx context.Context, harnessBin string, env config.Env, deps Deps, p presenter) (string, []models.Model, int) {
+func grantedModels(
+	ctx context.Context,
+	harnessBin string,
+	env config.Env,
+	deps Deps,
+	p presenter,
+) (string, []models.Model, int) {
 	if harnessBin != "" {
 		if _, err := deps.Runner.LookPath(harnessBin); err != nil {
 			return "", nil, fail(deps, err.Error())

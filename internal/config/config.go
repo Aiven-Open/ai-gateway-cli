@@ -59,13 +59,20 @@ func Load(environ []string) (Env, error) {
 func normaliseBaseURL(raw string) (string, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err == nil && u.Scheme == "http" {
-		return "", fmt.Errorf("invalid AIVEN_AI_GATEWAY_BASE_URL: HTTPS is required because HTTP exposes bearer credentials")
+		return "", fmt.Errorf(
+			"invalid AIVEN_AI_GATEWAY_BASE_URL: HTTPS is required because HTTP exposes bearer credentials",
+		)
 	}
 	if err != nil || u.Scheme != "https" || u.Host == "" {
-		return "", fmt.Errorf("invalid AIVEN_AI_GATEWAY_BASE_URL: want an HTTPS origin with a host and optional port")
+		return "", fmt.Errorf(
+			"invalid AIVEN_AI_GATEWAY_BASE_URL: want an HTTPS origin with a host and optional port",
+		)
 	}
-	if u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
-		return "", fmt.Errorf("invalid AIVEN_AI_GATEWAY_BASE_URL: no credentials, path, query or fragment allowed")
+	if u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" ||
+		(u.Path != "" && u.Path != "/") {
+		return "", fmt.Errorf(
+			"invalid AIVEN_AI_GATEWAY_BASE_URL: no credentials, path, query or fragment allowed",
+		)
 	}
 	// A default port names the same gateway, which must keep one key file.
 	host := u.Host

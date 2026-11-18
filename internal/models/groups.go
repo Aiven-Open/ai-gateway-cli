@@ -96,10 +96,25 @@ var known = map[string]struct{ publisher, name string }{
 // owners spell the lower-case owned_by values vendors commonly publish; any other value is shown as the catalogue
 // wrote it.
 var owners = map[string]string{
-	"aiven": "Aiven", "alibaba": "Alibaba", "amazon": "AWS", "anthropic": "Anthropic", "aws": "AWS",
-	"deepseek": "DeepSeek", "google": "Google", "meta": "Meta", "minimax": "MiniMax", "mistral": "Mistral AI", "mistralai": "Mistral AI",
-	"moonshotai": "Moonshot AI", "nvidia": "NVIDIA", "openai": "OpenAI", "qwen": "Alibaba", "xai": "xAI", "z-ai": "Z.ai",
-	"zai": "Z.ai", "zhipu": "Z.ai",
+	"aiven":      "Aiven",
+	"alibaba":    "Alibaba",
+	"amazon":     "AWS",
+	"anthropic":  "Anthropic",
+	"aws":        "AWS",
+	"deepseek":   "DeepSeek",
+	"google":     "Google",
+	"meta":       "Meta",
+	"minimax":    "MiniMax",
+	"mistral":    "Mistral AI",
+	"mistralai":  "Mistral AI",
+	"moonshotai": "Moonshot AI",
+	"nvidia":     "NVIDIA",
+	"openai":     "OpenAI",
+	"qwen":       "Alibaba",
+	"xai":        "xAI",
+	"z-ai":       "Z.ai",
+	"zai":        "Z.ai",
+	"zhipu":      "Z.ai",
 }
 
 // DisplayName is the catalogue's display name, else the reviewed name for a known id, else the id itself.

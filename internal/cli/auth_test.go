@@ -21,10 +21,13 @@ func TestLoginStoresKeyAndListsModels(t *testing.T) {
 	if r.code != 0 {
 		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
 	}
-	if !strings.Contains(r.stderr, "OK saved to ") || !strings.Contains(r.stderr, "no inference request was sent") || strings.Contains(r.stderr, "Sending one test request") {
+	if !strings.Contains(r.stderr, "OK saved to ") ||
+		!strings.Contains(r.stderr, "no inference request was sent") ||
+		strings.Contains(r.stderr, "Sending one test request") {
 		t.Fatalf("stderr = %q", r.stderr)
 	}
-	if !strings.Contains(r.stdout, "Anthropic\n  Claude Opus    claude-opus\n  claude-sonnet\n") || strings.Contains(r.stdout, "$") {
+	if !strings.Contains(r.stdout, "Anthropic\n  Claude Opus    claude-opus\n  claude-sonnet\n") ||
+		strings.Contains(r.stdout, "$") {
 		t.Fatalf("stdout lacks the grouped catalogue: %q", r.stdout)
 	}
 	path := filepath.Join(s.fakeHome, ".config", "aiven", "ai-gateway-keys", creds.Name(s.env.BaseURL))
@@ -39,7 +42,11 @@ func TestLoginStoresKeyAndListsModels(t *testing.T) {
 		t.Errorf("key file mode = %v, want 0600", info.Mode().Perm())
 	}
 	// The gateway double is not the default gateway, so the Console's key file is not this one.
-	if _, err := os.Stat(filepath.Join(s.fakeHome, ".config/aiven/ai-gateway-key")); !os.IsNotExist(err) {
+	if _, err := os.Stat(
+		filepath.Join(s.fakeHome, ".config/aiven/ai-gateway-key"),
+	); !os.IsNotExist(
+		err,
+	) {
 		t.Errorf("the default gateway's key file was written: %v", err)
 	}
 }
@@ -111,12 +118,22 @@ func TestLoginRejectsInvalidInput(t *testing.T) {
 		name, stdin, wantErr string
 		wantGatewayCalls     int
 	}{
-		{"unknown key", "sk-bad\n", "the gateway rejected the key\naiven-ai-gateway: key rejected by gateway (401): Authentication Error. Create a key in Aiven Console and run: aiven-ai-gateway login", 1},
+		{
+			"unknown key",
+			"sk-bad\n",
+			"the gateway rejected the key\naiven-ai-gateway: key rejected by gateway (401): Authentication Error. Create a key in Aiven Console and run: aiven-ai-gateway login",
+			1,
+		},
 		{"bad charset", "sk-\"x\n", "that does not look like a gateway key", 0},
 		{"inner space", "sk-test valid\n", "that does not look like a gateway key", 0},
 		{"empty input", "", "empty key", 0},
 		{"blank line", "\n", "empty key", 0},
-		{"key without models", keyEmpty + "\n", "the key grants no models\naiven-ai-gateway: key grants no models. Create a key in Aiven Console and run: aiven-ai-gateway login", 1},
+		{
+			"key without models",
+			keyEmpty + "\n",
+			"the key grants no models\naiven-ai-gateway: key grants no models. Create a key in Aiven Console and run: aiven-ai-gateway login",
+			1,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -204,7 +221,8 @@ func TestLoginToAnotherGatewayKeepsThisGatewaysKey(t *testing.T) {
 	if r := s.stdin(keyFlash).run("login"); r.code != 0 {
 		t.Fatalf("login to b: exit %d, stderr %q", r.code, r.stderr)
 	}
-	if aKey == s.keyPath() || readOrEmpty(t, aKey) != keyValid+"\n" || readOrEmpty(t, s.keyPath()) != keyFlash+"\n" {
+	if aKey == s.keyPath() || readOrEmpty(t, aKey) != keyValid+"\n" ||
+		readOrEmpty(t, s.keyPath()) != keyFlash+"\n" {
 		t.Fatalf("key files: a %q, b %q", readOrEmpty(t, aKey), readOrEmpty(t, s.keyPath()))
 	}
 	for _, g := range []*gatewayDouble{a, b} {
@@ -252,7 +270,9 @@ func TestLoginKeepsTheSavedKeyWhenASaveFails(t *testing.T) {
 				s.loggedIn(saved)
 			}
 			s.deps.WriteFile = failNth(s.keyPath(), 1)
-			if r := s.stdin(keyValid).run("login"); r.code != 1 || !strings.Contains(r.stderr, "key not saved: ") {
+			if r := s.stdin(keyValid).
+				run("login"); r.code != 1 ||
+				!strings.Contains(r.stderr, "key not saved: ") {
 				t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
 			}
 			want := ""
@@ -278,7 +298,8 @@ func readOrEmpty(t *testing.T, path string) string {
 func TestLoginPointsToSetupBeforeLaunching(t *testing.T) {
 	s := newSession(t, newGatewayDouble(t)).stdin(keyValid)
 	r := s.run("login")
-	if r.code != 0 || !strings.Contains(r.stderr, "no inference request was sent and no tool") || !strings.Contains(r.stderr, "aiven-ai-gateway setup <harness>") {
+	if r.code != 0 || !strings.Contains(r.stderr, "no inference request was sent and no tool") ||
+		!strings.Contains(r.stderr, "aiven-ai-gateway setup <harness>") {
 		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
 	}
 }

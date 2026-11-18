@@ -53,7 +53,9 @@ func pickTools(deps Deps, p presenter) ([]string, error) {
 		p.ui.line(2, fmt.Sprintf("%d) %s (%s)", i+1, toolLabel(t), t))
 	}
 	for range 3 {
-		answer, err := deps.Prompter.ReadLine(`Numbers or names separated by commas, "all", or Enter to skip: `)
+		answer, err := deps.Prompter.ReadLine(
+			`Numbers or names separated by commas, "all", or Enter to skip: `,
+		)
 		if errors.Is(err, io.EOF) || errors.Is(err, errInputEnded) {
 			return nil, errInputEnded
 		} else if err != nil {
@@ -101,7 +103,9 @@ func pickLaunch(deps Deps, p presenter) (string, error) {
 		}
 	}
 	if len(installed) == 0 {
-		return "", errors.New("no supported harness is installed; install one, then run aiven-ai-gateway setup <harness>")
+		return "", errors.New(
+			"no supported harness is installed; install one, then run aiven-ai-gateway setup <harness>",
+		)
 	}
 	if p.inline != nil {
 		c := choice{title: "Launch one installed harness"}
@@ -118,7 +122,9 @@ func pickLaunch(deps Deps, p presenter) (string, error) {
 		p.ui.line(2, fmt.Sprintf("%d) %s (%s)", i+1, toolLabel(t), t))
 	}
 	for range 3 {
-		answer, err := deps.Prompter.ReadLine("Launch one installed harness (number or name), or Enter to cancel: ")
+		answer, err := deps.Prompter.ReadLine(
+			"Launch one installed harness (number or name), or Enter to cancel: ",
+		)
 		if errors.Is(err, io.EOF) || errors.Is(err, errInputEnded) {
 			return "", errInputEnded
 		}

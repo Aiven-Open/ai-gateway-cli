@@ -111,7 +111,11 @@ func (c Client) Models(ctx context.Context, key string) ([]models.Model, error) 
 }
 
 // Probe sends one minimal request on protocol. It does not test native client requests.
-func (c Client) Probe(ctx context.Context, key, model string, protocol models.Protocol) (int, error) {
+func (c Client) Probe(
+	ctx context.Context,
+	key, model string,
+	protocol models.Protocol,
+) (int, error) {
 	payload := map[string]any{"model": model}
 	path, field := "", ""
 	switch protocol {
@@ -146,18 +150,24 @@ func (c Client) Probe(ctx context.Context, key, model string, protocol models.Pr
 	if json.Unmarshal(data, &envelope) != nil {
 		return resp.StatusCode, ErrUnexpected
 	}
-	if value, exists := envelope["error"]; exists && !bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+	if value, exists := envelope["error"]; exists &&
+		!bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
 		return resp.StatusCode, &HTTPError{Status: resp.StatusCode, Message: errorMessage(data, key)}
 	}
 	var result []json.RawMessage
-	if value := envelope[field]; len(value) == 0 || string(value) == "null" || json.Unmarshal(value, &result) != nil {
+	if value := envelope[field]; len(value) == 0 || string(value) == "null" ||
+		json.Unmarshal(value, &result) != nil {
 		return resp.StatusCode, ErrUnexpected
 	}
 	return resp.StatusCode, nil
 }
 
 // do sends one request with key as Bearer and maps 401, other non-2xx and transport failures to the package errors.
-func (c Client) do(ctx context.Context, method, path, key string, body io.Reader) (*http.Response, error) {
+func (c Client) do(
+	ctx context.Context,
+	method, path, key string,
+	body io.Reader,
+) (*http.Response, error) {
 	ctx, cancel := context.WithTimeout(ctx, Timeout)
 	// A returned body is read by the caller; keep cancellation tied to its close.
 	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.BaseURL, "/")+path, body)
@@ -202,8 +212,10 @@ func (b *cancelBody) Close() error {
 
 // credentialText matches what may be a credential in a gateway message: a bearer token, a value shaped like a known
 // credential, or the value of a field named like one, quoted or bare. The name and the word bearer stay.
-var credentialText = regexp.MustCompile(`(?i)(\bbearer\s+)\S+|` + redact.Token + `|(["']?` + redact.Name +
-	`["']?\s*[:=]\s*)(?:"(?:[^"\\]|\\.)*"|'[^']*'|(?:bearer\s+)?[^\s,;}]+)`)
+var credentialText = regexp.MustCompile(
+	`(?i)(\bbearer\s+)\S+|` + redact.Token + `|(["']?` + redact.Name +
+		`["']?\s*[:=]\s*)(?:"(?:[^"\\]|\\.)*"|'[^']*'|(?:bearer\s+)?[^\s,;}]+)`,
+)
 
 func errorMessage(data []byte, key string) string {
 	var body struct {

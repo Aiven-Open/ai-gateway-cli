@@ -71,7 +71,10 @@ func TestSetupRefusesAnEditAfterPreviewWithoutBackupOrOverwrite(t *testing.T) {
 	path := filepath.Join(s.fakeHome, toolFiles["pi"])
 	writeFile(t, path, `{"providers":{"other":{"apiKey":"SYNTHETIC_PRIVATE original"}}}`)
 	edited := `{"providers":{"other":{"apiKey":"SYNTHETIC_PRIVATE concurrent"}}}`
-	s.deps.Prompter = &callbackPrompter{answers: []string{"", ""}, onApply: func() { writeFile(t, path, edited) }}
+	s.deps.Prompter = &callbackPrompter{
+		answers: []string{"", ""},
+		onApply: func() { writeFile(t, path, edited) },
+	}
 	r := s.run("setup", "pi", "--key-stdin")
 	if r.code != 1 || !strings.Contains(r.stderr, "changed since inspection") {
 		t.Fatalf("exit %d: %s", r.code, r.stderr)
@@ -93,7 +96,10 @@ func TestSetupRefusesAnEditAfterPreviewWithoutBackupOrOverwrite(t *testing.T) {
 	if r2.code != 1 || !strings.Contains(r2.stderr, "changed since inspection") {
 		t.Fatalf("edit during key prompt: exit %d: %s", r2.code, r2.stderr)
 	}
-	if data, err := os.ReadFile(path2); err != nil || string(data) != edited || latestBackup(t, path2) != "" {
+	if data, err := os.ReadFile(
+		path2,
+	); err != nil || string(data) != edited ||
+		latestBackup(t, path2) != "" {
 		t.Fatal("edit during key prompt was overwritten or backed up")
 	}
 
@@ -104,12 +110,18 @@ func TestSetupRefusesAnEditAfterPreviewWithoutBackupOrOverwrite(t *testing.T) {
 		if err := os.Chmod(path3, 0o644); err != nil {
 			t.Fatal(err)
 		}
-		s3.deps.Prompter = &callbackPrompter{answers: []string{"", ""}, onApply: func() { _ = os.Chmod(path3, 0o600) }}
+		s3.deps.Prompter = &callbackPrompter{
+			answers: []string{"", ""},
+			onApply: func() { _ = os.Chmod(path3, 0o600) },
+		}
 		r3 := s3.run("setup", "pi", "--key-stdin")
 		if r3.code != 1 || !strings.Contains(r3.stderr, "changed since inspection") {
 			t.Fatalf("mode change during apply prompt: exit %d: %s", r3.code, r3.stderr)
 		}
-		if info, err := os.Stat(path3); err != nil || info.Mode().Perm() != 0o600 || latestBackup(t, path3) != "" {
+		if info, err := os.Stat(
+			path3,
+		); err != nil || info.Mode().Perm() != 0o600 ||
+			latestBackup(t, path3) != "" {
 			t.Fatalf("mode = %v (%v), backup = %q", info, err, latestBackup(t, path3))
 		}
 	}
@@ -144,7 +156,9 @@ func TestSetupRefusesNonRegularTargetsBeforeGatewayOrKeySave(t *testing.T) {
 				}
 			}
 			r := s.run("setup", "pi", "--key-stdin", "--yes")
-			if r.code != 1 || !strings.Contains(r.stderr, "regular") && !strings.Contains(r.stderr, "is a directory") || len(g.journal()) != 0 {
+			if r.code != 1 ||
+				!strings.Contains(r.stderr, "regular") && !strings.Contains(r.stderr, "is a directory") ||
+				len(g.journal()) != 0 {
 				t.Fatalf("exit %d, requests %d: %s", r.code, len(g.journal()), r.stderr)
 			}
 			if _, err := os.Stat(s.keyPath()); !os.IsNotExist(err) {
@@ -200,7 +214,8 @@ func TestSetupReportsCompletedFileAndRecoveryAfterSecondFileFails(t *testing.T) 
 		!strings.Contains(r.stderr, "recovery copy: "+profile+".aiven-") {
 		t.Fatalf("exit %d: %s", r.code, r.stderr)
 	}
-	if latestBackup(t, main) != "model = 'native-model'\n" || latestBackup(t, profile) != "model = 'gpt-sol'\n" {
+	if latestBackup(t, main) != "model = 'native-model'\n" ||
+		latestBackup(t, profile) != "model = 'gpt-sol'\n" {
 		t.Fatal("recovery copies do not hold the inspected bytes")
 	}
 	if data, _ := os.ReadFile(profile); string(data) != "model = 'gpt-sol'\n" {

@@ -97,11 +97,23 @@ func TestSetupEnvironmentKeyConsentDecisions(t *testing.T) {
 						t.Fatal("a different credential was sent before consent")
 					}
 				}
-				if after := configurationSnapshot(t, s.fakeHome, s.env.WorkDir); !reflect.DeepEqual(before, after) {
+				if after := configurationSnapshot(
+					t,
+					s.fakeHome,
+					s.env.WorkDir,
+				); !reflect.DeepEqual(
+					before,
+					after,
+				) {
 					t.Fatal("files changed before consent or replacement input")
 				}
 			}
-			p := &consentPrompter{answers: tc.answers, secret: tc.secret, lineErr: tc.lineErr, secretErr: tc.secretErr}
+			p := &consentPrompter{
+				answers:   tc.answers,
+				secret:    tc.secret,
+				lineErr:   tc.lineErr,
+				secretErr: tc.secretErr,
+			}
 			p.onLine = func(prompt string) {
 				if want := "Use this key with " + g.URL + "? [y/N] "; prompt != want {
 					t.Errorf("prompt = %q, want %q", prompt, want)
@@ -133,7 +145,8 @@ func TestSetupEnvironmentKeyConsentDecisions(t *testing.T) {
 				t.Fatalf("exit %d or wrong saved key: %s", r.code, r.stderr)
 			}
 			reqs := g.journal()
-			if len(reqs) <= expectedBefore || reqs[expectedBefore].Header.Get("Authorization") != "Bearer "+tc.wantKey {
+			if len(reqs) <= expectedBefore ||
+				reqs[expectedBefore].Header.Get("Authorization") != "Bearer "+tc.wantKey {
 				t.Fatal("the selected key was not used after its prompt")
 			}
 			for _, req := range reqs[expectedBefore:] {
@@ -288,13 +301,15 @@ func TestSavedKeyRequestFailureDoesNotSwitchToEnvironment(t *testing.T) {
 					w.WriteHeader(http.StatusBadGateway)
 				})
 			} else {
-				s.deps.HTTP = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-					calls.Add(1)
-					if r.Header.Get("Authorization") != "Bearer "+keyValid {
-						t.Error("transport received a different key")
-					}
-					return nil, errors.New("synthetic transport failure")
-				})}
+				s.deps.HTTP = &http.Client{
+					Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+						calls.Add(1)
+						if r.Header.Get("Authorization") != "Bearer "+keyValid {
+							t.Error("transport received a different key")
+						}
+						return nil, errors.New("synthetic transport failure")
+					}),
+				}
 			}
 			p := &consentPrompter{answers: []string{"y"}}
 			s.deps.Prompter = p

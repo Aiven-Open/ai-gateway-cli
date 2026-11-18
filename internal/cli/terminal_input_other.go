@@ -11,5 +11,8 @@ import (
 )
 
 func waitChoiceInput(int, time.Time) (bool, error) {
-	return false, fmt.Errorf("bounded inline Escape input is unsupported on %s; use --plain", runtime.GOOS)
+	return false, fmt.Errorf(
+		"bounded inline Escape input is unsupported on %s; use --plain",
+		runtime.GOOS,
+	)
 }

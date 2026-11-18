@@ -13,7 +13,12 @@ import (
 
 func toolChoice(multi bool) choice {
 	return choice{title: "Tools", multi: multi, options: []option{
-		{label: "Pi", detail: "pi"}, {label: "OpenCode", detail: "opencode"}, {label: "Codex", detail: "codex"},
+		{
+			label:  "Pi",
+			detail: "pi",
+		},
+		{label: "OpenCode", detail: "opencode"},
+		{label: "Codex", detail: "codex"},
 	}}
 }
 
@@ -51,8 +56,16 @@ func TestSelectKeysNeverTurnCancellationOrEndOfInputIntoAChoice(t *testing.T) {
 					break
 				}
 			}
-			if !finished || !errors.Is(err, tc.err) || !slices.Equal(picked, tc.picked) || err != nil && picked != nil {
-				t.Errorf("picked %v, finished %v, err %v; want %v, %v", picked, finished, err, tc.picked, tc.err)
+			if !finished || !errors.Is(err, tc.err) || !slices.Equal(picked, tc.picked) ||
+				err != nil && picked != nil {
+				t.Errorf(
+					"picked %v, finished %v, err %v; want %v, %v",
+					picked,
+					finished,
+					err,
+					tc.picked,
+					tc.err,
+				)
 			}
 		})
 	}
@@ -88,7 +101,13 @@ func TestSelectKeysDoNotApproveIncompleteOrMalformedInput(t *testing.T) {
 			}
 			if len(picked) != 0 || finished != (tc.err != nil) || !errors.Is(err, tc.err) ||
 				s.pendingEscape() != tc.pending {
-				t.Fatalf("picked=%v finished=%v err=%v pendingEscape=%v", picked, finished, err, s.pendingEscape())
+				t.Fatalf(
+					"picked=%v finished=%v err=%v pendingEscape=%v",
+					picked,
+					finished,
+					err,
+					s.pendingEscape(),
+				)
 			}
 		})
 	}
@@ -178,11 +197,15 @@ func TestSelectRenderFitsTheWidthAndShowsMarks(t *testing.T) {
 		t.Fatalf("selection ended: finished=%v err=%v", finished, err)
 	}
 	lines := s.render(24)
-	if len(lines) != 6 || !strings.Contains(lines[2], "  [x] Pi") || !strings.HasPrefix(lines[3], "> [ ] OpenCode") {
+	if len(lines) != 6 || !strings.Contains(lines[2], "  [x] Pi") ||
+		!strings.HasPrefix(lines[3], "> [ ] OpenCode") {
 		t.Fatalf("lines %q", lines)
 	}
 	for _, l := range lines {
-		if plain := strings.NewReplacer("\x1b[1m", "", "\x1b[2m", "", "\x1b[0m", "").Replace(l); cells(plain) > 23 {
+		if plain := strings.NewReplacer("\x1b[1m", "", "\x1b[2m", "", "\x1b[0m", "").
+			Replace(l); cells(
+			plain,
+		) > 23 {
 			t.Errorf("%q is %d cells, wider than 23", plain, cells(plain))
 		}
 	}

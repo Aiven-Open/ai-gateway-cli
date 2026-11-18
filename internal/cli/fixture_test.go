@@ -62,7 +62,19 @@ const (
 var fixedNow = time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
 
 // productionEntries are bare model entries that omit optional context window and price fields.
-var productionEntries = bareEntries("claude-haiku-4-5", "claude-haiku-5.5", "claude-opus-5-5", "claude-sonnet-5-5", "deepseek-v3.2", "glm-4.7-flash", "glm-5", "gpt-5.4", "gpt-6-astra", "gpt-6-sol", "gpt-6.1-sol")
+var productionEntries = bareEntries(
+	"claude-haiku-4-5",
+	"claude-haiku-5.5",
+	"claude-opus-5-5",
+	"claude-sonnet-5-5",
+	"deepseek-v3.2",
+	"glm-4.7-flash",
+	"glm-5",
+	"gpt-5.4",
+	"gpt-6-astra",
+	"gpt-6-sol",
+	"gpt-6.1-sol",
+)
 
 func bareEntries(ids ...string) []string {
 	out := make([]string, len(ids))
@@ -98,23 +110,34 @@ const (
 )
 
 var keyModels = map[string][]string{
-	keyValid:              {routerEntry, sonnetEntry, opusEntry, solEntry, glmEntry},
-	keyEmpty:              {},
-	keyClaudeOnly:         {opusEntry, sonnetEntry, haikuEntry},
-	keyFlash:              {routerEntry, opusEntry, flashEntry},
-	keyRouterOnly:         {routerEntry},
-	keyRouterSol:          {routerEntry, solEntry},
-	keyMidContext:         {midEntry},
-	keyFable:              {fableEntry, sonnetEntry},
-	keyProduction:         productionEntries,
-	keyProductionFallback: bareEntries("claude-haiku-4-5", "claude-opus-5-5", "claude-sonnet-5-5", "gpt-5.4", "gpt-6-sol"),
-	keyMixedNames:         bareEntries("claude-haiku-5-5", "claude-haiku-5.5", "claude-sonnet", "claude-sonnet-5-5"),
-	keyMaxInput:           maxInputEntries,
-	keyShort:              {sonnetEntry},
-	keyBare:               {sonnetEntry},
-	keyLong:               {sonnetEntry},
-	keyNoInfer:            {sonnetEntry},
-	keyQuoted:             {`{"id":"bad\"alias","object":"model","created":0,"owned_by":"x"}`},
+	keyValid:      {routerEntry, sonnetEntry, opusEntry, solEntry, glmEntry},
+	keyEmpty:      {},
+	keyClaudeOnly: {opusEntry, sonnetEntry, haikuEntry},
+	keyFlash:      {routerEntry, opusEntry, flashEntry},
+	keyRouterOnly: {routerEntry},
+	keyRouterSol:  {routerEntry, solEntry},
+	keyMidContext: {midEntry},
+	keyFable:      {fableEntry, sonnetEntry},
+	keyProduction: productionEntries,
+	keyProductionFallback: bareEntries(
+		"claude-haiku-4-5",
+		"claude-opus-5-5",
+		"claude-sonnet-5-5",
+		"gpt-5.4",
+		"gpt-6-sol",
+	),
+	keyMixedNames: bareEntries(
+		"claude-haiku-5-5",
+		"claude-haiku-5.5",
+		"claude-sonnet",
+		"claude-sonnet-5-5",
+	),
+	keyMaxInput: maxInputEntries,
+	keyShort:    {sonnetEntry},
+	keyBare:     {sonnetEntry},
+	keyLong:     {sonnetEntry},
+	keyNoInfer:  {sonnetEntry},
+	keyQuoted:   {`{"id":"bad\"alias","object":"model","created":0,"owned_by":"x"}`},
 }
 
 // gatewayDouble serves the catalogue and protocol-specific inference replies, journalling requests.
@@ -154,7 +177,11 @@ func (g *gatewayDouble) serve(w http.ResponseWriter, r *http.Request) {
 		case "/v1/messages":
 			_, _ = w.Write([]byte(`{"id":"synthetic","type":"message","content":[]}`))
 		case "/v1/responses":
-			_, _ = w.Write([]byte(`{"id":"synthetic","object":"response","status":"completed","error":null,"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hi","annotations":[]}]}]}`))
+			_, _ = w.Write(
+				[]byte(
+					`{"id":"synthetic","object":"response","status":"completed","error":null,"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hi","annotations":[]}]}]}`,
+				),
+			)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -253,7 +280,14 @@ func newSession(t *testing.T, g *gatewayDouble) *session {
 		clock = clock.Add(time.Second)
 		return now
 	}
-	s.deps = cli.Deps{Stdin: strings.NewReader(""), Stdout: s.out, Stderr: s.errb, HTTP: g.Client(), Runner: s.runner, Now: tick}
+	s.deps = cli.Deps{
+		Stdin:  strings.NewReader(""),
+		Stdout: s.out,
+		Stderr: s.errb,
+		HTTP:   g.Client(),
+		Runner: s.runner,
+		Now:    tick,
+	}
 	return s
 }
 
@@ -326,7 +360,13 @@ func (s *session) loggedIn(key string) *session {
 // launcher.
 func (s *session) configured(tool string) *session {
 	s.t.Helper()
-	table, err := gateway.Client{HTTP: s.deps.HTTP, BaseURL: s.env.BaseURL}.Models(context.Background(), keyValid)
+	table, err := gateway.Client{
+		HTTP:    s.deps.HTTP,
+		BaseURL: s.env.BaseURL,
+	}.Models(
+		context.Background(),
+		keyValid,
+	)
 	if err != nil {
 		s.t.Fatal(err)
 	}
@@ -334,7 +374,9 @@ func (s *session) configured(tool string) *session {
 	var plan harness.Plan
 	switch tool {
 	case "claude":
-		plan, err = claude.Setup(claude.Input{Table: table, BaseURL: s.env.BaseURL, UserHome: s.fakeHome, WorkDir: s.env.WorkDir})
+		plan, err = claude.Setup(
+			claude.Input{Table: table, BaseURL: s.env.BaseURL, UserHome: s.fakeHome, WorkDir: s.env.WorkDir},
+		)
 	case "codex":
 		plan, err = codex.Setup(in)
 	case "pi":
@@ -373,7 +415,12 @@ func (s *session) homeFiles() []string {
 
 // launched is the whole stderr of a launch that lists n models and starts product: no inference stage, no table.
 func launched(origin string, n int, product string) string {
-	return fmt.Sprintf("Gateway: %s\n  Retrieving available models…\n  OK %d models available\n  Starting %s; the session now owns this terminal.\n", origin, n, product)
+	return fmt.Sprintf(
+		"Gateway: %s\n  Retrieving available models…\n  OK %d models available\n  Starting %s; the session now owns this terminal.\n",
+		origin,
+		n,
+		product,
+	)
 }
 
 // catalogueFailed is the whole stderr of a run whose model listing failed with category, then reported msg.

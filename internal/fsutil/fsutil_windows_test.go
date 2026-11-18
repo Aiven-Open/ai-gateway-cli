@@ -17,7 +17,11 @@ const fileAllAccess = 0x1f01ff
 
 func assertProtectedOwnerOnlyDACL(t *testing.T, path string, sid *windows.SID) {
 	t.Helper()
-	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	sd, err := windows.GetNamedSecurityInfo(
+		path,
+		windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,8 +36,10 @@ func assertProtectedOwnerOnlyDACL(t *testing.T, path string, sid *windows.SID) {
 	// Compared by SID rather than as SDDL text, which abbreviates well-known accounts: the built-in Administrator a CI
 	// runner runs as is LA.
 	var ace *windows.ACCESS_ALLOWED_ACE
-	if dacl.AceCount != 1 || windows.GetAce(dacl, 0, &ace) != nil || ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE ||
-		ace.Mask != fileAllAccess || !(*windows.SID)(unsafe.Pointer(&ace.SidStart)).Equals(sid) {
+	if dacl.AceCount != 1 || windows.GetAce(dacl, 0, &ace) != nil ||
+		ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE ||
+		ace.Mask != fileAllAccess ||
+		!(*windows.SID)(unsafe.Pointer(&ace.SidStart)).Equals(sid) {
 		t.Errorf("%s SDDL = %q, want a single FA entry for %s", path, sd.String(), sid)
 	}
 }
@@ -70,7 +76,11 @@ func TestWriteAtomicSetsAndKeepsProtectedOwnerOnlyDACLOnWindows(t *testing.T) {
 	if err := fsutil.WriteAtomic(sharedPath, []byte("public"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	sd, err := windows.GetNamedSecurityInfo(sharedPath, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	sd, err := windows.GetNamedSecurityInfo(
+		sharedPath,
+		windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +131,11 @@ func TestWriteAtomicSetsAndKeepsProtectedOwnerOnlyDACLOnWindows(t *testing.T) {
 
 func assertUnprotectedDACLWithDeny(t *testing.T, path string, deniedSID *windows.SID) {
 	t.Helper()
-	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	sd, err := windows.GetNamedSecurityInfo(
+		path,
+		windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

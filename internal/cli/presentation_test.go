@@ -74,7 +74,9 @@ func TestSetupAnnouncesEachRequestBeforeSendingItAndSavesOnlyAfterTheProbe(t *te
 		t.Fatalf("exit %d, %d requests, stderr %q", code, len(reqs), stderr.String())
 	}
 	list := reqs[0]
-	if list.method != http.MethodGet || list.path != "/v1/models" || !strings.HasSuffix(list.stderr, "Retrieving available models…\n") || list.keySaved {
+	if list.method != http.MethodGet || list.path != "/v1/models" ||
+		!strings.HasSuffix(list.stderr, "Retrieving available models…\n") ||
+		list.keySaved {
 		t.Errorf("listing arrived after %q (key saved %v)", list.stderr, list.keySaved)
 	}
 	for _, probe := range reqs[1:] {
@@ -86,12 +88,16 @@ func TestSetupAnnouncesEachRequestBeforeSendingItAndSavesOnlyAfterTheProbe(t *te
 	out := stderr.String()
 	probe := reqs[len(reqs)-1]
 	after := out[len(probe.stderr):]
-	if !strings.HasPrefix(after, "  OK Responses with gpt-sol: HTTP 200; basic check passed\n  Saving the key…\n  OK saved to "+s.keyPath()+"\n") {
+	if !strings.HasPrefix(
+		after,
+		"  OK Responses with gpt-sol: HTTP 200; basic check passed\n  Saving the key…\n  OK saved to "+s.keyPath()+"\n",
+	) {
 		t.Errorf("after the probe: %q", after)
 	}
 	// Each configured protocol and model is checked once before saving the key.
 	for _, tool := range []string{"Pi", "OpenCode", "Codex", "Claude Code", "OMP"} {
-		if !strings.Contains(out, "\n"+tool+" configuration\n") || !strings.Contains(out, "\n  "+tool+strings.Repeat(" ", 13-len(tool))+"configured\n") {
+		if !strings.Contains(out, "\n"+tool+" configuration\n") ||
+			!strings.Contains(out, "\n  "+tool+strings.Repeat(" ", 13-len(tool))+"configured\n") {
 			t.Errorf("%s was not configured and summarised: %q", tool, out)
 		}
 	}
@@ -237,11 +243,21 @@ func TestStylingFollowsEachStreamAndThePlainSwitches(t *testing.T) {
 			if r.code != 0 {
 				t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
 			}
-			if strings.Contains(r.stdout, "\x1b") != tc.stdoutANSI || strings.Contains(r.stderr, "\x1b") != tc.errANSI {
-				t.Errorf("stdout %q, stderr %q; want escapes on stdout %v, stderr %v", r.stdout, r.stderr, tc.stdoutANSI, tc.errANSI)
+			if strings.Contains(r.stdout, "\x1b") != tc.stdoutANSI ||
+				strings.Contains(r.stderr, "\x1b") != tc.errANSI {
+				t.Errorf(
+					"stdout %q, stderr %q; want escapes on stdout %v, stderr %v",
+					r.stdout,
+					r.stderr,
+					tc.stdoutANSI,
+					tc.errANSI,
+				)
 			}
 			// Several entries share a line only on a terminal wide enough.
-			if columns := slices.ContainsFunc(strings.Split(r.stdout, "\n"), func(l string) bool { return strings.Contains(l, "claude-opus") && strings.Contains(l, "claude-sonnet") }); columns != tc.wantColumnsOnStdout {
+			if columns := slices.ContainsFunc(
+				strings.Split(r.stdout, "\n"),
+				func(l string) bool { return strings.Contains(l, "claude-opus") && strings.Contains(l, "claude-sonnet") },
+			); columns != tc.wantColumnsOnStdout {
 				t.Errorf("columns on stdout = %v, want %v:\n%s", columns, tc.wantColumnsOnStdout, r.stdout)
 			}
 			if strings.Contains(r.stdout, "Retrieving") || strings.Contains(r.stderr, "Anthropic") {
@@ -269,10 +285,16 @@ func TestCancellationStopsTheRemainingTools(t *testing.T) {
 	p := &scriptedPrompter{answers: []string{"all", "", "", "", "", ""}}
 	s.deps.Prompter = p
 	r := s.run("setup", "--key-stdin")
-	if r.code != 1 || !strings.Contains(r.stderr, "Setup cancelled\n") || strings.Count(r.stderr, "not attempted after the cancellation") != len(toolFiles)-1 {
+	if r.code != 1 || !strings.Contains(r.stderr, "Setup cancelled\n") ||
+		strings.Count(r.stderr, "not attempted after the cancellation") != len(toolFiles)-1 {
 		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
 	}
-	if applies := slices.DeleteFunc(p.prompts, func(q string) bool { return !strings.HasPrefix(q, "Apply this change") }); len(applies) != 1 {
+	if applies := slices.DeleteFunc(
+		p.prompts,
+		func(q string) bool { return !strings.HasPrefix(q, "Apply this change") },
+	); len(
+		applies,
+	) != 1 {
 		t.Errorf("apply questions after the cancellation: %q", applies)
 	}
 	for tool, file := range toolFiles {

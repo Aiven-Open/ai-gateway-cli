@@ -20,7 +20,14 @@ import (
 
 // configureTool previews the complete write set, including any explicitly selected default, obtains consent and
 // writes it, recording the outcome in out.
-func configureTool(deps Deps, p presenter, yes bool, out *targetOutcome, files []harness.File, table []models.Model) {
+func configureTool(
+	deps Deps,
+	p presenter,
+	yes bool,
+	out *targetOutcome,
+	files []harness.File,
+	table []models.Model,
+) {
 	tool, names := out.tool, backupNames{deps.now(), map[string]string{}}
 	u := p.ui
 	u.heading(toolLabel(tool) + " configuration")
@@ -87,7 +94,12 @@ func configureTool(deps Deps, p presenter, yes bool, out *targetOutcome, files [
 	out.status = statusConfigured
 }
 
-func prepareSnapshot(env config.Env, table []models.Model, tool string, asDefault bool) (harness.Plan, error) {
+func prepareSnapshot(
+	env config.Env,
+	table []models.Model,
+	tool string,
+	asDefault bool,
+) (harness.Plan, error) {
 	template, err := setupTools[tool].prepare(env, nil, asDefault)
 	if err != nil {
 		return harness.Plan{}, err
@@ -107,7 +119,10 @@ func prepareSnapshot(env config.Env, table []models.Model, tool string, asDefaul
 			}
 			f.Parents = append(f.Parents, parent)
 			if err == nil && (!info.IsDir() || info.Mode()&os.ModeSymlink != 0) {
-				return harness.Plan{}, fmt.Errorf("%s is not a regular directory; fix or move it, then retry", parent)
+				return harness.Plan{}, fmt.Errorf(
+					"%s is not a regular directory; fix or move it, then retry",
+					parent,
+				)
 			}
 		}
 		f.Before, f.Perm, f.Existed, err = inspectFile(f.Path)
@@ -119,7 +134,13 @@ func prepareSnapshot(env config.Env, table []models.Model, tool string, asDefaul
 	return applySnapshot(env, table, tool, asDefault, template)
 }
 
-func applySnapshot(env config.Env, table []models.Model, tool string, asDefault bool, snapshot harness.Plan) (harness.Plan, error) {
+func applySnapshot(
+	env config.Env,
+	table []models.Model,
+	tool string,
+	asDefault bool,
+	snapshot harness.Plan,
+) (harness.Plan, error) {
 	for _, f := range snapshot.Files {
 		if err := unchanged(f); err != nil {
 			return harness.Plan{}, err
@@ -166,7 +187,10 @@ func unchanged(f harness.File) error {
 	for _, parent := range f.Parents {
 		info, err := os.Lstat(parent)
 		if err == nil && (!info.IsDir() || info.Mode()&os.ModeSymlink != 0) {
-			return fmt.Errorf("%s is not a regular directory; nothing further was overwritten, rerun setup", parent)
+			return fmt.Errorf(
+				"%s is not a regular directory; nothing further was overwritten, rerun setup",
+				parent,
+			)
 		} else if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("inspect %s: %w", parent, err)
 		}
@@ -176,7 +200,10 @@ func unchanged(f harness.File) error {
 		return err
 	}
 	if !f.Inspected || existed != f.Existed || perm != f.Perm || !bytes.Equal(data, f.Before) {
-		return fmt.Errorf("%s changed since inspection; nothing further was overwritten, rerun setup", f.Path)
+		return fmt.Errorf(
+			"%s changed since inspection; nothing further was overwritten, rerun setup",
+			f.Path,
+		)
 	}
 	return nil
 }
@@ -228,7 +255,10 @@ func writeFile(f harness.File, backupPath func(string) string, deps Deps) (strin
 			return err
 		}
 		if existed != f.Existed || perm != f.Perm || !bytes.Equal(data, f.Before) {
-			return fmt.Errorf("%s changed since inspection; nothing further was overwritten, rerun setup", f.Path)
+			return fmt.Errorf(
+				"%s changed since inspection; nothing further was overwritten, rerun setup",
+				f.Path,
+			)
 		}
 		return nil
 	}
@@ -260,12 +290,20 @@ func partialWrite(err error, completed []string) error {
 	if len(completed) == 0 {
 		return err
 	}
-	return fmt.Errorf("partially configured; completed %s; remaining operation failed: %w", strings.Join(completed, ", "), err)
+	return fmt.Errorf(
+		"partially configured; completed %s; remaining operation failed: %w",
+		strings.Join(completed, ", "),
+		err,
+	)
 }
 
 // changes lists the files that differ from what is there now, or from over, the files already planned, with their
 // preview.
-func changes(files, over []harness.File, table []models.Model, names backupNames) ([]harness.File, string, error) {
+func changes(
+	files, over []harness.File,
+	table []models.Model,
+	names backupNames,
+) ([]harness.File, string, error) {
 	var preview strings.Builder
 	var out []harness.File
 	for _, f := range files {
@@ -300,7 +338,15 @@ func changes(files, over []harness.File, table []models.Model, names backupNames
 
 // approveFiles obtains consent for the previewed change. --yes approves; without a terminal nothing is approved. Only
 // an explicit choice or Enter applies: end of input and cancellation are errors, never a default.
-func approveFiles(deps Deps, p presenter, yes bool, files []harness.File, table []models.Model, names backupNames, tool string) (bool, error) {
+func approveFiles(
+	deps Deps,
+	p presenter,
+	yes bool,
+	files []harness.File,
+	table []models.Model,
+	names backupNames,
+	tool string,
+) (bool, error) {
 	if yes || deps.Prompter == nil {
 		return yes, nil
 	}
@@ -383,5 +429,10 @@ func modelNames(table []models.Model, n int) string {
 	if len(names) <= n {
 		return fmt.Sprintf("%d models: %s", len(names), strings.Join(names, ", "))
 	}
-	return fmt.Sprintf("%d models: %s, … +%d more", len(names), strings.Join(names[:n], ", "), len(names)-n)
+	return fmt.Sprintf(
+		"%d models: %s, … +%d more",
+		len(names),
+		strings.Join(names[:n], ", "),
+		len(names)-n,
+	)
 }

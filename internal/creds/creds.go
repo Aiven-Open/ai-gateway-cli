@@ -108,7 +108,10 @@ func CommandLine(origin, goos string) string {
 
 // Write saves key to the key file of the gateway at origin with write, which creates missing parent directories
 // 0700, and returns the file's path.
-func Write(userHome, origin, key string, write func(path string, data []byte, perm os.FileMode) error) (string, error) {
+func Write(
+	userHome, origin, key string,
+	write func(path string, data []byte, perm os.FileMode) error,
+) (string, error) {
 	if userHome == "" {
 		return "", config.ErrNoHome
 	}

@@ -11,8 +11,11 @@ import (
 
 // toolFiles are the files whose presence shows setup configured each tool.
 var toolFiles = map[string]string{
-	"pi": ".pi/agent/models.json", "opencode": ".config/opencode/opencode.json", "codex": ".codex/config.toml",
-	"claude": ".claude/aiven.settings.json", "omp": ".omp/agent/models.yml",
+	"pi":       ".pi/agent/models.json",
+	"opencode": ".config/opencode/opencode.json",
+	"codex":    ".codex/config.toml",
+	"claude":   ".claude/aiven.settings.json",
+	"omp":      ".omp/agent/models.yml",
 }
 
 func TestLaunchPickerRequiresOneInstalledHarnessAndCancelHasNoEffects(t *testing.T) {
@@ -67,7 +70,9 @@ func TestSetupPickerKeepsGoingPastAToolWithMalformedConfig(t *testing.T) {
 	writeFile(t, filepath.Join(s.fakeHome, toolFiles["pi"]), "{bad")
 	s.deps.Prompter = &scriptedPrompter{answers: []string{"pi,codex", "", "", ""}}
 	r := s.run("setup", "--key-stdin")
-	if r.code != 1 || !strings.Contains(r.stderr, "aiven-ai-gateway: pi: ") || !strings.Contains(r.stderr, "written: "+filepath.Join(s.fakeHome, toolFiles["codex"])) || !strings.Contains(r.stderr, "Pi          failed") {
+	if r.code != 1 || !strings.Contains(r.stderr, "aiven-ai-gateway: pi: ") ||
+		!strings.Contains(r.stderr, "written: "+filepath.Join(s.fakeHome, toolFiles["codex"])) ||
+		!strings.Contains(r.stderr, "Pi          failed") {
 		t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
 	}
 }
@@ -99,12 +104,18 @@ func TestSetupPickerOffersToolsOnPathAndConfiguresTheChosenOnes(t *testing.T) {
 			p := &scriptedPrompter{answers: tc.answers}
 			s.deps.Prompter = p
 			r := s.run("setup", "--key-stdin")
-			if r.code != tc.code || !strings.Contains(r.stderr, tc.menu) || strings.Count(r.stderr, "Choose from the list") != tc.reprompt || r.stdout != "" || !strings.Contains(r.stderr, tc.hint) {
+			if r.code != tc.code || !strings.Contains(r.stderr, tc.menu) ||
+				strings.Count(r.stderr, "Choose from the list") != tc.reprompt ||
+				r.stdout != "" ||
+				!strings.Contains(r.stderr, tc.hint) {
 				t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
 			}
 			for tool, f := range toolFiles {
 				_, err := os.Stat(filepath.Join(s.fakeHome, f))
-				if configured := err == nil; configured != strings.Contains(" "+strings.Join(tc.want, " ")+" ", " "+tool+" ") {
+				if configured := err == nil; configured != strings.Contains(
+					" "+strings.Join(tc.want, " ")+" ",
+					" "+tool+" ",
+				) {
 					t.Errorf("%s configured = %v, want %v", tool, configured, !configured)
 				}
 			}
@@ -120,7 +131,9 @@ func TestSetupPickerSkipsAToolWhoseConfigIsMoved(t *testing.T) {
 	s.env.Environ = append(s.env.Environ, "CODEX_HOME="+filepath.Join(s.fakeHome, "elsewhere"))
 	s.deps.Prompter = &scriptedPrompter{answers: []string{"pi,codex", "", ""}}
 	r := s.run("setup", "--key-stdin")
-	if r.code != 1 || !strings.Contains(r.stderr, "aiven-ai-gateway: codex: CODEX_HOME is set") || !strings.Contains(r.stderr, "Pi          configured\n") || !strings.Contains(r.stderr, "Codex       failed; CODEX_HOME is set") {
+	if r.code != 1 || !strings.Contains(r.stderr, "aiven-ai-gateway: codex: CODEX_HOME is set") ||
+		!strings.Contains(r.stderr, "Pi          configured\n") ||
+		!strings.Contains(r.stderr, "Codex       failed; CODEX_HOME is set") {
 		t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
 	}
 	if _, err := os.Stat(filepath.Join(s.fakeHome, toolFiles["codex"])); err == nil {
@@ -131,7 +144,8 @@ func TestSetupPickerSkipsAToolWhoseConfigIsMoved(t *testing.T) {
 func TestSetupWithoutTerminalRequiresAHarnessBeforeSavingTheKey(t *testing.T) {
 	s := newSession(t, newGatewayDouble(t)).stdin(keyValid)
 	r := s.run("setup", "--yes")
-	if r.code != 1 || r.stdout != "" || !strings.Contains(r.stderr, "a harness is required without a terminal") {
+	if r.code != 1 || r.stdout != "" ||
+		!strings.Contains(r.stderr, "a harness is required without a terminal") {
 		t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
 	}
 	if _, err := os.Stat(s.keyPath()); !os.IsNotExist(err) {

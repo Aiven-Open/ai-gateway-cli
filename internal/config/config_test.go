@@ -29,7 +29,8 @@ func TestHTTPGatewayIsRejectedBecauseItExposesBearerCredentials(t *testing.T) {
 	for _, raw := range []string{"http://127.0.0.1:4000", "http://gateway.example:8443", "HTTP://[::1]"} {
 		t.Run(raw, func(t *testing.T) {
 			_, err := config.Load([]string{"AIVEN_AI_GATEWAY_BASE_URL=" + raw})
-			if err == nil || !strings.Contains(err.Error(), "HTTPS") || !strings.Contains(err.Error(), "bearer") {
+			if err == nil || !strings.Contains(err.Error(), "HTTPS") ||
+				!strings.Contains(err.Error(), "bearer") {
 				t.Fatalf("Load(%q) error = %v; want an HTTPS and bearer credential explanation", raw, err)
 			}
 		})
@@ -93,9 +94,14 @@ func TestInvalidBaseURLIsRejected(t *testing.T) {
 		"https://ai.aiven.io#frag", "https://user:s3cret@ai.aiven.io", "ftp://ai.aiven.io", "ai.aiven.io", "https://",
 	} {
 		_, err := config.Load([]string{"AIVEN_AI_GATEWAY_BASE_URL=" + raw})
-		if err == nil || !strings.Contains(err.Error(), "AIVEN_AI_GATEWAY_BASE_URL") || strings.Contains(err.Error(), raw) ||
+		if err == nil || !strings.Contains(err.Error(), "AIVEN_AI_GATEWAY_BASE_URL") ||
+			strings.Contains(err.Error(), raw) ||
 			strings.Contains(err.Error(), "s3cret") {
-			t.Errorf("Load(%q) err = %v, want an AIVEN_AI_GATEWAY_BASE_URL error without the value", raw, err)
+			t.Errorf(
+				"Load(%q) err = %v, want an AIVEN_AI_GATEWAY_BASE_URL error without the value",
+				raw,
+				err,
+			)
 		}
 	}
 }

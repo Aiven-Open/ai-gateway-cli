@@ -25,7 +25,9 @@ func TestIsBatchRecognisesCmdAndBatCaseInsensitively(t *testing.T) {
 	}
 }
 
-func TestBatchCmdLinePreservesMetacharactersQuotesAndEnvSyntaxAcrossCmdAndArgvParsers(t *testing.T) {
+func TestBatchCmdLinePreservesMetacharactersQuotesAndEnvSyntaxAcrossCmdAndArgvParsers(
+	t *testing.T,
+) {
 	t.Parallel()
 	args := []string{
 		"--flag",
@@ -43,7 +45,11 @@ func TestBatchCmdLinePreservesMetacharactersQuotesAndEnvSyntaxAcrossCmdAndArgvPa
 		`C:\Users\Jane Doe\trailing\\`,
 		"日本語",
 	}
-	line, err := BatchCmdLine(`C:\Windows\System32\cmd.exe`, `C:\Users\Jane Doe\AppData\Roaming\npm\claude.cmd`, args)
+	line, err := BatchCmdLine(
+		`C:\Windows\System32\cmd.exe`,
+		`C:\Users\Jane Doe\AppData\Roaming\npm\claude.cmd`,
+		args,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +59,8 @@ func TestBatchCmdLinePreservesMetacharactersQuotesAndEnvSyntaxAcrossCmdAndArgvPa
 	}
 	// cmd.exe /d /v:off /s /c strips the first and last quote after /c, then runs two cmd.exe passes (/c and %* in the shim).
 	inner := line[len(prefix) : len(line)-1]
-	if strings.Contains(inner, "%USERPROFILE%") || strings.Contains(inner, "%PATH%") || strings.Contains(inner, "%A_B%") {
+	if strings.Contains(inner, "%USERPROFILE%") || strings.Contains(inner, "%PATH%") ||
+		strings.Contains(inner, "%A_B%") {
 		t.Errorf("unbroken %%VAR%% left in command line: %s", inner)
 	}
 	pass1, err := simulateCmdPass(inner)

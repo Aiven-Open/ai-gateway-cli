@@ -34,11 +34,36 @@ var setupTools = map[string]struct {
 	bin     string
 	moved   []string
 }{
-	"pi":       {userConfig(pi.Setup), func(t []models.Model) string { return "pi --model " + shellQuote(pi.Model(t)) }, "pi", []string{"PI_CODING_AGENT_DIR"}},
-	"opencode": {userConfig(opencode.Setup), func(t []models.Model) string { return "opencode -m " + shellQuote(opencode.Model(t)) }, "opencode", []string{"OPENCODE_CONFIG", "OPENCODE_CONFIG_DIR"}},
-	"codex":    {userConfig(codex.Setup), func([]models.Model) string { return "codex -p aiven" }, "codex", []string{"CODEX_HOME"}},
-	"claude":   {connectClaude, func([]models.Model) string { return "claude --settings ~/" + claude.SettingsFile }, "claude", []string{"CLAUDE_CONFIG_DIR"}},
-	"omp":      {userConfig(omp.Setup), func(t []models.Model) string { return "omp --model " + shellQuote(omp.Model(t)) }, "omp", []string{"PI_CODING_AGENT_DIR", "OMP_PROFILE", "PI_PROFILE", "PI_CONFIG_DIR"}},
+	"pi": {
+		userConfig(pi.Setup),
+		func(t []models.Model) string { return "pi --model " + shellQuote(pi.Model(t)) },
+		"pi",
+		[]string{"PI_CODING_AGENT_DIR"},
+	},
+	"opencode": {
+		userConfig(opencode.Setup),
+		func(t []models.Model) string { return "opencode -m " + shellQuote(opencode.Model(t)) },
+		"opencode",
+		[]string{"OPENCODE_CONFIG", "OPENCODE_CONFIG_DIR"},
+	},
+	"codex": {
+		userConfig(codex.Setup),
+		func([]models.Model) string { return "codex -p aiven" },
+		"codex",
+		[]string{"CODEX_HOME"},
+	},
+	"claude": {
+		connectClaude,
+		func([]models.Model) string { return "claude --settings ~/" + claude.SettingsFile },
+		"claude",
+		[]string{"CLAUDE_CONFIG_DIR"},
+	},
+	"omp": {
+		userConfig(omp.Setup),
+		func(t []models.Model) string { return "omp --model " + shellQuote(omp.Model(t)) },
+		"omp",
+		[]string{"PI_CODING_AGENT_DIR", "OMP_PROFILE", "PI_PROFILE", "PI_CONFIG_DIR"},
+	},
 }
 
 // moved refuses redirects that would make setup and the Console's native instructions name different files.
@@ -54,14 +79,32 @@ func moved(env config.Env, tool string) error {
 	return nil
 }
 
-func userConfig(prepare func(harness.Input) (harness.Plan, error)) func(config.Env, []models.Model, bool) (harness.Plan, error) {
+func userConfig(
+	prepare func(harness.Input) (harness.Plan, error),
+) func(config.Env, []models.Model, bool) (harness.Plan, error) {
 	return func(env config.Env, t []models.Model, asDefault bool) (harness.Plan, error) {
-		return prepare(harness.Input{Table: t, BaseURL: env.BaseURL, UserHome: env.UserHome, ConfigHome: env.ConfigHome, Default: asDefault})
+		return prepare(
+			harness.Input{
+				Table:      t,
+				BaseURL:    env.BaseURL,
+				UserHome:   env.UserHome,
+				ConfigHome: env.ConfigHome,
+				Default:    asDefault,
+			},
+		)
 	}
 }
 
 func connectClaude(env config.Env, t []models.Model, asDefault bool) (harness.Plan, error) {
-	return claude.Setup(claude.Input{Table: t, BaseURL: env.BaseURL, UserHome: env.UserHome, WorkDir: env.WorkDir, Default: asDefault})
+	return claude.Setup(
+		claude.Input{
+			Table:    t,
+			BaseURL:  env.BaseURL,
+			UserHome: env.UserHome,
+			WorkDir:  env.WorkDir,
+			Default:  asDefault,
+		},
+	)
 }
 
 const connectPrompt = "Paste your Aiven AI Gateway API key (hidden): "
@@ -85,9 +128,13 @@ func parseSetup(args []string) (setupOptions, error) {
 		case setupTools[a].prepare != nil && o.tool == "":
 			o.tool = a
 		case name == "--key" || name == "--api-key":
-			return setupOptions{}, errors.New("do not pass API keys on the command line; use --key-stdin or interactive prompt")
+			return setupOptions{}, errors.New(
+				"do not pass API keys on the command line; use --key-stdin or interactive prompt",
+			)
 		default:
-			return setupOptions{}, errors.New("setup: unexpected argument. Run: aiven-ai-gateway setup --help")
+			return setupOptions{}, errors.New(
+				"setup: unexpected argument. Run: aiven-ai-gateway setup --help",
+			)
 		}
 	}
 	return o, nil
@@ -105,7 +152,10 @@ func setup(ctx context.Context, args []string, env config.Env, deps Deps) int {
 	picked := []string{o.tool}
 	if o.tool == "" {
 		if deps.Prompter == nil {
-			return fail(deps, "setup: a harness is required without a terminal; use login for credential-only input")
+			return fail(
+				deps,
+				"setup: a harness is required without a terminal; use login for credential-only input",
+			)
 		}
 		picked, err = pickTools(deps, p)
 		if errors.Is(err, errCancelled) {
@@ -127,15 +177,25 @@ func setup(ctx context.Context, args []string, env config.Env, deps Deps) int {
 		out := run.add(target)
 		err := moved(env, target)
 		if err == nil && target == "pi" && runtime.GOOS == "windows" {
-			_, err = pi.WindowsShell(env.Environ, func(path string) bool { _, err := os.Stat(path); return err == nil }, deps.Runner.LookPath)
+			_, err = pi.WindowsShell(
+				env.Environ,
+				func(path string) bool { _, err := os.Stat(path); return err == nil },
+				deps.Runner.LookPath,
+			)
 		}
 		if _, lookup := deps.Runner.LookPath(target); err == nil && lookup != nil {
 			out.status = statusMissing
-			err = fmt.Errorf("%s is required but not installed; install it, then run aiven-ai-gateway setup %s", target, target)
+			err = fmt.Errorf(
+				"%s is required but not installed; install it, then run aiven-ai-gateway setup %s",
+				target,
+				target,
+			)
 		}
 		if err == nil && setupTools[target].bin != "" && !o.yes && deps.Prompter != nil {
 			out.asDefault, err = confirm(deps.Prompter, fmt.Sprintf(
-				"Make Aiven the native default for %s? Enter keeps your current default. [y/N] ", toolLabel(target)), false)
+				"Make Aiven the native default for %s? Enter keeps your current default. [y/N] ",
+				toolLabel(target),
+			), false)
 			// An unanswered question stops the whole run: later targets must not save a key on its behalf.
 			if errors.Is(err, errInputEnded) {
 				return run.cancel(deps, err)
@@ -219,7 +279,13 @@ func setup(ctx context.Context, args []string, env config.Env, deps Deps) int {
 
 // obtainKey reads explicit stdin, a working saved key, a confirmed environment key or hidden terminal input.
 // A non-nil table means the key already passed model listing.
-func obtainKey(ctx context.Context, env config.Env, deps Deps, p presenter, o setupOptions) (string, []models.Model, error) {
+func obtainKey(
+	ctx context.Context,
+	env config.Env,
+	deps Deps,
+	p presenter,
+	o setupOptions,
+) (string, []models.Model, error) {
 	p.ui.heading("Key check")
 	p.ui.line(2, "Setup lists your models, then sends one minimal request per configured protocol")
 	p.ui.line(2, "and model, limited to one output token each. These requests may incur usage.")
@@ -271,12 +337,22 @@ func obtainKey(ctx context.Context, env config.Env, deps Deps, p presenter, o se
 
 // keepSavedKey asks on a terminal whether to keep a working saved key. Without a terminal, or with --yes, it keeps the
 // key, since stdin then holds no replacement.
-func keepSavedKey(deps Deps, p presenter, yes bool, key string, table []models.Model) (string, []models.Model, error) {
+func keepSavedKey(
+	deps Deps,
+	p presenter,
+	yes bool,
+	key string,
+	table []models.Model,
+) (string, []models.Model, error) {
 	if deps.Prompter == nil || yes {
 		p.ui.line(2, "Using your existing gateway key.")
 		return key, table, nil
 	}
-	keep, err := confirm(deps.Prompter, fmt.Sprintf("Keep the saved key (%s)? [Y/n] ", maskKey(key)), true)
+	keep, err := confirm(
+		deps.Prompter,
+		fmt.Sprintf("Keep the saved key (%s)? [Y/n] ", maskKey(key)),
+		true,
+	)
 	if err != nil || keep {
 		return key, table, err
 	}
@@ -323,7 +399,12 @@ func maskKey(key string) string {
 }
 
 // fetchCatalogue lists the key's models, announcing the request before it is sent.
-func fetchCatalogue(ctx context.Context, gw gateway.Client, key string, p presenter) ([]models.Model, error) {
+func fetchCatalogue(
+	ctx context.Context,
+	gw gateway.Client,
+	key string,
+	p presenter,
+) ([]models.Model, error) {
 	p.begin("Retrieving available models")
 	table, err := gw.Models(ctx, key)
 	if err != nil {
@@ -340,7 +421,13 @@ func rejected(err error) bool {
 }
 
 // checkCandidate lets setup replace a rejected or no-model key, but never switches on other request failures.
-func checkCandidate(ctx context.Context, env config.Env, deps Deps, p presenter, key string) ([]models.Model, error) {
+func checkCandidate(
+	ctx context.Context,
+	env config.Env,
+	deps Deps,
+	p presenter,
+	key string,
+) ([]models.Model, error) {
 	table, err := fetchCatalogue(ctx, deps.gateway(env.BaseURL), key, p)
 	if err == nil {
 		return table, nil

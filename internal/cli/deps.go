@@ -70,7 +70,13 @@ func (d Deps) writeFile(path string, data []byte, perm os.FileMode) error {
 }
 
 // writeIn replaces name in dir once check passes; a WriteFile override gets the file's path instead.
-func (d Deps) writeIn(dir *fsutil.Dir, name string, data []byte, perm os.FileMode, check func() error) error {
+func (d Deps) writeIn(
+	dir *fsutil.Dir,
+	name string,
+	data []byte,
+	perm os.FileMode,
+	check func() error,
+) error {
 	if d.WriteFile == nil {
 		return dir.WriteAtomic(name, data, perm, check)
 	}

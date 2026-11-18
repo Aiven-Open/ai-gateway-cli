@@ -82,7 +82,14 @@ func Setup(in harness.Input) (harness.Plan, error) {
 	}
 	var list []model
 	for _, m := range models.Sorted(in.Table) {
-		e := model{ID: m.Alias, Name: m.DisplayName(), Reasoning: true, Input: []string{"text", "image"}, ContextWindow: m.Context, MaxTokens: m.MaxOutput}
+		e := model{
+			ID:            m.Alias,
+			Name:          m.DisplayName(),
+			Reasoning:     true,
+			Input:         []string{"text", "image"},
+			ContextWindow: m.Context,
+			MaxTokens:     m.MaxOutput,
+		}
 		protocol := models.ModelProtocol(m.Alias)
 		e.API, e.BaseURL = string(protocol), protocol.BaseURL(in.BaseURL)
 		if m.Priced() {
@@ -91,7 +98,10 @@ func Setup(in harness.Input) (harness.Plan, error) {
 		list = append(list, e)
 	}
 	providers["aiven"] = map[string]any{
-		"baseUrl": in.BaseURL + "/v1", "api": "openai-completions", "apiKey": APIKey(in.BaseURL), "models": list,
+		"baseUrl": in.BaseURL + "/v1",
+		"api":     "openai-completions",
+		"apiKey":  APIKey(in.BaseURL),
+		"models":  list,
 	}
 	// Pi skips // comments and trailing commas in models.json but not block comments, and reads settings.json as plain
 	// JSON; it ignores a file it cannot parse, so what it would reject goes.
@@ -135,7 +145,9 @@ func Launch(in harness.Input) (harness.Plan, error) {
 			found = found || m["id"] == models.SonnetOrFirst(in.Table)
 		}
 		if !found {
-			return harness.Plan{}, errors.New("selected default is absent from the configured catalogue; refresh with setup")
+			return harness.Plan{}, errors.New(
+				"selected default is absent from the configured catalogue; refresh with setup",
+			)
 		}
 	}
 	return harness.Plan{
@@ -188,7 +200,11 @@ func Ready(home, baseURL string) (bool, error) {
 // is the legacy WSL launcher under SystemRoot, which runs the command inside Linux, where USERPROFILE is not set: Pi
 // would then fall back to cmd.exe or WSL, and neither runs the helper. Names in environ match ignoring case, as on
 // Windows.
-func WindowsShell(environ []string, exists func(string) bool, lookPath func(string) (string, error)) (string, error) {
+func WindowsShell(
+	environ []string,
+	exists func(string) bool,
+	lookPath func(string) (string, error),
+) (string, error) {
 	get := func(name string) string {
 		var v string
 		for _, kv := range environ {
@@ -211,7 +227,8 @@ func WindowsShell(environ []string, exists func(string) bool, lookPath func(stri
 	root := strings.TrimRight(get("SystemRoot"), `\/`)
 	legacy := root == "" && legacyWSL.MatchString(path)
 	for _, dir := range []string{"System32", "Sysnative"} {
-		legacy = legacy || root != "" && strings.EqualFold(strings.ReplaceAll(path, "/", `\`), root+`\`+dir+`\bash.exe`)
+		legacy = legacy ||
+			root != "" && strings.EqualFold(strings.ReplaceAll(path, "/", `\`), root+`\`+dir+`\bash.exe`)
 	}
 	if legacy {
 		return "", fmt.Errorf("pi would run its key helper in WSL through %s rather than Git Bash; "+
@@ -220,4 +237,6 @@ func WindowsShell(environ []string, exists func(string) bool, lookPath func(stri
 	return path, nil
 }
 
-var legacyWSL = regexp.MustCompile(`(?i)^[a-z]:[\\/]windows[\\/](system32|sysnative)[\\/]bash\.exe$`)
+var legacyWSL = regexp.MustCompile(
+	`(?i)^[a-z]:[\\/]windows[\\/](system32|sysnative)[\\/]bash\.exe$`,
+)

@@ -18,8 +18,22 @@ func TestShellQuoteIsOneLiteralWordInEveryShell(t *testing.T) {
 		t.Skip("POSIX shell quoting test")
 	}
 	words := []string{
-		"aiven/claude-sonnet-5-5", "", "two words", "it's", `model; touch "$HOME/shell-marker"; #`, "$(id)", "`id`",
-		"~", "~/x", "*", "=ls", "a\\b", "!!", "x\ny", "--flag=value", "名前",
+		"aiven/claude-sonnet-5-5",
+		"",
+		"two words",
+		"it's",
+		`model; touch "$HOME/shell-marker"; #`,
+		"$(id)",
+		"`id`",
+		"~",
+		"~/x",
+		"*",
+		"=ls",
+		"a\\b",
+		"!!",
+		"x\ny",
+		"--flag=value",
+		"名前",
 	}
 	for _, sh := range []string{"/bin/sh", "bash", "zsh"} {
 		path, err := exec.LookPath(sh)
@@ -36,7 +50,13 @@ func TestShellQuoteIsOneLiteralWordInEveryShell(t *testing.T) {
 				if err != nil {
 					t.Fatalf("%q: %v", w, err)
 				}
-				if got := strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00"); !slices.Equal(got, []string{w}) {
+				if got := strings.Split(
+					strings.TrimSuffix(string(out), "\x00"),
+					"\x00",
+				); !slices.Equal(
+					got,
+					[]string{w},
+				) {
 					t.Errorf("%s: %q became %q", sh, w, got)
 				}
 			}

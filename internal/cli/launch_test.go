@@ -22,7 +22,13 @@ import (
 )
 
 // productNames are the harness names the launcher prints in headings, prompts and summaries.
-var productNames = map[string]string{"claude": "Claude Code", "codex": "Codex", "pi": "Pi", "opencode": "OpenCode", "omp": "OMP"}
+var productNames = map[string]string{
+	"claude":   "Claude Code",
+	"codex":    "Codex",
+	"pi":       "Pi",
+	"opencode": "OpenCode",
+	"omp":      "OMP",
+}
 
 func configurationSnapshot(t *testing.T, roots ...string) map[string]string {
 	t.Helper()
@@ -107,7 +113,14 @@ func TestLaunchRequiresNativeSetupBeforeCredentialOrNetworkAccess(t *testing.T) 
 			if len(g.journal()) != 0 || len(s.runner.calls) != 0 {
 				t.Fatal("missing setup reached the gateway or a harness")
 			}
-			if after := configurationSnapshot(t, s.fakeHome, s.env.WorkDir); !reflect.DeepEqual(before, after) {
+			if after := configurationSnapshot(
+				t,
+				s.fakeHome,
+				s.env.WorkDir,
+			); !reflect.DeepEqual(
+				before,
+				after,
+			) {
 				t.Fatal("missing setup changed the configuration tree")
 			}
 		})
@@ -134,7 +147,14 @@ func TestLaunchLeavesCompleteConfigurationTreeAndWriterUntouched(t *testing.T) {
 			if !reflect.DeepEqual(got[len(got)-len(native):], native) {
 				t.Fatalf("native argv boundaries changed: %q", got)
 			}
-			if after := configurationSnapshot(t, s.fakeHome, s.env.WorkDir); !reflect.DeepEqual(before, after) {
+			if after := configurationSnapshot(
+				t,
+				s.fakeHome,
+				s.env.WorkDir,
+			); !reflect.DeepEqual(
+				before,
+				after,
+			) {
 				t.Fatal("launch changed the configuration tree")
 			}
 		})
@@ -149,7 +169,8 @@ func TestLaunchRejectsMissingConfiguredDefaultWithoutRefreshingMetadata(t *testi
 			s := newSession(t, newGatewayDouble(t)).configured(tool).loggedIn(keyMidContext)
 			before := configurationSnapshot(t, s.fakeHome)
 			r := s.run("launch", tool)
-			if r.code != 1 || !strings.Contains(r.stderr, "selected default is absent") || len(s.runner.calls) != 0 {
+			if r.code != 1 || !strings.Contains(r.stderr, "selected default is absent") ||
+				len(s.runner.calls) != 0 {
 				t.Fatalf("exit %d: %s", r.code, r.stderr)
 			}
 			if after := configurationSnapshot(t, s.fakeHome); !reflect.DeepEqual(before, after) {
@@ -177,8 +198,11 @@ func TestLaunchAcceptsCompatibleManualEnvironmentProvider(t *testing.T) {
 				}
 				writeFile(t, path, string(data))
 			case "codex":
-				writeFile(t, filepath.Join(s.fakeHome, ".codex/config.toml"),
-					"[model_providers.aiven]\nbase_url = '"+s.env.BaseURL+"/v1'\nwire_api = 'responses'\nenv_key = 'AIVEN_AI_GATEWAY_KEY'\n")
+				writeFile(
+					t,
+					filepath.Join(s.fakeHome, ".codex/config.toml"),
+					"[model_providers.aiven]\nbase_url = '"+s.env.BaseURL+"/v1'\nwire_api = 'responses'\nenv_key = 'AIVEN_AI_GATEWAY_KEY'\n",
+				)
 				writeFile(t, filepath.Join(s.fakeHome, ".codex/aiven.config.toml"),
 					"model = 'gpt-sol'\nmodel_provider = 'aiven'\n")
 			case "omp":
@@ -186,7 +210,11 @@ func TestLaunchAcceptsCompatibleManualEnvironmentProvider(t *testing.T) {
 					"providers:\n  aiven:\n    apiKey: AIVEN_AI_GATEWAY_KEY\n    auth: apiKey\n    models:\n"+
 						"      - {id: claude-sonnet, api: anthropic-messages, baseUrl: '"+s.env.BaseURL+"'}\n")
 			}
-			s.env.Environ = append(s.env.Environ, "AIVEN_AI_GATEWAY_KEY=synthetic-other-key", "EDITOR=synthetic-editor")
+			s.env.Environ = append(
+				s.env.Environ,
+				"AIVEN_AI_GATEWAY_KEY=synthetic-other-key",
+				"EDITOR=synthetic-editor",
+			)
 			if runtime.GOOS == "windows" {
 				s.env.Environ = append(s.env.Environ, "aiven_ai_gateway_key=synthetic-lower-case-key")
 			}
@@ -256,7 +284,12 @@ func TestLaunchNeverSelectsAnotherGatewaysKey(t *testing.T) {
 		t.Run(tool, func(t *testing.T) {
 			g := newGatewayDouble(t)
 			s := newSession(t, g).configured(tool)
-			if _, err := creds.Write(s.fakeHome, "https://other.example:8443", keyValid, fsutil.WriteAtomic); err != nil {
+			if _, err := creds.Write(
+				s.fakeHome,
+				"https://other.example:8443",
+				keyValid,
+				fsutil.WriteAtomic,
+			); err != nil {
 				t.Fatal(err)
 			}
 			s.env.Environ = append(s.env.Environ, creds.EnvVar+"="+keyValid)
@@ -264,7 +297,13 @@ func TestLaunchNeverSelectsAnotherGatewaysKey(t *testing.T) {
 			before := configurationSnapshot(t, s.fakeHome)
 			r := s.run("launch", tool)
 			if r.code != 1 || len(g.journal()) != beforeRequests || len(s.runner.calls) != 0 {
-				t.Fatalf("exit %d, gateway requests %d, launches %d: %s", r.code, len(g.journal())-beforeRequests, len(s.runner.calls), r.stderr)
+				t.Fatalf(
+					"exit %d, gateway requests %d, launches %d: %s",
+					r.code,
+					len(g.journal())-beforeRequests,
+					len(s.runner.calls),
+					r.stderr,
+				)
 			}
 			if after := configurationSnapshot(t, s.fakeHome); !reflect.DeepEqual(before, after) {
 				t.Fatal("launch changed the other gateway's key or configuration")
@@ -356,7 +395,10 @@ func TestClaudeLaunchAcceptsCanonicalManualSetupAndProjectModelField(t *testing.
 	if err := os.Rename(dedicated, canonical); err != nil {
 		t.Fatal(err)
 	}
-	s.writeProjectSettings("settings.json", `{"model":"claude-opus","env":{"PROJECT_EXTRA":"retained"}}`)
+	s.writeProjectSettings(
+		"settings.json",
+		`{"model":"claude-opus","env":{"PROJECT_EXTRA":"retained"}}`,
+	)
 	before := configurationSnapshot(t, s.fakeHome, s.env.WorkDir)
 	r := s.run("launch", "claude")
 	if r.code != 0 || len(s.runner.calls) != 1 {
@@ -365,7 +407,14 @@ func TestClaudeLaunchAcceptsCanonicalManualSetupAndProjectModelField(t *testing.
 	if settings := launchSettings(t, s.runner.calls[0]); settings["model"] != "claude-opus[1m]" {
 		t.Fatalf("project model field lost: %v", settings["model"])
 	}
-	if after := configurationSnapshot(t, s.fakeHome, s.env.WorkDir); !reflect.DeepEqual(before, after) {
+	if after := configurationSnapshot(
+		t,
+		s.fakeHome,
+		s.env.WorkDir,
+	); !reflect.DeepEqual(
+		before,
+		after,
+	) {
 		t.Fatal("manual configuration was rewritten")
 	}
 }
@@ -378,13 +427,19 @@ func TestLaunchFailsBeforeGatewayOrWritesWhenBinaryMissing(t *testing.T) {
 			before := configurationSnapshot(t, s.fakeHome)
 			s.runner.missing = []string{h}
 			r := s.run("launch", h)
-			if want := "aiven-ai-gateway: " + h + " is required but not installed; install it, then run aiven-ai-gateway setup " + h + "\n"; r.code != 1 || r.stdout != "" || r.stderr != want {
+			if want := "aiven-ai-gateway: " + h + " is required but not installed; install it, then run aiven-ai-gateway setup " + h + "\n"; r.code != 1 ||
+				r.stdout != "" ||
+				r.stderr != want {
 				t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
 			}
 			if n := len(g.journal()); n != 1 {
 				t.Errorf("launch sent %d requests", n-1)
 			}
-			if after := configurationSnapshot(t, s.fakeHome); !reflect.DeepEqual(before, after) || len(s.runner.calls) != 0 {
+			if after := configurationSnapshot(
+				t,
+				s.fakeHome,
+			); !reflect.DeepEqual(before, after) ||
+				len(s.runner.calls) != 0 {
 				t.Errorf("wrote files or exec'd %v", s.runner.calls)
 			}
 		})
@@ -396,8 +451,22 @@ func TestLaunchExecsNothingWhenTheKeyCannotListModels(t *testing.T) {
 		name, key, want string
 	}{
 		{"no key", "", "aiven-ai-gateway: no key stored. Run: aiven-ai-gateway login\n"},
-		{"gateway rejects key", "sk-bad", catalogueFailed("the gateway rejected the key", "key rejected by gateway (401): Authentication Error. Create a key in Aiven Console and run: aiven-ai-gateway login")},
-		{"key grants no models", keyEmpty, catalogueFailed("the key grants no models", "key grants no models. Create a key in Aiven Console and run: aiven-ai-gateway login")},
+		{
+			"gateway rejects key",
+			"sk-bad",
+			catalogueFailed(
+				"the gateway rejected the key",
+				"key rejected by gateway (401): Authentication Error. Create a key in Aiven Console and run: aiven-ai-gateway login",
+			),
+		},
+		{
+			"key grants no models",
+			keyEmpty,
+			catalogueFailed(
+				"the key grants no models",
+				"key grants no models. Create a key in Aiven Console and run: aiven-ai-gateway login",
+			),
+		},
 	}
 	for _, h := range []string{"claude", "codex", "pi", "opencode", "omp"} {
 		for _, tc := range cases {
@@ -445,7 +514,13 @@ func TestLaunchRefusesAToolWhoseConfigIsMoved(t *testing.T) {
 			r := s.run("launch", h)
 			want := "aiven-ai-gateway: " + name + " is set, so " + h + " would not read the config aiven-ai-gateway writes; unset it and rerun, or configure " + h + " by hand\n"
 			if r.code != 1 || r.stderr != want || len(s.runner.calls) != 0 || len(g.journal()) != before {
-				t.Fatalf("exit %d, stderr %q, exec'd %v, %d gateway requests", r.code, r.stderr, s.runner.calls, len(g.journal())-before)
+				t.Fatalf(
+					"exit %d, stderr %q, exec'd %v, %d gateway requests",
+					r.code,
+					r.stderr,
+					s.runner.calls,
+					len(g.journal())-before,
+				)
 			}
 			s.env.Environ[len(s.env.Environ)-1] = name + "="
 			if r := s.run("launch", h); r.code != 0 {
@@ -491,7 +566,13 @@ func TestOpencodeFollowsXDGConfigHome(t *testing.T) {
 	xdg := filepath.Join(t.TempDir(), "xdg")
 	s.env.ConfigHome = xdg
 	s.env.Environ = append(s.env.Environ, "XDG_CONFIG_HOME="+xdg)
-	plain, jsonc := filepath.Join(xdg, "opencode/opencode.json"), filepath.Join(xdg, "opencode/opencode.jsonc")
+	plain, jsonc := filepath.Join(
+		xdg,
+		"opencode/opencode.json",
+	), filepath.Join(
+		xdg,
+		"opencode/opencode.jsonc",
+	)
 	writeFile(t, plain, `{"theme":"dark","provider":{"aiven":{"models":{"old":{}}}}}`)
 	writeFile(t, jsonc, "{}\n")
 	r := s.run("setup", "opencode", "--yes")
@@ -499,7 +580,12 @@ func TestOpencodeFollowsXDGConfigHome(t *testing.T) {
 		!strings.Contains(r.stderr, "written: "+jsonc+" (previous version: ") {
 		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
 	}
-	if _, err := os.Stat(filepath.Join(s.fakeHome, ".config/opencode")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(
+		filepath.Join(s.fakeHome, ".config/opencode"),
+	); !errors.Is(
+		err,
+		os.ErrNotExist,
+	) {
 		t.Errorf("setup wrote under ~/.config: %v", err)
 	}
 	if got := readJSON(t, plain); !reflect.DeepEqual(got, map[string]any{"theme": "dark"}) {
@@ -512,7 +598,11 @@ func TestOpencodeFollowsXDGConfigHome(t *testing.T) {
 		t.Fatalf("launch: exit %d, stderr %q", r.code, r.stderr)
 	}
 	s.env.ConfigHome = ""
-	if r := s.run("launch", "opencode"); r.code != 1 || !strings.Contains(r.stderr, "opencode setup is missing") {
+	if r := s.run(
+		"launch",
+		"opencode",
+	); r.code != 1 ||
+		!strings.Contains(r.stderr, "opencode setup is missing") {
 		t.Errorf("launch without XDG_CONFIG_HOME: exit %d, stderr %q", r.code, r.stderr)
 	}
 }
@@ -523,7 +613,8 @@ func TestOpencodeLaunchNeedsTheKeyFile(t *testing.T) {
 	before := len(g.journal())
 	s.env.Environ = append(s.env.Environ, "AIVEN_AI_GATEWAY_KEY="+keyValid)
 	r := s.run("launch", "opencode")
-	if r.code != 1 || r.stderr != "Gateway: "+s.env.BaseURL+"\naiven-ai-gateway: OpenCode requires a key saved for this gateway. Run: aiven-ai-gateway login\n" {
+	if r.code != 1 ||
+		r.stderr != "Gateway: "+s.env.BaseURL+"\naiven-ai-gateway: OpenCode requires a key saved for this gateway. Run: aiven-ai-gateway login\n" {
 		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
 	}
 	if len(s.runner.calls) != 0 || len(g.journal()) != before {

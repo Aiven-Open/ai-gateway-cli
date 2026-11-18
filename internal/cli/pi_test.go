@@ -36,27 +36,49 @@ func TestPiLaunchesWithGatewayProviderConfig(t *testing.T) {
 		t.Fatalf("exec %q %q", c.name, c.argv)
 	}
 	provider := readJSON(t, piFile(s, "models.json"))["providers"].(map[string]any)["aiven"].(map[string]any)
-	if provider["api"] != "openai-completions" || provider["baseUrl"] != g.URL+"/v1" || provider["apiKey"] != "!sh -c '"+creds.Helper(g.URL, runtime.GOOS)+"'" {
+	if provider["api"] != "openai-completions" || provider["baseUrl"] != g.URL+"/v1" ||
+		provider["apiKey"] != "!sh -c '"+creds.Helper(g.URL, runtime.GOOS)+"'" {
 		t.Errorf("provider = %v", provider)
 	}
 	assertUnset(t, c, "PI_CODING_AGENT_DIR", "AIVEN_AI_GATEWAY_KEY")
 	want := map[string]map[string]any{
-		"aiven-model":   {"api": "openai-completions", "baseUrl": g.URL + "/v1", "contextWindow": 1e6},
-		"claude-opus":   {"api": "anthropic-messages", "baseUrl": g.URL, "contextWindow": 1e6},
-		"claude-sonnet": {"api": "anthropic-messages", "baseUrl": g.URL, "contextWindow": 1e6, "maxTokens": 64000.0},
-		"glm":           {"api": "openai-completions", "baseUrl": g.URL + "/v1", "contextWindow": 1310720.0},
-		"gpt-sol":       {"api": "openai-responses", "baseUrl": g.URL + "/v1"},
+		"aiven-model": {"api": "openai-completions", "baseUrl": g.URL + "/v1", "contextWindow": 1e6},
+		"claude-opus": {"api": "anthropic-messages", "baseUrl": g.URL, "contextWindow": 1e6},
+		"claude-sonnet": {
+			"api":           "anthropic-messages",
+			"baseUrl":       g.URL,
+			"contextWindow": 1e6,
+			"maxTokens":     64000.0,
+		},
+		"glm": {
+			"api":           "openai-completions",
+			"baseUrl":       g.URL + "/v1",
+			"contextWindow": 1310720.0,
+		},
+		"gpt-sol": {"api": "openai-responses", "baseUrl": g.URL + "/v1"},
 	}
 	var ids []string
 	for _, m := range piModels(t, s) {
 		id := m["id"].(string)
 		ids = append(ids, id)
-		if m["api"] != want[id]["api"] || m["baseUrl"] != want[id]["baseUrl"] || m["contextWindow"] != want[id]["contextWindow"] ||
-			m["maxTokens"] != want[id]["maxTokens"] || m["reasoning"] != true || !reflect.DeepEqual(m["input"], []any{"text", "image"}) {
+		if m["api"] != want[id]["api"] || m["baseUrl"] != want[id]["baseUrl"] ||
+			m["contextWindow"] != want[id]["contextWindow"] ||
+			m["maxTokens"] != want[id]["maxTokens"] ||
+			m["reasoning"] != true ||
+			!reflect.DeepEqual(m["input"], []any{"text", "image"}) {
 			t.Errorf("%s = %v, want %v", id, m, want[id])
 		}
 	}
-	if want := []string{"aiven-model", "claude-opus", "claude-sonnet", "glm", "gpt-sol"}; !slices.Equal(ids, want) {
+	if want := []string{
+		"aiven-model",
+		"claude-opus",
+		"claude-sonnet",
+		"glm",
+		"gpt-sol",
+	}; !slices.Equal(
+		ids,
+		want,
+	) {
 		t.Errorf("ids = %q, want %q", ids, want)
 	}
 	if _, err := os.Stat(piFile(s, "settings.json")); !os.IsNotExist(err) {
@@ -97,7 +119,10 @@ func TestPiDefaultsToProductionSonnet(t *testing.T) {
 	for _, key := range []string{keyProduction, keyMixedNames} {
 		s := newSession(t, newGatewayDouble(t)).loggedIn(key)
 		s.setupAndLaunch("pi")
-		if got := s.launched().argv; !slices.Equal(got, []string{"pi", "--model", "aiven/claude-sonnet-5-5"}) {
+		if got := s.launched().argv; !slices.Equal(
+			got,
+			[]string{"pi", "--model", "aiven/claude-sonnet-5-5"},
+		) {
 			t.Errorf("%s: argv = %q", key, got)
 		}
 	}
@@ -111,7 +136,12 @@ func TestPiForwardsArgs(t *testing.T) {
 	}
 }
 
-func piFile(s *session, name string) string { return filepath.Join(s.fakeHome, ".pi", "agent", name) }
+func piFile(
+	s *session,
+	name string,
+) string {
+	return filepath.Join(s.fakeHome, ".pi", "agent", name)
+}
 
 func TestPiLeavesTheUsersDefaultAndModelChoiceAlone(t *testing.T) {
 	const settings = `{"defaultProvider":"anthropic","defaultModel":"opus"}`
@@ -142,7 +172,8 @@ func TestPiRefusesACredentialSavedForAiven(t *testing.T) {
 	s := newSession(t, g)
 	writeFile(t, piFile(s, "auth.json"), auth)
 	r := s.stdin(keyValid).run("setup", "pi", "--key-stdin", "--yes")
-	if r.code == 0 || !strings.Contains(r.stderr, piFile(s, "auth.json")) || !strings.Contains(r.stderr, "/logout") {
+	if r.code == 0 || !strings.Contains(r.stderr, piFile(s, "auth.json")) ||
+		!strings.Contains(r.stderr, "/logout") {
 		t.Fatalf("setup: exit %d, stderr %q", r.code, r.stderr)
 	}
 	if strings.Contains(r.stderr+r.stdout, "sk-saved-elsewhere") {
@@ -165,7 +196,11 @@ func TestPiRefusesACredentialSavedForAiven(t *testing.T) {
 		t.Fatalf("launch: exit %d, stderr %q", r.code, r.stderr)
 	}
 	if len(s.runner.calls) != 0 || len(g.journal()) != before {
-		t.Errorf("launch ran pi or reached the gateway: %d calls, %d requests", len(s.runner.calls), len(g.journal())-before)
+		t.Errorf(
+			"launch ran pi or reached the gateway: %d calls, %d requests",
+			len(s.runner.calls),
+			len(g.journal())-before,
+		)
 	}
 	if data, _ := os.ReadFile(piFile(s, "auth.json")); string(data) != auth {
 		t.Errorf("auth.json changed: %s", data)

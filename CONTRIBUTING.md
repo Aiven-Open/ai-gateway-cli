@@ -38,7 +38,7 @@ every change in behaviour, and update [`README.md`](README.md) and
 | `mise` task | Equivalent command |
 | --- | --- |
 | `mise run build` | `CGO_ENABLED=0 go build -trimpath -o dist/aiven-ai-gateway ./cmd/aiven-ai-gateway` |
-| `mise run fmt` | `gofmt -w cmd internal npm` |
+| `mise run fmt` | `golangci-lint fmt ./...`, repeated until it changes nothing |
 | `mise run lint` | `go vet ./...`, `gofmt -l cmd internal npm`, `golangci-lint run ./...` |
 | `mise run test` | `go vet ./...`, `gofmt -l cmd internal npm`, `go test -race ./...` |
 | `mise run test-npm` | `npm test --prefix npm` |
