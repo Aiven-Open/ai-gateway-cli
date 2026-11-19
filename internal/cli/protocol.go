@@ -23,7 +23,8 @@ import (
 var errNotGranted = errors.New("which this key does not grant")
 
 func notGranted(path, model string) error {
-	return fmt.Errorf("%s selects %s, %w; choose a granted model there (aiven-ai-gateway models lists them), then rerun setup", path, model, errNotGranted)
+	return fmt.Errorf("%s selects %s, %w; choose a granted model there "+
+		"(aiven-ai-gateway models lists them), then rerun setup", path, model, errNotGranted)
 }
 
 type protocolCheck struct {
@@ -53,7 +54,8 @@ func toolChecks(tool string, table []models.Model, plan harness.Plan) ([]protoco
 			byProtocol[models.ModelProtocol(alias)] = alias
 		}
 		var checks []protocolCheck
-		for _, protocol := range []models.Protocol{models.ChatCompletions, models.Messages, models.Responses} {
+		protocols := []models.Protocol{models.ChatCompletions, models.Messages, models.Responses}
+		for _, protocol := range protocols {
 			if alias := byProtocol[protocol]; alias != "" {
 				checks = append(checks, protocolCheck{protocol: protocol, model: alias})
 			}
@@ -79,13 +81,16 @@ func toolChecks(tool string, table []models.Model, plan harness.Plan) ([]protoco
 			if _, granted := models.Find(table, alias); !granted {
 				return nil, notGranted(f.Path, alias)
 			}
-			if check := (protocolCheck{protocol: models.Messages, model: alias}); !slices.ContainsFunc(checks, check.same) {
+			check := protocolCheck{protocol: models.Messages, model: alias}
+			if !slices.ContainsFunc(checks, check.same) {
 				checks = append(checks, check)
 			}
 		}
 		return checks, nil
 	case "opencode":
-		return []protocolCheck{{protocol: models.ChatCompletions, model: models.SonnetOrFirst(table)}}, nil
+		return []protocolCheck{
+			{protocol: models.ChatCompletions, model: models.SonnetOrFirst(table)},
+		}, nil
 	}
 	return nil, fmt.Errorf("unresolved configured protocols for %s", tool)
 }
@@ -114,7 +119,15 @@ func blocked(valid []*targetOutcome, plans map[string]harness.Plan, table []mode
 // checkProtocols sends exactly one minimal request for each distinct configured protocol and model, and fails a tool
 // only on its own checks: a model's refusal says nothing of another model on the same protocol. A successful reply
 // establishes that model's served route.
-func checkProtocols(ctx context.Context, gw gateway.Client, key string, valid []*targetOutcome, plans map[string]harness.Plan, table []models.Model, run *setupRun) []*targetOutcome {
+func checkProtocols(
+	ctx context.Context,
+	gw gateway.Client,
+	key string,
+	valid []*targetOutcome,
+	plans map[string]harness.Plan,
+	table []models.Model,
+	run *setupRun,
+) []*targetOutcome {
 	dependencies := map[string][]protocolCheck{}
 	var checks []protocolCheck
 	for _, out := range valid {
@@ -134,7 +147,10 @@ func checkProtocols(ctx context.Context, gw gateway.Client, key string, valid []
 		}
 	}
 	slices.SortFunc(checks, func(a, b protocolCheck) int {
-		return cmp.Or(strings.Compare(string(a.protocol), string(b.protocol)), strings.Compare(a.model, b.model))
+		return cmp.Or(
+			strings.Compare(string(a.protocol), string(b.protocol)),
+			strings.Compare(a.model, b.model),
+		)
 	})
 	authFailed := false
 	for i := range checks {
@@ -143,7 +159,9 @@ func checkProtocols(ctx context.Context, gw gateway.Client, key string, valid []
 			check.err = fmt.Errorf("not attempted after authentication failure or cancellation")
 			continue
 		}
-		run.p.begin("Basic check: " + check.protocol.Label() + " with " + check.model + "; it may incur usage")
+		run.p.begin(
+			"Basic check: " + check.protocol.Label() + " with " + check.model + "; it may incur usage",
+		)
 		check.status, check.err = gw.Probe(ctx, key, check.model, check.protocol)
 		text := fmt.Sprintf("%s with %s: HTTP %d", check.protocol.Label(), check.model, check.status)
 		if check.status == 0 {

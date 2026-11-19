@@ -165,14 +165,20 @@ func TestEditRefusesARepeatedKeyOnlyWhereItEdits(t *testing.T) {
 		t.Errorf("edit beside repeated keys: %v", err)
 	}
 	_, err := edit(t, src, func(o map[string]any) { o["edit"].(map[string]any)["z"] = 3 })
-	if err == nil || !strings.Contains(err.Error(), `f.json repeats the key "y"; fix or move it, then retry`) {
+	if err == nil ||
+		!strings.Contains(err.Error(), `f.json repeats the key "y"; fix or move it, then retry`) {
 		t.Errorf("edit into repeated keys: %v", err)
 	}
 }
 
 func TestEditRefusesWhatIsNotAnObject(t *testing.T) {
 	for _, src := range []string{"[]", "{} {}", `{"a": bogus}`, "{\n  \"a\": bogus\n}", `{"a": }`, `{"a": 1`, "{} /* open"} {
-		if _, err := harness.Edit("f.json", []byte(src), map[string]any{"a": 1}); err == nil || !strings.Contains(err.Error(), "is not a JSON object") {
+		if _, err := harness.Edit(
+			"f.json",
+			[]byte(src),
+			map[string]any{"a": 1},
+		); err == nil ||
+			!strings.Contains(err.Error(), "is not a JSON object") {
 			t.Errorf("Edit(%q) = %v, want not-an-object refusal", src, err)
 		}
 	}
@@ -257,7 +263,12 @@ func FuzzEditKeepsTheFileValid(f *testing.F) {
 			}
 		}
 		obj["zz"] = map[string]any{"n": 1}
-		if _, err := harness.Edit("f.json", []byte(src), obj); err != nil && !strings.Contains(err.Error(), "repeats the key") {
+		if _, err := harness.Edit(
+			"f.json",
+			[]byte(src),
+			obj,
+		); err != nil &&
+			!strings.Contains(err.Error(), "repeats the key") {
 			t.Errorf("Edit(%q): %v", src, err)
 		}
 	})
@@ -309,7 +320,8 @@ func FuzzStripLeavesTheSameValue(f *testing.F) {
 		var got map[string]any
 		dec := json.NewDecoder(strings.NewReader(strings.TrimPrefix(string(out), "\xef\xbb\xbf")))
 		dec.UseNumber()
-		if !json.Valid([]byte(strings.TrimPrefix(string(out), "\xef\xbb\xbf"))) || dec.Decode(&got) != nil {
+		if !json.Valid([]byte(strings.TrimPrefix(string(out), "\xef\xbb\xbf"))) ||
+			dec.Decode(&got) != nil {
 			t.Fatalf("Strip(%q) = %q, not JSON", src, out)
 		}
 		a, _ := json.Marshal(got)

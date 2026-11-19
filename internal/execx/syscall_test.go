@@ -27,8 +27,17 @@ const (
 
 // Argv and env the exec-mode child hands to Syscall.Exec.
 var (
-	childArgv      = []string{"custom-argv0", "--flag", "two words", "", `quote"slash\`, "$HOME; & | *", "日本語"}
-	batchChildArgv = append(append([]string{}, childArgv...),
+	childArgv = []string{
+		"custom-argv0",
+		"--flag",
+		"two words",
+		"",
+		`quote"slash\`,
+		"$HOME; & | *",
+		"日本語",
+	}
+	batchChildArgv = append(
+		append([]string{}, childArgv...),
 		"--settings",
 		`{"apiKeyHelper":"sh -c '[ -f ~/.config/aiven/ai-gateway-key ] && cat ~/.config/aiven/ai-gateway-key || printf %s \"$AIVEN_AI_GATEWAY_KEY\"'","env":{"ANTHROPIC_BASE_URL":"https://ai.aiven.io"}}`,
 		"a & b | c < d > e (f) ^ %USERPROFILE%",
@@ -90,7 +99,8 @@ func TestSyscallExecHandsOffArgvEnvStreamsAndStatus(t *testing.T) {
 	if got.ParentPID == 0 || (got.PID == got.ParentPID) != (runtime.GOOS != "windows") {
 		t.Errorf("handoff PID = %d, original = %d on %s", got.PID, got.ParentPID, runtime.GOOS)
 	}
-	if slices.Contains(got.Argv, sentinel) || strings.Contains(strings.Join(got.Argv, " "), "only-via-env") {
+	if slices.Contains(got.Argv, sentinel) ||
+		strings.Contains(strings.Join(got.Argv, " "), "only-via-env") {
 		t.Errorf("sentinel reached argv: %q", got.Argv)
 	}
 }
@@ -113,7 +123,8 @@ func TestSyscallLookPathFindsInstalledBinary(t *testing.T) {
 func TestSyscallLookPathReportsMissingBinary(t *testing.T) {
 	t.Parallel()
 	_, err := execx.Syscall{}.LookPath("aiven-ai-gateway-no-such-harness")
-	if err == nil || !strings.Contains(err.Error(), "aiven-ai-gateway-no-such-harness is required but not installed") {
+	if err == nil ||
+		!strings.Contains(err.Error(), "aiven-ai-gateway-no-such-harness is required but not installed") {
 		t.Errorf("err = %v", err)
 	}
 }

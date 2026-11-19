@@ -51,7 +51,8 @@ func SavedCredential(home string) error {
 		return err
 	}
 	if _, ok := auth["aiven"]; ok {
-		return fmt.Errorf("%s holds a credential saved for aiven, which Pi sends instead of the gateway key; run /logout in pi and choose aiven, then retry", path)
+		return fmt.Errorf("%s holds a credential saved for aiven, which Pi sends instead of the "+
+			"gateway key; run /logout in pi and choose aiven, then retry", path)
 	}
 	return nil
 }
@@ -81,7 +82,14 @@ func Setup(in harness.Input) (harness.Plan, error) {
 	}
 	var list []model
 	for _, m := range models.Sorted(in.Table) {
-		e := model{ID: m.Alias, Name: m.DisplayName(), Reasoning: true, Input: []string{"text", "image"}, ContextWindow: m.Context, MaxTokens: m.MaxOutput}
+		e := model{
+			ID:            m.Alias,
+			Name:          m.DisplayName(),
+			Reasoning:     true,
+			Input:         []string{"text", "image"},
+			ContextWindow: m.Context,
+			MaxTokens:     m.MaxOutput,
+		}
 		protocol := models.ModelProtocol(m.Alias)
 		e.API, e.BaseURL = string(protocol), protocol.BaseURL(in.BaseURL)
 		if m.Priced() {
@@ -90,7 +98,10 @@ func Setup(in harness.Input) (harness.Plan, error) {
 		list = append(list, e)
 	}
 	providers["aiven"] = map[string]any{
-		"baseUrl": in.BaseURL + "/v1", "api": "openai-completions", "apiKey": APIKey(in.BaseURL), "models": list,
+		"baseUrl": in.BaseURL + "/v1",
+		"api":     "openai-completions",
+		"apiKey":  APIKey(in.BaseURL),
+		"models":  list,
 	}
 	// Pi skips // comments and trailing commas in models.json but not block comments, and reads settings.json as plain
 	// JSON; it ignores a file it cannot parse, so what it would reject goes.
@@ -101,7 +112,8 @@ func Setup(in harness.Input) (harness.Plan, error) {
 	files := []harness.File{{Path: path, Data: data, Backup: true, Models: true}}
 	if in.Default {
 		settings["defaultProvider"], settings["defaultModel"] = "aiven", models.SonnetOrFirst(in.Table)
-		if data, err = harness.Edit(settingsPath, harness.Strip(settingsSrc, harness.Strict), settings); err != nil {
+		stripped := harness.Strip(settingsSrc, harness.Strict)
+		if data, err = harness.Edit(settingsPath, stripped, settings); err != nil {
 			return harness.Plan{}, err
 		}
 		files = append(files, harness.File{Path: settingsPath, Data: data, Backup: true})
@@ -133,7 +145,9 @@ func Launch(in harness.Input) (harness.Plan, error) {
 			found = found || m["id"] == models.SonnetOrFirst(in.Table)
 		}
 		if !found {
-			return harness.Plan{}, errors.New("selected default is absent from the configured catalogue; refresh with setup")
+			return harness.Plan{}, errors.New(
+				"selected default is absent from the configured catalogue; refresh with setup",
+			)
 		}
 	}
 	return harness.Plan{
@@ -186,7 +200,11 @@ func Ready(home, baseURL string) (bool, error) {
 // is the legacy WSL launcher under SystemRoot, which runs the command inside Linux, where USERPROFILE is not set: Pi
 // would then fall back to cmd.exe or WSL, and neither runs the helper. Names in environ match ignoring case, as on
 // Windows.
-func WindowsShell(environ []string, exists func(string) bool, lookPath func(string) (string, error)) (string, error) {
+func WindowsShell(
+	environ []string,
+	exists func(string) bool,
+	lookPath func(string) (string, error),
+) (string, error) {
 	get := func(name string) string {
 		var v string
 		for _, kv := range environ {
@@ -203,17 +221,22 @@ func WindowsShell(environ []string, exists func(string) bool, lookPath func(stri
 	}
 	path, err := lookPath("bash.exe")
 	if err != nil {
-		return "", errors.New("pi runs its key helper in Git Bash on Windows, and none was found; install Git for Windows, then rerun")
+		return "", errors.New("pi runs its key helper in Git Bash on Windows, and none was found; " +
+			"install Git for Windows, then rerun")
 	}
 	root := strings.TrimRight(get("SystemRoot"), `\/`)
 	legacy := root == "" && legacyWSL.MatchString(path)
 	for _, dir := range []string{"System32", "Sysnative"} {
-		legacy = legacy || root != "" && strings.EqualFold(strings.ReplaceAll(path, "/", `\`), root+`\`+dir+`\bash.exe`)
+		legacy = legacy ||
+			root != "" && strings.EqualFold(strings.ReplaceAll(path, "/", `\`), root+`\`+dir+`\bash.exe`)
 	}
 	if legacy {
-		return "", fmt.Errorf("pi would run its key helper in WSL through %s rather than Git Bash; install Git for Windows, then rerun", path)
+		return "", fmt.Errorf("pi would run its key helper in WSL through %s rather than Git Bash; "+
+			"install Git for Windows, then rerun", path)
 	}
 	return path, nil
 }
 
-var legacyWSL = regexp.MustCompile(`(?i)^[a-z]:[\\/]windows[\\/](system32|sysnative)[\\/]bash\.exe$`)
+var legacyWSL = regexp.MustCompile(
+	`(?i)^[a-z]:[\\/]windows[\\/](system32|sysnative)[\\/]bash\.exe$`,
+)

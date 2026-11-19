@@ -24,7 +24,11 @@ func checkPrivateKeyFile(t *testing.T, path string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	sd, err := windows.GetNamedSecurityInfo(
+		path,
+		windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,8 +43,10 @@ func checkPrivateKeyFile(t *testing.T, path string) {
 	// Compared by SID rather than as SDDL text, which abbreviates well-known accounts: the built-in Administrator a CI
 	// runner runs as is LA. 0x1f01ff is FA, what the GENERIC_ALL the DACL grants maps to for a file.
 	var ace *windows.ACCESS_ALLOWED_ACE
-	if dacl.AceCount != 1 || windows.GetAce(dacl, 0, &ace) != nil || ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE ||
-		ace.Mask != 0x1f01ff || !(*windows.SID)(unsafe.Pointer(&ace.SidStart)).Equals(user.User.Sid) {
+	if dacl.AceCount != 1 || windows.GetAce(dacl, 0, &ace) != nil ||
+		ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE ||
+		ace.Mask != 0x1f01ff ||
+		!(*windows.SID)(unsafe.Pointer(&ace.SidStart)).Equals(user.User.Sid) {
 		t.Errorf("key file SDDL = %q, want a single FA entry for %s", sd.String(), user.User.Sid)
 	}
 }
@@ -77,7 +83,9 @@ func TestPowerShellHelperReadsTheKey(t *testing.T) {
 				ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 				defer cancel()
 				cmd := makeCmd(ctx, t)
-				cmd.Env = append(os.Environ(), append([]string{"USERPROFILE=" + home, "AIVEN_AI_GATEWAY_KEY="}, environ...)...)
+				cmd.Env = append(
+					os.Environ(),
+					append([]string{"USERPROFILE=" + home, "AIVEN_AI_GATEWAY_KEY="}, environ...)...)
 				out, err := cmd.Output()
 				return strings.TrimSpace(string(out)), err
 			}

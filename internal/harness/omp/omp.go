@@ -43,7 +43,8 @@ func Setup(in harness.Input) (harness.Plan, error) {
 	} {
 		if _, err := os.Stat(legacy.native); errors.Is(err, os.ErrNotExist) {
 			if _, err := os.Lstat(legacy.path); err == nil {
-				return harness.Plan{}, fmt.Errorf("%s awaits native OMP migration; run omp once, then rerun setup. If migration fails, fix the legacy file first", legacy.path)
+				return harness.Plan{}, fmt.Errorf("%s awaits native OMP migration; run omp once, then "+
+					"rerun setup. If migration fails, fix the legacy file first", legacy.path)
 			} else if !errors.Is(err, os.ErrNotExist) {
 				return harness.Plan{}, fmt.Errorf("inspect %s: %w", legacy.path, err)
 			}
@@ -95,7 +96,9 @@ func Launch(in harness.Input) (harness.Plan, error) {
 			found = found || m["id"] == models.SonnetOrFirst(in.Table)
 		}
 		if !found {
-			return harness.Plan{}, errors.New("selected default is absent from the configured catalogue; refresh with setup")
+			return harness.Plan{}, errors.New(
+				"selected default is absent from the configured catalogue; refresh with setup",
+			)
 		}
 	}
 	return harness.Plan{Argv: append([]string{"omp"}, args...)}, nil
@@ -133,7 +136,8 @@ func Ready(home, baseURL string) (bool, error) {
 		return false, err
 	}
 	list, _ := p["models"].([]any)
-	if p["apiKey"] != APIKey(baseURL) && p["apiKey"] != creds.EnvVar || p["auth"] != "apiKey" || len(list) == 0 {
+	if p["apiKey"] != APIKey(baseURL) && p["apiKey"] != creds.EnvVar || p["auth"] != "apiKey" ||
+		len(list) == 0 {
 		return false, errors.New("normal OMP models YAML has no compatible Aiven provider")
 	}
 	for _, entry := range list {

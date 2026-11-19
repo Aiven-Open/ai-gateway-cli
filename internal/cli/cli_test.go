@@ -155,12 +155,24 @@ func TestMalformedInvocationsAreRefusedWithoutEcho(t *testing.T) {
 		var out, errb bytes.Buffer
 		handled, code := cli.Informational(tc.args, nil, cli.Deps{Stdout: &out, Stderr: &errb})
 		if !handled || code != 1 || out.Len() != 0 || errb.String() != "aiven-ai-gateway: "+tc.want+"\n" {
-			t.Errorf("%q: handled %v, exit %d, stdout %q, stderr %q", tc.args, handled, code, out.String(), errb.String())
+			t.Errorf(
+				"%q: handled %v, exit %d, stdout %q, stderr %q",
+				tc.args,
+				handled,
+				code,
+				out.String(),
+				errb.String(),
+			)
 		}
 	}
 	for _, args := range [][]string{{"--version"}, {"version"}, {"launch", "pi", "--", "--help"}, {"setup", "pi"}, {"login"}} {
 		var out, errb bytes.Buffer
-		if handled, _ := cli.Informational(args, nil, cli.Deps{Stdout: &out, Stderr: &errb}); handled || out.Len()+errb.Len() != 0 {
+		if handled, _ := cli.Informational(
+			args,
+			nil,
+			cli.Deps{Stdout: &out, Stderr: &errb},
+		); handled ||
+			out.Len()+errb.Len() != 0 {
 			t.Errorf("%q: handled before dispatch: stdout %q, stderr %q", args, out.String(), errb.String())
 		}
 	}

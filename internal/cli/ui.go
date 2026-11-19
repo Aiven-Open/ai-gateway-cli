@@ -118,7 +118,8 @@ func (u ui) block(text string) {
 func safe(s string) string {
 	clean := true
 	for _, r := range s {
-		if r != '\t' && (unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r) || r == utf8.RuneError) {
+		if r != '\t' &&
+			(unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r) || r == utf8.RuneError) {
 			clean = false
 			break
 		}
@@ -127,7 +128,8 @@ func safe(s string) string {
 		return s
 	}
 	return strings.Map(func(r rune) rune {
-		if r != '\t' && (unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r) || r == utf8.RuneError) {
+		if r != '\t' &&
+			(unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r) || r == utf8.RuneError) {
 			return -1
 		}
 		return r

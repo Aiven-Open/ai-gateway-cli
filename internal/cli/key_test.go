@@ -14,7 +14,11 @@ import (
 // The black-box tests cannot reach the default gateway, so this one checks its Console key file directly, beside a
 // key saved for another gateway: each gateway reads its own file only, never the environment's key.
 func TestStoredKeyReadsOnlyTheConfiguredGatewaysKeyFile(t *testing.T) {
-	a := config.Env{BaseURL: config.DefaultBaseURL, UserHome: t.TempDir(), Environ: []string{creds.EnvVar + "=sk-env"}}
+	a := config.Env{
+		BaseURL:  config.DefaultBaseURL,
+		UserHome: t.TempDir(),
+		Environ:  []string{creds.EnvVar + "=sk-env"},
+	}
 	b := a
 	b.BaseURL = "https://b.example"
 	if _, err := creds.Write(a.UserHome, a.BaseURL, "sk-console", fsutil.WriteAtomic); err != nil {

@@ -74,8 +74,13 @@ func TestRedactKeepsOnlyValuesThatNameWhereAKeyIs(t *testing.T) {
 	}
 	// Two hosts that differ only inside a hidden value must still diff as different.
 	r := newRedactor(nil)
-	stage, prod := r.redact(`"baseURL": "https://sk-gateway-stage.example.invalid/v1"`), r.redact(`"baseURL": "https://sk-gateway-production.example.invalid/v1"`)
-	if stage == prod || strings.Contains(stage+prod, "sk-gateway") || r.redact(`"token": "sk-gateway-stage.example.invalid"`) != `"token": "<redacted 1>"` {
+	stage, prod := r.redact(
+		`"baseURL": "https://sk-gateway-stage.example.invalid/v1"`,
+	), r.redact(
+		`"baseURL": "https://sk-gateway-production.example.invalid/v1"`,
+	)
+	if stage == prod || strings.Contains(stage+prod, "sk-gateway") ||
+		r.redact(`"token": "sk-gateway-stage.example.invalid"`) != `"token": "<redacted 1>"` {
 		t.Errorf("stage %s, prod %s", stage, prod)
 	}
 }
@@ -203,14 +208,20 @@ func TestRedactHidesAValueThatReadsLikeAPlaceholder(t *testing.T) {
 			old, next = "password: first-synthetic\n", "password: '<redacted 1>'\n"
 		}
 		before, after := shown(harness.File{Path: "config" + ext, Data: []byte(next)}, []byte(old), nil)
-		if strings.Contains(before+after, "first-synthetic") || strings.Contains(before+after, "<redacted 1>") ||
-			strings.ContainsAny(before+after, "\x00") || before == after {
+		if strings.Contains(before+after, "first-synthetic") ||
+			strings.Contains(before+after, "<redacted 1>") ||
+			strings.ContainsAny(before+after, "\x00") ||
+			before == after {
 			t.Errorf("%s: before %q, after %q", ext, before, after)
 		}
 	}
 	// A decoded YAML value can hold the marker itself, through an alias too.
 	for _, old := range []string{`password: "\0<redacted 1>"`, "ordinary: &shared \"\\0<redacted 1>\"\npassword: *shared\n"} {
-		before, after := shown(harness.File{Path: "config.yaml", Data: []byte("password: next\n")}, []byte(old), nil)
+		before, after := shown(
+			harness.File{Path: "config.yaml", Data: []byte("password: next\n")},
+			[]byte(old),
+			nil,
+		)
 		if strings.Contains(before+after, "<redacted 1>") {
 			t.Errorf("%q: before %q, after %q", old, before, after)
 		}
@@ -219,11 +230,14 @@ func TestRedactHidesAValueThatReadsLikeAPlaceholder(t *testing.T) {
 
 func TestCollapseModelsTouchesOnlyTheGatewayProvidersList(t *testing.T) {
 	text := string(harness.JSON(map[string]any{
-		"mcp":      map[string]any{"aiven": map[string]any{"models": []any{"keep-me"}}},
-		"provider": map[string]any{"aiven": map[string]any{"models": map[string]any{"m1": map[string]any{}}, "npm": "x"}},
+		"mcp": map[string]any{"aiven": map[string]any{"models": []any{"keep-me"}}},
+		"provider": map[string]any{
+			"aiven": map[string]any{"models": map[string]any{"m1": map[string]any{}}, "npm": "x"},
+		},
 	}))
 	block, got := collapseModels(text, "[S]")
-	if !strings.Contains(got, `"keep-me"`) || !strings.Contains(got, `      "models": [S],`) || !strings.Contains(block, `"m1"`) {
+	if !strings.Contains(got, `"keep-me"`) || !strings.Contains(got, `      "models": [S],`) ||
+		!strings.Contains(block, `"m1"`) {
 		t.Errorf("block %q, collapsed %s", block, got)
 	}
 }
@@ -244,11 +258,19 @@ func TestShownSummarisesAnUnchangedYAMLModelListOnBothSides(t *testing.T) {
 	before := "providers:\n  aiven:\n    baseUrl: https://old.invalid/v1\n" + list
 	after := "providers:\n  aiven:\n    baseUrl: https://new.invalid/v1\n" + list
 	summary := "    models: [3 models: claude-sonnet-5-5, glm-5, … +1 more]\n"
-	from, to := shown(harness.File{Path: "models.yml", Data: []byte(after), Models: true}, []byte(before), previewTable)
+	from, to := shown(
+		harness.File{Path: "models.yml", Data: []byte(after), Models: true},
+		[]byte(before),
+		previewTable,
+	)
 	if !strings.HasSuffix(from, summary) || !strings.HasSuffix(to, summary) {
 		t.Errorf("same list: %q / %q", from, to)
 	}
-	from, _ = shown(harness.File{Path: "models.yml", Data: []byte(after + "    - id: m2\n"), Models: true}, []byte(before), previewTable)
+	from, _ = shown(
+		harness.File{Path: "models.yml", Data: []byte(after + "    - id: m2\n"), Models: true},
+		[]byte(before),
+		previewTable,
+	)
 	if !strings.HasSuffix(from, "    models: [the previous model list]\n") {
 		t.Errorf("changed list: %q", from)
 	}

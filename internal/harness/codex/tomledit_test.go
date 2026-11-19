@@ -129,7 +129,11 @@ func TestEditRefusesAnAivenProviderOutsideItsTable(t *testing.T) {
 		"[[model_providers.aiven]]\nname = 'x'\n",
 	} {
 		_, err := editTOML(t, src, func(c map[string]any) { c["model"] = "m" })
-		if err == nil || !strings.Contains(err.Error(), "config.toml declares model_providers in a form setup does not edit") {
+		if err == nil ||
+			!strings.Contains(
+				err.Error(),
+				"config.toml declares model_providers in a form setup does not edit",
+			) {
 			t.Errorf("edit(%q) = %v", src, err)
 		}
 	}
@@ -155,7 +159,11 @@ func FuzzEditKeepsTheFileValid(f *testing.F) {
 			return
 		}
 		out, err := edit("config.toml", []byte(src), cfg)
-		if err != nil && !strings.Contains(err.Error(), "declare the Aiven provider as a [model_providers.aiven] table") ||
+		if err != nil &&
+			!strings.Contains(
+				err.Error(),
+				"declare the Aiven provider as a [model_providers.aiven] table",
+			) ||
 			err == nil && strings.TrimSpace(src) != "" && string(out) != src {
 			t.Errorf("unchanged edit(%q) = %q, %v", src, out, err)
 		}
@@ -177,10 +185,18 @@ func FuzzEditKeepsTheFileValid(f *testing.F) {
 				providers["aiven"] = provider
 			}
 			delete(provider, "env_key")
-			provider["name"], provider["auth"] = "Aiven", map[string]any{"command": "sh", "args": []string{"-c", "h"}}
+			provider["name"], provider["auth"] = "Aiven", map[string]any{
+				"command": "sh",
+				"args":    []string{"-c", "h"},
+			}
 		}
 		cfg["model"] = "m"
-		if _, err := edit("config.toml", []byte(src), cfg); err != nil && !strings.Contains(err.Error(), "declare the Aiven provider as a [model_providers.aiven] table") {
+		if _, err := edit(
+			"config.toml",
+			[]byte(src),
+			cfg,
+		); err != nil &&
+			!strings.Contains(err.Error(), "declare the Aiven provider as a [model_providers.aiven] table") {
 			t.Errorf("edit(%q): %v", src, err)
 		}
 	})

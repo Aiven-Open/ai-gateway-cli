@@ -45,8 +45,8 @@ func Edit(path string, src []byte, obj map[string]any) ([]byte, error) {
 		e.nl = "\r\n"
 	}
 	if len(root.members) > 0 {
-		if inner, outer := lineIndent(src, root.members[0].start), lineIndent(src, root.start); len(inner) > len(outer) &&
-			bytes.ContainsAny(src[root.start:root.members[0].start], "\n") {
+		inner, outer := lineIndent(src, root.members[0].start), lineIndent(src, root.start)
+		if len(inner) > len(outer) && bytes.ContainsAny(src[root.start:root.members[0].start], "\n") {
 			e.unit = inner[len(outer):]
 		}
 	}
@@ -317,7 +317,8 @@ func (e jsonEditor) object(n jsonNode, want map[string]any, indent string) ([]by
 	for j, i := range kept {
 		m := n.members[i]
 		// A member that shared its line with a removed one now opens the line, so it takes the line's indentation.
-		if i > 0 && !bytes.HasSuffix(tail(i-1), []byte("\n")) && bytes.HasSuffix(b.Bytes(), []byte("\n")) {
+		if i > 0 && !bytes.HasSuffix(tail(i-1), []byte("\n")) &&
+			bytes.HasSuffix(b.Bytes(), []byte("\n")) {
 			b.WriteString(lineIndent(e.src, m.start))
 		}
 		b.Write(head(i))
@@ -357,7 +358,8 @@ func (e jsonEditor) object(n jsonNode, want map[string]any, indent string) ([]by
 			b.WriteString(inner + e.member(key, want[key], inner, false) + comma + e.nl)
 		}
 	}
-	if lastTail := tail(len(n.members) - 1); len(added) > 0 && !inline && !bytes.HasSuffix(lastTail, []byte("\n")) {
+	lastTail := tail(len(n.members) - 1)
+	if len(added) > 0 && !inline && !bytes.HasSuffix(lastTail, []byte("\n")) {
 		closing = []byte(indent)
 	} else if bytes.HasSuffix(lastTail, []byte("\n")) {
 		// The closing brace stays on its own line when the member that ended the line above it is removed.
@@ -482,7 +484,8 @@ func Strip(src []byte, s Syntax) []byte {
 			}
 			kept := len(bytes.TrimRight(out, " \t"))
 			rest := end + len(src[end:]) - len(bytes.TrimLeft(src[end:], " \t"))
-			first, last := kept == bom || out[kept-1] == '\n', rest == len(src) || src[rest] == '\n' || src[rest] == '\r'
+			first := kept == bom || out[kept-1] == '\n'
+			last := rest == len(src) || src[rest] == '\n' || src[rest] == '\r'
 			switch {
 			case first && last:
 				out, end = out[:kept], rest

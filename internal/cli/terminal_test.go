@@ -27,7 +27,15 @@ func TestTerminalReadLineReportsEndOfInputAfterAPartialLine(t *testing.T) {
 		p := terminalPrompter{stderr: &prompt, lines: bufio.NewReader(strings.NewReader(tc.in))}
 		got, err := p.ReadLine("? ")
 		if got != tc.want || errors.Is(err, io.EOF) != tc.eof || prompt.String() != "? " {
-			t.Errorf("ReadLine on %q = %q, %v (prompt %q); want %q, EOF %v", tc.in, got, err, prompt.String(), tc.want, tc.eof)
+			t.Errorf(
+				"ReadLine on %q = %q, %v (prompt %q); want %q, EOF %v",
+				tc.in,
+				got,
+				err,
+				prompt.String(),
+				tc.want,
+				tc.eof,
+			)
 		}
 		if _, err := confirm(p, "? ", true); tc.eof && err == nil {
 			t.Errorf("confirm on %q after end of input: want error", tc.in)

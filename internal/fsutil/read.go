@@ -34,7 +34,10 @@ func ReadRegular(path string) ([]byte, os.FileMode, error) {
 
 func regular(path string, info os.FileInfo) error {
 	if info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("%s is a symlink, not a regular file; replace it with the file it points to, then retry", path)
+		return fmt.Errorf(
+			"%s is a symlink, not a regular file; replace it with the file it points to, then retry",
+			path,
+		)
 	}
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("%s is not a regular file; fix or move it, then retry", path)

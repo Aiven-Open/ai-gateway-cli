@@ -135,7 +135,9 @@ func Launch(in harness.Input) (harness.Plan, error) {
 		p, _ := providers["aiven"].(map[string]any)
 		list, _ := p["models"].(map[string]any)
 		if list[models.SonnetOrFirst(in.Table)] == nil {
-			return harness.Plan{}, errors.New("selected default is absent from the configured catalogue; refresh with setup")
+			return harness.Plan{}, errors.New(
+				"selected default is absent from the configured catalogue; refresh with setup",
+			)
 		}
 	}
 	return harness.Plan{Argv: append([]string{"opencode"}, args...)}, nil
@@ -176,8 +178,10 @@ func configPath(home, configHome string) (string, string, error) {
 	if configHome != "" {
 		// OpenCode would resolve a relative one against the directory each session starts in.
 		if !filepath.IsAbs(configHome) {
-			return "", "", errors.New("XDG_CONFIG_HOME is not an absolute path, so OpenCode reads its config relative " +
-				"to where it starts; set it to an absolute path or unset it, then retry")
+			return "", "", errors.New(
+				"XDG_CONFIG_HOME is not an absolute path, so OpenCode reads its config relative " +
+					"to where it starts; set it to an absolute path or unset it, then retry",
+			)
 		}
 		root = configHome
 	}

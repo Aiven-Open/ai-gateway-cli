@@ -31,6 +31,11 @@ func TestWindowsPiSetupRequiresGitBash(t *testing.T) {
 	s2.runner.missing = []string{"bash.exe"}
 	r := s2.run("setup", "--yes", "--key-stdin", "pi")
 	if r.code != 1 || !strings.Contains(r.stderr, "Git Bash on Windows") || len(g2.journal()) != 0 {
-		t.Fatalf("setup pi without Git Bash: exit %d, requests %d, stderr %q", r.code, len(g2.journal()), r.stderr)
+		t.Fatalf(
+			"setup pi without Git Bash: exit %d, requests %d, stderr %q",
+			r.code,
+			len(g2.journal()),
+			r.stderr,
+		)
 	}
 }

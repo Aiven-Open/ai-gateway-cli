@@ -83,7 +83,15 @@ func TestInlineApprovalAppliesOnlyOnAnExplicitApply(t *testing.T) {
 			if p.inline == nil {
 				t.Fatal("inline list not offered on a terminal")
 			}
-			ok, err := approveFiles(deps, p, false, files, nil, backupNames{time.Unix(0, 0), map[string]string{}}, "pi")
+			ok, err := approveFiles(
+				deps,
+				p,
+				false,
+				files,
+				nil,
+				backupNames{time.Unix(0, 0), map[string]string{}},
+				"pi",
+			)
 			if ok != tc.ok || !errors.Is(err, tc.err) || sel.lines != 0 {
 				t.Errorf("ok %v, err %v, ReadLine calls %d; want %v, %v, 0", ok, err, sel.lines, tc.ok, tc.err)
 			}
@@ -116,10 +124,17 @@ func TestInlineLaunchPickerCancelLaunchesNothing(t *testing.T) {
 			var stderr strings.Builder
 			deps := inlineDeps(sel, &stderr)
 			env := config.Env{UserHome: t.TempDir(), BaseURL: "https://gateway.example.invalid"}
-			if code := launchCommand(context.Background(), nil, env, deps); code != tc.code || !strings.HasSuffix(stderr.String(), tc.tail) {
+			if code := launchCommand(
+				context.Background(),
+				nil,
+				env,
+				deps,
+			); code != tc.code ||
+				!strings.HasSuffix(stderr.String(), tc.tail) {
 				t.Fatalf("exit %d, stderr %q; want %d ending %q", code, stderr.String(), tc.code, tc.tail)
 			}
-			if len(sel.asked) != 1 || sel.asked[0].multi || len(sel.asked[0].options) != len(toolNames) || sel.lines != 0 {
+			if len(sel.asked) != 1 || sel.asked[0].multi || len(sel.asked[0].options) != len(toolNames) ||
+				sel.lines != 0 {
 				t.Errorf("asked %+v, ReadLine calls %d", sel.asked, sel.lines)
 			}
 		})
@@ -158,7 +173,8 @@ func TestInlineToolPickerReportsCancellationApartFromNone(t *testing.T) {
 			var stderr strings.Builder
 			deps := inlineDeps(sel, &stderr)
 			got, err := pickTools(deps, newPresenter(config.Env{}, deps, false))
-			if strings.Join(got, ",") != strings.Join(tc.want, ",") || !errors.Is(err, tc.err) || !sel.asked[0].multi {
+			if strings.Join(got, ",") != strings.Join(tc.want, ",") || !errors.Is(err, tc.err) ||
+				!sel.asked[0].multi {
 				t.Errorf("got %v, %v; want %v, %v", got, err, tc.want, tc.err)
 			}
 			if len(tc.want) > 0 && !strings.Contains(stderr.String(), "Selected: Pi, Claude Code\n") {

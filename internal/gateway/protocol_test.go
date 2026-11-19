@@ -64,8 +64,14 @@ func TestBasicChecksValidateResponsesAndRetainSafeGatewayErrors(t *testing.T) {
 				_, _ = fmt.Fprint(w, tc.body)
 			}))
 			defer srv.Close()
-			status, err := (gateway.Client{HTTP: gateway.NewHTTPClient(), BaseURL: srv.URL}).Probe(t.Context(), key, "model", tc.protocol)
-			if status != tc.status || (err != nil) != tc.wantError || errors.Is(err, gateway.ErrUnauthorized) != tc.auth {
+			status, err := (gateway.Client{HTTP: gateway.NewHTTPClient(), BaseURL: srv.URL}).Probe(
+				t.Context(),
+				key,
+				"model",
+				tc.protocol,
+			)
+			if status != tc.status || (err != nil) != tc.wantError ||
+				errors.Is(err, gateway.ErrUnauthorized) != tc.auth {
 				t.Fatalf("status=%d err=%v", status, err)
 			}
 			if err == nil {
@@ -103,7 +109,12 @@ func TestGatewayErrorsHideReflectedCredentials(t *testing.T) {
 			w.WriteHeader(http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"message": tc.message})
 		}))
-		_, err := (gateway.Client{HTTP: gateway.NewHTTPClient(), BaseURL: srv.URL}).Probe(t.Context(), "synthetic-request-key", "model", models.Messages)
+		_, err := (gateway.Client{HTTP: gateway.NewHTTPClient(), BaseURL: srv.URL}).Probe(
+			t.Context(),
+			"synthetic-request-key",
+			"model",
+			models.Messages,
+		)
 		srv.Close()
 		if want := "gateway returned HTTP 400: " + tc.want; err == nil || err.Error() != want {
 			t.Errorf("%s: %v, want %q", tc.message, err, want)
@@ -115,7 +126,12 @@ func TestBasicCheckCancellationIsNotAuthenticationFailure(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	status, err := (gateway.Client{HTTP: gateway.NewHTTPClient(), BaseURL: "http://127.0.0.1:1"}).Probe(ctx, "synthetic", "m", models.Messages)
+	status, err := (gateway.Client{HTTP: gateway.NewHTTPClient(), BaseURL: "http://127.0.0.1:1"}).Probe(
+		ctx,
+		"synthetic",
+		"m",
+		models.Messages,
+	)
 	if status != 0 || !errors.Is(err, context.Canceled) || errors.Is(err, gateway.ErrUnauthorized) {
 		t.Fatalf("status=%d err=%v", status, err)
 	}
@@ -125,10 +141,17 @@ func TestListedNonPublicModelIsAdmittedAndRoutedToChat(t *testing.T) {
 	t.Parallel()
 	private := "private-customer-model"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = fmt.Fprintf(w, `{"data":[{"id":%q,"display_name":"Private model"},{"id":"deepseek-v3.2"}]}`, private)
+		_, _ = fmt.Fprintf(
+			w,
+			`{"data":[{"id":%q,"display_name":"Private model"},{"id":"deepseek-v3.2"}]}`,
+			private,
+		)
 	}))
 	defer srv.Close()
-	table, err := (gateway.Client{HTTP: gateway.NewHTTPClient(), BaseURL: srv.URL}).Models(t.Context(), "synthetic")
+	table, err := (gateway.Client{HTTP: gateway.NewHTTPClient(), BaseURL: srv.URL}).Models(
+		t.Context(),
+		"synthetic",
+	)
 	if err != nil || len(table) != 2 || table[0].Alias != private {
 		t.Fatalf("listed model was not admitted: count=%d err=%v", len(table), err)
 	}

@@ -40,7 +40,8 @@ func (p *answerPrompter) ReadSecret(prompt string) (string, error) {
 }
 
 func isPickPrompt(p string) bool {
-	return strings.HasPrefix(p, "Numbers or names") || strings.HasPrefix(p, "Apply this change") || strings.HasPrefix(p, "Make Aiven")
+	return strings.HasPrefix(p, "Numbers or names") || strings.HasPrefix(p, "Apply this change") ||
+		strings.HasPrefix(p, "Make Aiven")
 }
 
 type connectCase struct {
@@ -77,7 +78,8 @@ func TestSetupConfirmsEnvironmentKeyBeforeAnyRequest(t *testing.T) {
 	if r.code != 0 || r.stdout != "" {
 		t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
 	}
-	if reqs := g.journal(); len(reqs) == 0 || reqs[0].Header.Get("Authorization") != "Bearer "+keyLong {
+	if reqs := g.journal(); len(reqs) == 0 ||
+		reqs[0].Header.Get("Authorization") != "Bearer "+keyLong {
 		t.Errorf("approved key was not used for the first request: %v", reqs)
 	}
 }
@@ -87,38 +89,205 @@ func TestSetupResolvesChecksAndSavesKey(t *testing.T) {
 	keep := "Keep the saved key (sk-…)? [Y/n] "
 	envConsent := "Use this key with <gateway>? [y/N] "
 	cases := []connectCase{
-		{name: "stdin flag", args: []string{"--key-stdin"}, stdin: keyValid + "\n", prompter: &answerPrompter{}, wantKey: keyValid},
-		{name: "explicit setup", cmd: "setup", args: []string{"--key-stdin"}, stdin: keyValid, wantKey: keyValid},
-		{name: "key file kept on enter", fileKey: keyValid, prompter: &answerPrompter{}, wantPrompts: []string{keep}, wantKey: keyValid},
-		{name: "key file kept with yes", args: []string{"--yes"}, fileKey: keyValid, prompter: &answerPrompter{answer: "n"}, wantKey: keyValid, reused: true},
-		{name: "key file kept with -y", args: []string{"-y"}, fileKey: keyValid, prompter: &answerPrompter{answer: "n"}, wantKey: keyValid, reused: true},
-		{name: "key file kept without terminal", fileKey: keyValid, stdin: keyClaudeOnly, wantKey: keyValid, reused: true},
-		{name: "key file replaced", fileKey: keyValid, prompter: &answerPrompter{answer: " N ", secret: keyClaudeOnly}, wantPrompts: []string{keep, hidden}, wantKey: keyClaudeOnly},
-		{name: "stdin flag overrides key file", args: []string{"--key-stdin"}, fileKey: keyValid, stdin: keyClaudeOnly, prompter: &answerPrompter{}, wantKey: keyClaudeOnly},
-		{name: "short key shows prefix only", fileKey: keyShort, prompter: &answerPrompter{}, wantPrompts: []string{"Keep the saved key (sk-…)? [Y/n] "}, wantKey: keyShort},
-		{name: "bare 12-char key fully hidden", fileKey: keyBare, prompter: &answerPrompter{}, wantPrompts: []string{"Keep the saved key (…)? [Y/n] "}, wantKey: keyBare},
-		{name: "long key shows last 4", fileKey: keyLong, prompter: &answerPrompter{}, wantPrompts: []string{"Keep the saved key (AVNS_…wxyz)? [Y/n] "}, wantKey: keyLong},
-		{name: "environment key saved", environ: []string{"AIVEN_AI_GATEWAY_KEY=" + keyFlash}, prompter: &answerPrompter{answer: "y"}, wantPrompts: []string{envConsent}, wantKey: keyFlash},
-		{name: "rejected key file falls back to environment", fileKey: "sk-expired", environ: []string{"AIVEN_AI_GATEWAY_KEY=" + keyFlash}, prompter: &answerPrompter{answer: "y"}, wantPrompts: []string{envConsent}, wantKey: keyFlash},
-		{name: "no-model saved key falls back to environment", fileKey: keyEmpty, environ: []string{"AIVEN_AI_GATEWAY_KEY=" + keyFlash}, prompter: &answerPrompter{answer: "y"}, wantPrompts: []string{envConsent}, wantKey: keyFlash},
-		{name: "no-model saved key prompts", fileKey: keyEmpty, prompter: &answerPrompter{secret: keyValid}, wantPrompts: []string{hidden}, wantKey: keyValid},
-		{name: "no-model environment key prompts", environ: []string{"AIVEN_AI_GATEWAY_KEY=" + keyEmpty}, prompter: &answerPrompter{answer: "y", secret: keyValid}, wantPrompts: []string{envConsent, hidden}, wantKey: keyValid},
-		{name: "request refusal does not switch to environment", fileKey: keyNoInfer, environ: []string{"AIVEN_AI_GATEWAY_KEY=" + keyValid}, prompter: &answerPrompter{}, wantErr: "Messages basic check failed: gateway returned HTTP 403"},
-		{name: "request refusal does not prompt for replacement", fileKey: keyNoInfer, prompter: &answerPrompter{secret: keyValid}, wantErr: "Messages basic check failed: gateway returned HTTP 403"},
-		{name: "new key request refusal", args: []string{"--key-stdin"}, stdin: keyNoInfer, wantErr: "Messages basic check failed: gateway returned HTTP 403"},
-		{name: "unrecognised keep answer", fileKey: keyValid, prompter: &answerPrompter{answer: "maybe"}, wantErr: "expected y or n"},
-		{name: "expired key file prompts", fileKey: "sk-expired", environ: []string{"AIVEN_AI_GATEWAY_KEY=sk-expired"}, prompter: &answerPrompter{secret: keyValid}, wantPrompts: []string{hidden}, wantKey: keyValid},
-		{name: "key file for another gateway prompts", otherKey: keyFlash, prompter: &answerPrompter{secret: keyValid}, wantPrompts: []string{hidden}, wantKey: keyValid},
-		{name: "stale environment key prompts", environ: []string{"AIVEN_AI_GATEWAY_KEY=sk-expired"}, prompter: &answerPrompter{answer: "y", secret: keyValid}, wantPrompts: []string{envConsent, hidden}, wantKey: keyValid},
+		{
+			name:     "stdin flag",
+			args:     []string{"--key-stdin"},
+			stdin:    keyValid + "\n",
+			prompter: &answerPrompter{},
+			wantKey:  keyValid,
+		},
+		{
+			name:    "explicit setup",
+			cmd:     "setup",
+			args:    []string{"--key-stdin"},
+			stdin:   keyValid,
+			wantKey: keyValid,
+		},
+		{
+			name:        "key file kept on enter",
+			fileKey:     keyValid,
+			prompter:    &answerPrompter{},
+			wantPrompts: []string{keep},
+			wantKey:     keyValid,
+		},
+		{
+			name:     "key file kept with yes",
+			args:     []string{"--yes"},
+			fileKey:  keyValid,
+			prompter: &answerPrompter{answer: "n"},
+			wantKey:  keyValid,
+			reused:   true,
+		},
+		{
+			name:     "key file kept with -y",
+			args:     []string{"-y"},
+			fileKey:  keyValid,
+			prompter: &answerPrompter{answer: "n"},
+			wantKey:  keyValid,
+			reused:   true,
+		},
+		{
+			name:    "key file kept without terminal",
+			fileKey: keyValid,
+			stdin:   keyClaudeOnly,
+			wantKey: keyValid,
+			reused:  true,
+		},
+		{
+			name:        "key file replaced",
+			fileKey:     keyValid,
+			prompter:    &answerPrompter{answer: " N ", secret: keyClaudeOnly},
+			wantPrompts: []string{keep, hidden},
+			wantKey:     keyClaudeOnly,
+		},
+		{
+			name:     "stdin flag overrides key file",
+			args:     []string{"--key-stdin"},
+			fileKey:  keyValid,
+			stdin:    keyClaudeOnly,
+			prompter: &answerPrompter{},
+			wantKey:  keyClaudeOnly,
+		},
+		{
+			name:        "short key shows prefix only",
+			fileKey:     keyShort,
+			prompter:    &answerPrompter{},
+			wantPrompts: []string{"Keep the saved key (sk-…)? [Y/n] "},
+			wantKey:     keyShort,
+		},
+		{
+			name:        "bare 12-char key fully hidden",
+			fileKey:     keyBare,
+			prompter:    &answerPrompter{},
+			wantPrompts: []string{"Keep the saved key (…)? [Y/n] "},
+			wantKey:     keyBare,
+		},
+		{
+			name:        "long key shows last 4",
+			fileKey:     keyLong,
+			prompter:    &answerPrompter{},
+			wantPrompts: []string{"Keep the saved key (AVNS_…wxyz)? [Y/n] "},
+			wantKey:     keyLong,
+		},
+		{
+			name:        "environment key saved",
+			environ:     []string{"AIVEN_AI_GATEWAY_KEY=" + keyFlash},
+			prompter:    &answerPrompter{answer: "y"},
+			wantPrompts: []string{envConsent},
+			wantKey:     keyFlash,
+		},
+		{
+			name:        "rejected key file falls back to environment",
+			fileKey:     "sk-expired",
+			environ:     []string{"AIVEN_AI_GATEWAY_KEY=" + keyFlash},
+			prompter:    &answerPrompter{answer: "y"},
+			wantPrompts: []string{envConsent},
+			wantKey:     keyFlash,
+		},
+		{
+			name:        "no-model saved key falls back to environment",
+			fileKey:     keyEmpty,
+			environ:     []string{"AIVEN_AI_GATEWAY_KEY=" + keyFlash},
+			prompter:    &answerPrompter{answer: "y"},
+			wantPrompts: []string{envConsent},
+			wantKey:     keyFlash,
+		},
+		{
+			name:        "no-model saved key prompts",
+			fileKey:     keyEmpty,
+			prompter:    &answerPrompter{secret: keyValid},
+			wantPrompts: []string{hidden},
+			wantKey:     keyValid,
+		},
+		{
+			name:        "no-model environment key prompts",
+			environ:     []string{"AIVEN_AI_GATEWAY_KEY=" + keyEmpty},
+			prompter:    &answerPrompter{answer: "y", secret: keyValid},
+			wantPrompts: []string{envConsent, hidden},
+			wantKey:     keyValid,
+		},
+		{
+			name:     "request refusal does not switch to environment",
+			fileKey:  keyNoInfer,
+			environ:  []string{"AIVEN_AI_GATEWAY_KEY=" + keyValid},
+			prompter: &answerPrompter{},
+			wantErr:  "Messages basic check failed: gateway returned HTTP 403",
+		},
+		{
+			name:     "request refusal does not prompt for replacement",
+			fileKey:  keyNoInfer,
+			prompter: &answerPrompter{secret: keyValid},
+			wantErr:  "Messages basic check failed: gateway returned HTTP 403",
+		},
+		{
+			name:    "new key request refusal",
+			args:    []string{"--key-stdin"},
+			stdin:   keyNoInfer,
+			wantErr: "Messages basic check failed: gateway returned HTTP 403",
+		},
+		{
+			name:     "unrecognised keep answer",
+			fileKey:  keyValid,
+			prompter: &answerPrompter{answer: "maybe"},
+			wantErr:  "expected y or n",
+		},
+		{
+			name:        "expired key file prompts",
+			fileKey:     "sk-expired",
+			environ:     []string{"AIVEN_AI_GATEWAY_KEY=sk-expired"},
+			prompter:    &answerPrompter{secret: keyValid},
+			wantPrompts: []string{hidden},
+			wantKey:     keyValid,
+		},
+		{
+			name:        "key file for another gateway prompts",
+			otherKey:    keyFlash,
+			prompter:    &answerPrompter{secret: keyValid},
+			wantPrompts: []string{hidden},
+			wantKey:     keyValid,
+		},
+		{
+			name:        "stale environment key prompts",
+			environ:     []string{"AIVEN_AI_GATEWAY_KEY=sk-expired"},
+			prompter:    &answerPrompter{answer: "y", secret: keyValid},
+			wantPrompts: []string{envConsent, hidden},
+			wantKey:     keyValid,
+		},
 		{name: "no implicit stdin without terminal", stdin: keyValid, wantErr: "no usable saved key"},
-		{name: "clipboard flag is unknown", args: []string{"--key-from-clipboard"}, wantErr: "unexpected argument"},
-		{name: "rejected key", args: []string{"--key-stdin"}, stdin: "sk-unknown", wantErr: "key rejected by gateway (401)"},
-		{name: "empty model table", args: []string{"--key-stdin"}, stdin: keyEmpty, wantErr: "key grants no models"},
+		{
+			name:    "clipboard flag is unknown",
+			args:    []string{"--key-from-clipboard"},
+			wantErr: "unexpected argument",
+		},
+		{
+			name:    "rejected key",
+			args:    []string{"--key-stdin"},
+			stdin:   "sk-unknown",
+			wantErr: "key rejected by gateway (401)",
+		},
+		{
+			name:    "empty model table",
+			args:    []string{"--key-stdin"},
+			stdin:   keyEmpty,
+			wantErr: "key grants no models",
+		},
 		{name: "unexpected arg", args: []string{keyValid}, wantErr: "unexpected argument"},
-		{name: "global flag is unknown", args: []string{"--key-stdin", "--global", "claude"}, stdin: keyValid, wantErr: "unexpected argument"},
+		{
+			name:    "global flag is unknown",
+			args:    []string{"--key-stdin", "--global", "claude"},
+			stdin:   keyValid,
+			wantErr: "unexpected argument",
+		},
 	}
 	for _, flag := range []string{"--key", "--api-key", "--key=" + keyValid, "--api-key=" + keyValid} {
-		cases = append(cases, connectCase{name: "argv " + flag, args: []string{flag}, wantErr: "do not pass API keys on the command line"})
+		cases = append(
+			cases,
+			connectCase{
+				name:    "argv " + flag,
+				args:    []string{flag},
+				wantErr: "do not pass API keys on the command line",
+			},
+		)
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -128,7 +297,12 @@ func TestSetupResolvesChecksAndSavesKey(t *testing.T) {
 				s.loggedIn(tc.fileKey)
 			}
 			if tc.otherKey != "" {
-				if _, err := creds.Write(s.fakeHome, config.DefaultBaseURL, tc.otherKey, fsutil.WriteAtomic); err != nil {
+				if _, err := creds.Write(
+					s.fakeHome,
+					config.DefaultBaseURL,
+					tc.otherKey,
+					fsutil.WriteAtomic,
+				); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -139,7 +313,8 @@ func TestSetupResolvesChecksAndSavesKey(t *testing.T) {
 			r := s.run(append([]string{cmp.Or(tc.cmd, "setup"), "omp"}, tc.args...)...)
 			keyFile := s.keyPath()
 			if tc.wantErr != "" {
-				if r.code != 1 || !strings.Contains(r.stderr, tc.wantErr) || strings.Contains(r.stderr, keyValid) {
+				if r.code != 1 || !strings.Contains(r.stderr, tc.wantErr) ||
+					strings.Contains(r.stderr, keyValid) {
 					t.Fatalf("exit %d, stderr %q, want %q without key", r.code, r.stderr, tc.wantErr)
 				}
 				if data, err := os.ReadFile(keyFile); tc.fileKey == "" && !os.IsNotExist(err) {
@@ -153,17 +328,23 @@ func TestSetupResolvesChecksAndSavesKey(t *testing.T) {
 				t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
 			}
 			if reqs := g.journal(); reqs[len(reqs)-1].Method != "POST" {
-				t.Errorf("last request %s %s, want completion probe", reqs[len(reqs)-1].Method, reqs[len(reqs)-1].URL)
+				t.Errorf(
+					"last request %s %s, want completion probe",
+					reqs[len(reqs)-1].Method,
+					reqs[len(reqs)-1].URL,
+				)
 			}
 			// The tool picker follows every bare connect on a terminal; this test is about the key prompts before it.
 			wantPrompts := strings.ReplaceAll(strings.Join(tc.wantPrompts, "|"), "<gateway>", g.URL)
-			if tc.prompter != nil && strings.Join(slices.DeleteFunc(tc.prompter.prompts, isPickPrompt), "|") != wantPrompts {
+			if tc.prompter != nil &&
+				strings.Join(slices.DeleteFunc(tc.prompter.prompts, isPickPrompt), "|") != wantPrompts {
 				t.Errorf("prompts = %q, want %q", tc.prompter.prompts, wantPrompts)
 			}
 			if data, err := os.ReadFile(keyFile); err != nil || string(data) != tc.wantKey+"\n" {
 				t.Errorf("key file = %q, %v; want %q", data, err, tc.wantKey)
 			}
-			if tc.otherKey != "" && readOrEmpty(t, creds.Path(s.fakeHome, config.DefaultBaseURL)) != tc.otherKey+"\n" {
+			if tc.otherKey != "" &&
+				readOrEmpty(t, creds.Path(s.fakeHome, config.DefaultBaseURL)) != tc.otherKey+"\n" {
 				t.Errorf("the other gateway's key file changed")
 			}
 			if tc.reused != strings.Contains(r.stderr, "Using your existing gateway key.") {
@@ -193,7 +374,11 @@ func TestSetupKeepPromptEndOfInputSavesNothing(t *testing.T) {
 	}
 	p := &scriptedPrompter{}
 	s.deps.Prompter = p
-	if r := s.run("setup", "omp"); r.code != 1 || !strings.Contains(r.stderr, "no answer: input ended") || len(p.prompts) != 1 {
+	if r := s.run(
+		"setup",
+		"omp",
+	); r.code != 1 || !strings.Contains(r.stderr, "no answer: input ended") ||
+		len(p.prompts) != 1 {
 		t.Fatalf("exit %d, stderr %q, prompts %q", r.code, r.stderr, p.prompts)
 	}
 	if after, err := os.ReadFile(keyFile); err != nil || string(after) != string(before) {
@@ -217,7 +402,12 @@ func TestSetupPromptsWithoutEcho(t *testing.T) {
 func TestSetupNeedsAHome(t *testing.T) {
 	s := newSession(t, newGatewayDouble(t)).stdin(keyValid)
 	s.env.UserHome = ""
-	if r := s.run("setup", "omp", "--key-stdin"); r.code != 1 || !strings.Contains(r.stderr, "Set "+config.HomeVar) {
+	if r := s.run(
+		"setup",
+		"omp",
+		"--key-stdin",
+	); r.code != 1 ||
+		!strings.Contains(r.stderr, "Set "+config.HomeVar) {
 		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
 	}
 }
@@ -232,7 +422,12 @@ func TestSetupSurfacesAFailedTestRequest(t *testing.T) {
 	}))
 	defer srv.Close()
 	s := newSession(t, &gatewayDouble{Server: srv}).stdin(keyValid)
-	if r := s.run("setup", "omp", "--key-stdin"); r.code != 1 || !strings.Contains(r.stderr, "Messages basic check failed: gateway returned HTTP 502") {
+	if r := s.run(
+		"setup",
+		"omp",
+		"--key-stdin",
+	); r.code != 1 ||
+		!strings.Contains(r.stderr, "Messages basic check failed: gateway returned HTTP 502") {
 		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
 	}
 	if _, err := os.Stat(s.keyPath()); !os.IsNotExist(err) {
@@ -241,7 +436,11 @@ func TestSetupSurfacesAFailedTestRequest(t *testing.T) {
 }
 
 func TestSetupSurfacesGatewayOutage(t *testing.T) {
-	srv502 := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusBadGateway) }))
+	srv502 := httptest.NewTLSServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusBadGateway) },
+		),
+	)
 	defer srv502.Close()
 	s := newSession(t, newGatewayDouble(t))
 	s.env.BaseURL = srv502.URL
@@ -267,19 +466,30 @@ func TestSetupConfiguresNamedTool(t *testing.T) {
 	} {
 		s := newSession(t, newGatewayDouble(t)).stdin(keyValid)
 		r := s.run(append([]string{"setup"}, tc.args...)...)
-		if r.code != 0 || len(s.runner.calls) != 0 || !strings.Contains(r.stderr, "native default left as it was\n") || !strings.Contains(r.stderr, "Or start the native tool directly\n  "+tc.run) || !strings.Contains(r.stderr, "Start a session\n  aiven-ai-gateway launch "+tc.tool+"\n") {
+		if r.code != 0 || len(s.runner.calls) != 0 ||
+			!strings.Contains(r.stderr, "native default left as it was\n") ||
+			!strings.Contains(r.stderr, "Or start the native tool directly\n  "+tc.run) ||
+			!strings.Contains(r.stderr, "Start a session\n  aiven-ai-gateway launch "+tc.tool+"\n") {
 			t.Fatalf("exit %d, stderr %q, calls %v", r.code, r.stderr, s.runner.calls)
 		}
 		for _, f := range tc.files {
 			path := filepath.Join(s.fakeHome, f)
-			if data, err := os.ReadFile(path); err != nil || !strings.Contains(r.stderr, "written: "+path+" (new file)\n") || !strings.Contains(string(data), "aiven") || strings.Contains(string(data), keyValid) {
+			if data, err := os.ReadFile(
+				path,
+			); err != nil || !strings.Contains(r.stderr, "written: "+path+" (new file)\n") || !strings.Contains(string(data), "aiven") ||
+				strings.Contains(string(data), keyValid) {
 				t.Errorf("%s = %q (%v), stderr %q", f, data, err, r.stderr)
 			}
 		}
 	}
 	s := newSession(t, newGatewayDouble(t)).stdin(keyValid)
 	writeFile(t, filepath.Join(s.fakeHome, ".pi/agent/models.json"), "{bad")
-	if r := s.run("setup", "--key-stdin", "pi"); r.code != 1 || !strings.Contains(r.stderr, "not a JSON object") {
+	if r := s.run(
+		"setup",
+		"--key-stdin",
+		"pi",
+	); r.code != 1 ||
+		!strings.Contains(r.stderr, "not a JSON object") {
 		t.Fatalf("bad config: exit %d, stderr %q", r.code, r.stderr)
 	}
 	if _, err := os.Stat(s.keyPath()); !os.IsNotExist(err) {
@@ -294,7 +504,8 @@ func TestSetupNamesTheBackupOfAReplacedConfig(t *testing.T) {
 	first := fsutil.BackupPath(path, fixedNow)
 	note := " (previous version: " + first + ")"
 	r := s.run("setup", "--key-stdin", "--yes", "pi")
-	if r.code != 0 || !strings.Contains(r.stderr, "+++ "+path+note+"\n") || !strings.Contains(r.stderr, "written: "+path+note+"\n") {
+	if r.code != 0 || !strings.Contains(r.stderr, "+++ "+path+note+"\n") ||
+		!strings.Contains(r.stderr, "written: "+path+note+"\n") {
 		t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
 	}
 	if bak := latestBackup(t, path); bak != `{"providers":{}}` {
@@ -303,11 +514,16 @@ func TestSetupNamesTheBackupOfAReplacedConfig(t *testing.T) {
 	writeFile(t, path, `{"providers":{"other":{}}}`)
 	// The second run reads the same second as the first, as a quick rerun would.
 	s.deps.Now = func() time.Time { return fixedNow }
-	if r := s.stdin(keyValid).run("setup", "--key-stdin", "--yes", "pi"); r.code != 0 || !strings.Contains(r.stderr, ".aiven-20261028T120000Z-2.bak)") {
+	if r := s.stdin(keyValid).
+		run("setup", "--key-stdin", "--yes", "pi"); r.code != 0 ||
+		!strings.Contains(r.stderr, ".aiven-20261028T120000Z-2.bak)") {
 		t.Fatalf("second run: exit %d, stderr %q", r.code, r.stderr)
 	}
 	kept, _ := os.ReadFile(first)
-	if baks, _ := filepath.Glob(path + ".aiven-*.bak"); len(baks) != 2 || string(kept) != `{"providers":{}}` || latestBackup(t, path) != `{"providers":{"other":{}}}` {
+	if baks, _ := filepath.Glob(
+		path + ".aiven-*.bak",
+	); len(baks) != 2 || string(kept) != `{"providers":{}}` ||
+		latestBackup(t, path) != `{"providers":{"other":{}}}` {
 		t.Errorf("backups after a second run = %v, first = %q", baks, kept)
 	}
 }
@@ -326,7 +542,13 @@ func TestSetupLeavesConfigUntouchedWhenItsBackupFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
-	if r := s.run("setup", "--key-stdin", "--yes", "pi"); r.code != 1 || !strings.Contains(r.stderr, "models.json.aiven-20261028T120000Z.bak") {
+	if r := s.run(
+		"setup",
+		"--key-stdin",
+		"--yes",
+		"pi",
+	); r.code != 1 ||
+		!strings.Contains(r.stderr, "models.json.aiven-20261028T120000Z.bak") {
 		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
 	}
 	if got, _ := os.ReadFile(path); string(got) != before {
@@ -357,7 +579,8 @@ func TestSetupKeepsThePreviewedBackupNameWhenAnotherRunTakesIt(t *testing.T) {
 	taken := fsutil.BackupPath(path, fixedNow)
 	s.deps.Prompter = hookPrompter{"Apply this change", func() { writeFile(t, taken, "another run") }}
 	r := s.run("setup", "--key-stdin", "codex")
-	if r.code != 1 || !strings.Contains(r.stderr, "(previous version: "+taken+")") || !strings.Contains(r.stderr, taken+" already exists; retry") {
+	if r.code != 1 || !strings.Contains(r.stderr, "(previous version: "+taken+")") ||
+		!strings.Contains(r.stderr, taken+" already exists; retry") {
 		t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
 	}
 	if got, _ := os.ReadFile(path); string(got) != before {
@@ -386,10 +609,13 @@ func TestSetupPreviewsAToolChangeBeforeWritingIt(t *testing.T) {
 			}
 			profile := filepath.Join(s.fakeHome, ".codex/aiven.config.toml")
 			r := s.run(append([]string{"setup", "--key-stdin", "codex"}, tc.args...)...)
-			if r.code != 0 || !strings.Contains(r.stderr, "+++ "+profile+" (new file)\n") || !strings.Contains(r.stderr, "+model_provider = 'aiven'") || !strings.Contains(r.stderr, tc.want) {
+			if r.code != 0 || !strings.Contains(r.stderr, "+++ "+profile+" (new file)\n") ||
+				!strings.Contains(r.stderr, "+model_provider = 'aiven'") ||
+				!strings.Contains(r.stderr, tc.want) {
 				t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
 			}
-			if tc.prompter != nil && strings.Join(tc.prompter.prompts, "|") != strings.Join(tc.wantPrompts, "|") {
+			if tc.prompter != nil &&
+				strings.Join(tc.prompter.prompts, "|") != strings.Join(tc.wantPrompts, "|") {
 				t.Errorf("prompts = %q, want %q", tc.prompter.prompts, tc.wantPrompts)
 			}
 			if _, err := os.Stat(profile); (err == nil) != tc.written {
@@ -413,10 +639,12 @@ func TestSetupPreviewShowsSyntaxTheToolCannotReadRemoved(t *testing.T) {
 		writeFile(t, path, tc.src)
 		r := s.run("setup", tc.tool, "--yes")
 		data, _ := os.ReadFile(path)
-		if r.code != 0 || !strings.Contains(r.stderr, tc.removed) || strings.Contains(string(data), "mine") {
+		if r.code != 0 || !strings.Contains(r.stderr, tc.removed) ||
+			strings.Contains(string(data), "mine") {
 			t.Errorf("%s: exit %d, stderr %q, file %s", tc.tool, r.code, r.stderr, data)
 		}
-		if tc.tool == "claude" && !json.Valid(data) || tc.tool == "pi" && !strings.Contains(string(data), "// kept") {
+		if tc.tool == "claude" && !json.Valid(data) ||
+			tc.tool == "pi" && !strings.Contains(string(data), "// kept") {
 			t.Errorf("%s: %s", tc.tool, data)
 		}
 	}
@@ -428,34 +656,53 @@ func TestSetupSummarisesModelListsAndSkipsAConfiguredTool(t *testing.T) {
 	path := filepath.Join(s.fakeHome, ".pi/agent/models.json")
 	r := s.run("setup", "--key-stdin", "--yes", "pi")
 	// The provider's other fields are shown; only its model list is summarised.
-	if r.code != 0 || !strings.Contains(r.stderr, "+++ "+path+" (new file)\n") || !strings.Contains(r.stderr, `+      "baseUrl": "`+g.URL+`/v1",`) ||
-		!strings.Contains(r.stderr, `+      "models": [11 models: `) || !strings.Contains(r.stderr, ", … +9 more]\n") || strings.Contains(r.stderr, `"id":`) {
+	if r.code != 0 || !strings.Contains(r.stderr, "+++ "+path+" (new file)\n") ||
+		!strings.Contains(r.stderr, `+      "baseUrl": "`+g.URL+`/v1",`) ||
+		!strings.Contains(r.stderr, `+      "models": [11 models: `) ||
+		!strings.Contains(r.stderr, ", … +9 more]\n") ||
+		strings.Contains(r.stderr, `"id":`) {
 		t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
 	}
 	p := &answerPrompter{}
 	s.deps.Prompter = p
 	r = s.stdin(keyProduction).run("setup", "--key-stdin", "pi")
-	if r.code != 0 || !strings.Contains(r.stderr, "Already configured; no file needs a change.\n") || !strings.Contains(r.stderr, "Pi          unchanged\n") || !strings.Contains(r.stderr, "\n  pi --model aiven/claude-sonnet-5-5\n") || len(p.prompts) != 1 {
+	if r.code != 0 || !strings.Contains(r.stderr, "Already configured; no file needs a change.\n") ||
+		!strings.Contains(r.stderr, "Pi          unchanged\n") ||
+		!strings.Contains(r.stderr, "\n  pi --model aiven/claude-sonnet-5-5\n") ||
+		len(p.prompts) != 1 {
 		t.Fatalf("exit %d, stderr %q, prompts %q", r.code, r.stderr, p.prompts)
 	}
 }
 
 func TestSetupPreviewsRedactKeysAlreadyInAConfig(t *testing.T) {
 	secrets := []string{
-		"plainSecretValue123456", "AVNS_test.synthetic_secret", "multiLineSecret123", "commentSecret123", "urlSecret123", "cookieSecret123",
+		"plainSecretValue123456",
+		"AVNS_test.synthetic_secret",
+		"multiLineSecret123",
+		"commentSecret123",
+		"urlSecret123",
+		"cookieSecret123",
 		// Values a looser rule took for commands, paths or variable names.
-		"fixture pass phrase", "!bangSecret123", "/pathLikeSecret123", "UPPER_SECRET_123",
+		"fixture pass phrase",
+		"!bangSecret123",
+		"/pathLikeSecret123",
+		"UPPER_SECRET_123",
 		// OpenCode reference syntax, which is a literal value in any other tool's file.
-		"{env:SYNTHETIC_PASSWORD}", "{file:/synthetic-secret}",
+		"{env:SYNTHETIC_PASSWORD}",
+		"{file:/synthetic-secret}",
 		// Codex env_key values: a variable name under model_providers, a literal in an MCP server's env table, which the
 		// preview does not tell apart.
-		"SYNTHETIC_PROVIDER_KEY", "SYNTHETIC_PRIVATE_PASSWORD", "SYNTHETIC_DOTTED_PASSWORD",
+		"SYNTHETIC_PROVIDER_KEY",
+		"SYNTHETIC_PRIVATE_PASSWORD",
+		"SYNTHETIC_DOTTED_PASSWORD",
 	}
 	// References the file's own tool reads as one say where a key is, so the preview keeps them.
 	visible := map[string]string{"opencode": `"apiKey":"{env:OTHER_API_KEY}"`}
 	files := map[string]map[string]string{
-		"pi": {".pi/agent/models.json": `{"providers":{"other":{"apiKey":"` + secrets[0] + `"},"spaced":{"apiKey":"` + secrets[6] +
-			`"},"bang":{"apiKey":"` + secrets[7] + `"},"ref":{"apiKey":"` + secrets[10] + `"}}}`},
+		"pi": {
+			".pi/agent/models.json": `{"providers":{"other":{"apiKey":"` + secrets[0] + `"},"spaced":{"apiKey":"` + secrets[6] +
+				`"},"bang":{"apiKey":"` + secrets[7] + `"},"ref":{"apiKey":"` + secrets[10] + `"}}}`,
+		},
 		"opencode": {".config/opencode/opencode.json": "{\n  // token: " + secrets[3] + "\n" +
 			`"provider":{"other":{"options":{"apiKey":"` + secrets[0] + `","baseURL":"https://user:` + secrets[4] + `@example.invalid/v1"}},` +
 			`"ref":{"options":{"apiKey":"{env:OTHER_API_KEY}"}}}}`},
@@ -468,10 +715,14 @@ func TestSetupPreviewsRedactKeysAlreadyInAConfig(t *testing.T) {
 			"env_key = \"" + secrets[13] + "\"\n"},
 		// Setup edits config.toml in place, so its diff shows only the three lines before the appended Aiven table:
 		// each further case ends with values the first case keeps out of that context.
-		"codex providers": {".codex/config.toml": "[model_providers]\nother = { name = 'other', experimental_bearer_token = '" + secrets[0] +
-			"', http_headers = { Cookie = \"session=" + secrets[5] + "\" } }\nmulti = { experimental_bearer_token = \"\"\"" + secrets[2] + "\"\"\" }\n" +
-			"ref = { name = 'ref', env_key = \"" + secrets[12] + "\" }\n"},
-		"codex mcp": {".codex/config.toml": "[mcp_servers.db.env]\nDATABASE_PASSWORD = \"" + secrets[6] + "\"\nAPI_TOKEN = \"" + secrets[8] + "\"\n"},
+		"codex providers": {
+			".codex/config.toml": "[model_providers]\nother = { name = 'other', experimental_bearer_token = '" + secrets[0] +
+				"', http_headers = { Cookie = \"session=" + secrets[5] + "\" } }\nmulti = { experimental_bearer_token = \"\"\"" + secrets[2] + "\"\"\" }\n" +
+				"ref = { name = 'ref', env_key = \"" + secrets[12] + "\" }\n",
+		},
+		"codex mcp": {
+			".codex/config.toml": "[mcp_servers.db.env]\nDATABASE_PASSWORD = \"" + secrets[6] + "\"\nAPI_TOKEN = \"" + secrets[8] + "\"\n",
+		},
 		"claude": {
 			".claude/aiven.settings.json": `{"env":{"ANTHROPIC_AUTH_TOKEN":"` + secrets[1] + `","DATABASE_PASSWORD":"` + secrets[6] +
 				`","SESSION_SECRET":"` + secrets[9] + `","DB_PASSWORD":"` + secrets[10] + `","FILE_PASSWORD":"` + secrets[11] + `"}}`,
@@ -497,7 +748,8 @@ func TestSetupPreviewsRedactKeysAlreadyInAConfig(t *testing.T) {
 				out := r.stdout + r.stderr
 				leaked := slices.ContainsFunc(secrets, func(v string) bool { return strings.Contains(out, v) })
 				// The diff shows only the lines near a change, numbered across the whole file.
-				if r.code != 0 || leaked || !strings.Contains(r.stderr, "<redacted ") || !strings.Contains(r.stderr, visible[tool]) {
+				if r.code != 0 || leaked || !strings.Contains(r.stderr, "<redacted ") ||
+					!strings.Contains(r.stderr, visible[tool]) {
 					t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
 				}
 			})
@@ -522,26 +774,41 @@ func TestSetupMakesAivenTheDefaultOnlyWhenAsked(t *testing.T) {
 			ask := "Make Aiven the native default for " + productNames[tc.tool] + "? Enter keeps your current default. [y/N] "
 			p := &answerPrompter{}
 			s.deps.Prompter = p
-			if r := s.stdin(keyValid).run("setup", "--key-stdin", tc.tool); r.code != 0 || !slices.Contains(p.prompts, ask) || !strings.Contains(r.stderr, "native default left as it was\n") {
+			if r := s.stdin(keyValid).
+				run("setup", "--key-stdin", tc.tool); r.code != 0 || !slices.Contains(p.prompts, ask) ||
+				!strings.Contains(r.stderr, "native default left as it was\n") {
 				t.Fatalf("enter: exit %d, prompts %q, stderr %q", r.code, p.prompts, r.stderr)
 			}
 			if got, _ := os.ReadFile(path); strings.Contains(string(got), tc.want) {
 				t.Fatalf("enter made Aiven the default: %s", got)
 			}
 			original, _ := os.ReadFile(path)
-			if r := s.stdin(keyValid).run("setup", "--key-stdin", "--yes", tc.tool); r.code != 0 || !strings.Contains(r.stderr, "native default left as it was\n") {
+			if r := s.stdin(keyValid).
+				run("setup", "--key-stdin", "--yes", tc.tool); r.code != 0 ||
+				!strings.Contains(r.stderr, "native default left as it was\n") {
 				t.Fatalf("--yes: exit %d, stderr %q", r.code, r.stderr)
 			}
 			p.answer = "y"
 			r := s.stdin(keyValid).run("setup", "--key-stdin", tc.tool)
-			if r.code != 0 || !strings.Contains(r.stderr, "+++ "+path+" (previous version: "+path+".aiven-") || !strings.Contains(r.stderr, "Aiven is now the native default\n") || !strings.Contains(r.stderr, "directly\n  "+tc.tool+"\n") {
+			if r.code != 0 ||
+				!strings.Contains(r.stderr, "+++ "+path+" (previous version: "+path+".aiven-") ||
+				!strings.Contains(r.stderr, "Aiven is now the native default\n") ||
+				!strings.Contains(r.stderr, "directly\n  "+tc.tool+"\n") {
 				t.Fatalf("y: exit %d, stderr %q", r.code, r.stderr)
 			}
-			if got, _ := os.ReadFile(path); !strings.Contains(string(got), tc.want) || strings.Contains(string(got), keyValid) {
+			if got, _ := os.ReadFile(
+				path,
+			); !strings.Contains(string(got), tc.want) ||
+				strings.Contains(string(got), keyValid) {
 				t.Errorf("%s = %s, want %s", tc.file, got, tc.want)
 			}
-			if tc.tool == "claude" && readJSON(t, path)["apiKeyHelper"] != claude.APIKeyHelper(s.env.BaseURL) {
-				t.Errorf("apiKeyHelper = %q, want %q", readJSON(t, path)["apiKeyHelper"], claude.APIKeyHelper(s.env.BaseURL))
+			if tc.tool == "claude" &&
+				readJSON(t, path)["apiKeyHelper"] != claude.APIKeyHelper(s.env.BaseURL) {
+				t.Errorf(
+					"apiKeyHelper = %q, want %q",
+					readJSON(t, path)["apiKeyHelper"],
+					claude.APIKeyHelper(s.env.BaseURL),
+				)
 			}
 			// One write per file per run, so the backup is the version from before the run, not an intermediate one.
 			if bak := latestBackup(t, path); bak != string(original) {
@@ -557,8 +824,10 @@ func TestSetupMakesAivenTheDefaultOnlyWhenAsked(t *testing.T) {
 				t.Errorf("fresh backup = %q, want %q", bak, tc.before)
 			}
 			p.prompts = nil
-			if r := s.stdin(keyValid).run("setup", "--key-stdin", tc.tool); r.code != 0 || len(p.prompts) != 1 || !strings.Contains(r.stderr, "Already configured; no file needs a change.") ||
-				strings.Contains(r.stderr, "Aiven is now the native default") || strings.Contains(r.stderr, "directly\n  "+tc.tool+"\n") {
+			if r := s.stdin(keyValid).
+				run("setup", "--key-stdin", tc.tool); r.code != 0 || len(p.prompts) != 1 || !strings.Contains(r.stderr, "Already configured; no file needs a change.") ||
+				strings.Contains(r.stderr, "Aiven is now the native default") ||
+				strings.Contains(r.stderr, "directly\n  "+tc.tool+"\n") {
 				t.Fatalf("again: exit %d, prompts %q, stderr %q", r.code, p.prompts, r.stderr)
 			}
 		})
@@ -576,7 +845,8 @@ func TestSetupChecksTheDefaultFileBeforeAsking(t *testing.T) {
 			s.deps.Prompter = p
 			writeFile(t, filepath.Join(s.fakeHome, tc.defaults), "{not json")
 			r := s.run("setup", "--key-stdin", tc.tool)
-			if r.code == 0 || !strings.Contains(r.stderr, "fix or move it, then retry") || slices.ContainsFunc(p.prompts, func(q string) bool { return strings.HasPrefix(q, "Apply") }) {
+			if r.code == 0 || !strings.Contains(r.stderr, "fix or move it, then retry") ||
+				slices.ContainsFunc(p.prompts, func(q string) bool { return strings.HasPrefix(q, "Apply") }) {
 				t.Fatalf("exit %d, prompts %q, stdout %q, stderr %q", r.code, p.prompts, r.stdout, r.stderr)
 			}
 			if _, err := os.Stat(filepath.Join(s.fakeHome, tc.provider)); !errors.Is(err, os.ErrNotExist) {
@@ -598,7 +868,11 @@ func TestSetupRefusesAToolWhoseConfigIsMoved(t *testing.T) {
 			s := newSession(t, newGatewayDouble(t)).stdin(keyValid)
 			s.env.Environ = append(s.env.Environ, tc.name+"="+filepath.Join(s.fakeHome, "elsewhere"))
 			r := s.run("setup", "--key-stdin", "--yes", tc.tool)
-			if r.code != 1 || !strings.Contains(r.stderr, tc.name+" is set, so "+tc.tool+" would not read the config aiven-ai-gateway writes") {
+			if r.code != 1 ||
+				!strings.Contains(
+					r.stderr,
+					tc.name+" is set, so "+tc.tool+" would not read the config aiven-ai-gateway writes",
+				) {
 				t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
 			}
 			// Refused before the key is read, so nothing is written at all.
@@ -619,7 +893,12 @@ func TestTopLevelKeyFlagIsRefusedWithoutEchoingIt(t *testing.T) {
 			g := newGatewayDouble(t)
 			s := newSession(t, g)
 			r := s.run(args...)
-			if r.code != 1 || !strings.Contains(r.stderr, "do not pass API keys on the command line; use login or setup --key-stdin") || strings.Contains(r.stderr, keyValid) {
+			if r.code != 1 ||
+				!strings.Contains(
+					r.stderr,
+					"do not pass API keys on the command line; use login or setup --key-stdin",
+				) ||
+				strings.Contains(r.stderr, keyValid) {
 				t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
 			}
 			if len(g.journal()) != 0 || len(s.homeFiles()) != 0 {
@@ -635,7 +914,8 @@ func TestUnrecognisedAnswerIsAskedAgain(t *testing.T) {
 	p := &scriptedPrompter{answers: []string{"maybe", "maybe", "y", "y"}}
 	s.deps.Prompter = p
 	r := s.run("setup", "--key-stdin", "pi")
-	if r.code != 0 || len(p.prompts) < 3 || !slices.Equal(p.prompts[:3], []string{ask, ask, ask}) || !strings.Contains(r.stderr, "Aiven is now the native default\n") {
+	if r.code != 0 || len(p.prompts) < 3 || !slices.Equal(p.prompts[:3], []string{ask, ask, ask}) ||
+		!strings.Contains(r.stderr, "Aiven is now the native default\n") {
 		t.Fatalf("exit %d, prompts %q, stderr %q", r.code, p.prompts, r.stderr)
 	}
 }

@@ -137,7 +137,8 @@ func Setup(in Input) (harness.Plan, error) {
 	if in.UserHome == "" {
 		return harness.Plan{}, config.ErrNoHome
 	}
-	if _, err := harness.ReadObject(filepath.Join(in.UserHome, ".claude", "settings.json")); err != nil {
+	settings := filepath.Join(in.UserHome, ".claude", "settings.json")
+	if _, err := harness.ReadObject(settings); err != nil {
 		return harness.Plan{}, err
 	}
 	if in.WorkDir != "" {
@@ -241,11 +242,35 @@ func Selected(data []byte) (string, error) {
 // defaultSlots prefers production ids, then historical aliases; an empty tier takes the main model.
 func defaultSlots(t []models.Model) slots {
 	s := slots{
-		main:   models.FirstGranted(t, "claude-sonnet-5-5", "deepseek-flash", "glm-fast", "glm", "claude-opus"),
-		opus:   models.FirstGranted(t, "claude-opus-5-5", "claude-opus", "claude-fable", "claude-sonnet"),
-		sonnet: models.FirstGranted(t, "claude-sonnet-5-5", "glm-fast", "glm", "qwen", "deepseek", "claude-sonnet"),
+		main: models.FirstGranted(
+			t,
+			"claude-sonnet-5-5",
+			"deepseek-flash",
+			"glm-fast",
+			"glm",
+			"claude-opus",
+		),
+		opus: models.FirstGranted(t, "claude-opus-5-5", "claude-opus", "claude-fable", "claude-sonnet"),
+		sonnet: models.FirstGranted(
+			t,
+			"claude-sonnet-5-5",
+			"glm-fast",
+			"glm",
+			"qwen",
+			"deepseek",
+			"claude-sonnet",
+		),
 		// Haiku 5.5 may be listed as `claude-haiku-5-5` or `claude-haiku-5.5`; the dashed id comes first.
-		haiku: models.FirstGranted(t, "claude-haiku-5-5", "claude-haiku-5.5", "claude-haiku-4-5", "gemini-flash", "gpt-luna", "claude-haiku", "glm-fast"),
+		haiku: models.FirstGranted(
+			t,
+			"claude-haiku-5-5",
+			"claude-haiku-5.5",
+			"claude-haiku-4-5",
+			"gemini-flash",
+			"gpt-luna",
+			"claude-haiku",
+			"glm-fast",
+		),
 		// A gateway need not serve Fable, so the slot takes Opus first rather than the dearest GPT.
 		fable:  models.FirstGranted(t, "claude-opus-5-5", "gpt-astra", "gpt-terra", "claude-fable"),
 		custom: models.FirstGranted(t, "gpt-6.1-sol", "gpt-6-sol", "gpt-sol", "gpt-terra", "gpt-luna"),
@@ -254,7 +279,9 @@ func defaultSlots(t []models.Model) slots {
 		s.custom = models.FirstNotIn(t, s.opus, s.sonnet, s.haiku, s.fable)
 	}
 	s.main = cmp.Or(s.main, models.FirstAlias(t))
-	s.opus, s.sonnet, s.haiku = cmp.Or(s.opus, s.main), cmp.Or(s.sonnet, s.main), cmp.Or(s.haiku, s.main)
+	s.opus = cmp.Or(s.opus, s.main)
+	s.sonnet = cmp.Or(s.sonnet, s.main)
+	s.haiku = cmp.Or(s.haiku, s.main)
 	return s
 }
 
@@ -337,13 +364,22 @@ func Launch(in Input) (harness.Plan, error) {
 	// The window follows the model a native --model runs instead.
 	name, window := windowVar(in.Table, running(s, s.main, in.Args))
 	child := []string{
-		"ANTHROPIC_BASE_URL=" + in.BaseURL, "ANTHROPIC_AUTH_TOKEN=", "ANTHROPIC_API_KEY=",
-		"CLAUDE_CODE_USE_BEDROCK=", "CLAUDE_CODE_USE_VERTEX=", "CLAUDE_CODE_USE_FOUNDRY=", "AWS_BEARER_TOKEN_BEDROCK=",
+		"ANTHROPIC_BASE_URL=" + in.BaseURL,
+		"ANTHROPIC_AUTH_TOKEN=",
+		"ANTHROPIC_API_KEY=",
+		"CLAUDE_CODE_USE_BEDROCK=",
+		"CLAUDE_CODE_USE_VERTEX=",
+		"CLAUDE_CODE_USE_FOUNDRY=",
+		"AWS_BEARER_TOKEN_BEDROCK=",
 		"ANTHROPIC_CUSTOM_HEADERS=",
 		"ANTHROPIC_MODEL=" + main,
 	}
 	w := windowEnv(name, window)
-	child = append(child, maxContextTokens+"="+w[maxContextTokens], autoCompactWindow+"="+w[autoCompactWindow])
+	child = append(
+		child,
+		maxContextTokens+"="+w[maxContextTokens],
+		autoCompactWindow+"="+w[autoCompactWindow],
+	)
 	child = append(child, slot(in.Table, "ANTHROPIC_DEFAULT_OPUS_MODEL", s.opus, ids["OPUS"])...)
 	child = append(child, slot(in.Table, "ANTHROPIC_DEFAULT_SONNET_MODEL", s.sonnet, ids["SONNET"])...)
 	child = append(child, slot(in.Table, "ANTHROPIC_DEFAULT_HAIKU_MODEL", s.haiku, ids["HAIKU"])...)
@@ -359,5 +395,8 @@ func Launch(in Input) (harness.Plan, error) {
 	if err != nil {
 		return harness.Plan{}, err
 	}
-	return harness.Plan{Argv: append([]string{"claude", "--settings", string(settings)}, in.Args...), Env: child}, nil
+	return harness.Plan{
+		Argv: append([]string{"claude", "--settings", string(settings)}, in.Args...),
+		Env:  child,
+	}, nil
 }

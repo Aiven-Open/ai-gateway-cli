@@ -60,13 +60,20 @@ func TestCodexLaunchesWithGatewayProviderConfig(t *testing.T) {
 		Name: "Aiven AI Gateway", BaseURL: g.URL + "/v1", WireAPI: "responses", RequiresOpenAIAuth: &no,
 		Auth: codexAuth{Command: command, Args: args},
 	}
-	want := codexConfig{Model: "gpt-sol", ModelProvider: "aiven", ModelProviders: map[string]codexProviderConf{"aiven": provider}}
+	want := codexConfig{
+		Model:          "gpt-sol",
+		ModelProvider:  "aiven",
+		ModelProviders: map[string]codexProviderConf{"aiven": provider},
+	}
 	if cfg := codexConfigOf(t, s); !reflect.DeepEqual(cfg, want) {
 		t.Errorf("profile = %+v, want %+v", cfg, want)
 	}
 	var base codexConfig
 	codexFile(t, s, "config.toml", &base)
-	if want := (codexConfig{ModelProviders: map[string]codexProviderConf{"aiven": provider}}); !reflect.DeepEqual(base, want) {
+	if want := (codexConfig{ModelProviders: map[string]codexProviderConf{"aiven": provider}}); !reflect.DeepEqual(
+		base,
+		want,
+	) {
 		t.Errorf("config.toml = %+v, want %+v", base, want)
 	}
 	if tmp, _ := filepath.Glob(filepath.Join(s.fakeHome, ".codex", "*.tmp")); len(tmp) != 0 {
@@ -119,7 +126,16 @@ func TestCodexConfigRoundTripsAliasWithQuote(t *testing.T) {
 func TestCodexForwardsArgs(t *testing.T) {
 	s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid)
 	s.setupAndLaunch("codex", "exec", "--json")
-	if want := []string{"codex", "-p", "aiven", "exec", "--json"}; !slices.Equal(s.launched().argv, want) {
+	if want := []string{
+		"codex",
+		"-p",
+		"aiven",
+		"exec",
+		"--json",
+	}; !slices.Equal(
+		s.launched().argv,
+		want,
+	) {
 		t.Errorf("argv = %q, want %q", s.launched().argv, want)
 	}
 }
@@ -194,16 +210,23 @@ model = "gpt-5"
 	if bak := latestBackup(t, path); bak != before {
 		t.Errorf("bak = %q", bak)
 	}
-	if got["model"] != "o3" || got["model_provider"] != "openai" || got["mcp_servers"] == nil || got["projects"] == nil ||
-		providers["other"] == nil || providers["aiven"] == nil {
+	if got["model"] != "o3" || got["model_provider"] != "openai" || got["mcp_servers"] == nil ||
+		got["projects"] == nil ||
+		providers["other"] == nil ||
+		providers["aiven"] == nil {
 		t.Errorf("merged = %v", got)
 	}
-	if _, ok := got["profile"]; ok || !reflect.DeepEqual(got["profiles"], map[string]any{"work": map[string]any{"model": "gpt-5"}}) {
+	if _, ok := got["profile"]; ok ||
+		!reflect.DeepEqual(got["profiles"], map[string]any{"work": map[string]any{"model": "gpt-5"}}) {
 		t.Errorf("profile = %v, profiles = %v", got["profile"], got["profiles"])
 	}
 
 	s = newSession(t, newGatewayDouble(t)).loggedIn(keyValid)
-	writeFile(t, filepath.Join(s.fakeHome, ".codex", "config.toml"), "[profiles.aiven]\nmodel = \"gpt-sol\"\n")
+	writeFile(
+		t,
+		filepath.Join(s.fakeHome, ".codex", "config.toml"),
+		"[profiles.aiven]\nmodel = \"gpt-sol\"\n",
+	)
 	s.run("setup", "codex", "--yes")
 	got = nil
 	codexFile(t, s, "config.toml", &got)
@@ -221,7 +244,12 @@ func TestCodexRefusesMalformedConfig(t *testing.T) {
 		s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid)
 		path := filepath.Join(s.fakeHome, ".codex", "config.toml")
 		writeFile(t, path, bad)
-		if r := s.run("setup", "codex", "--yes"); r.code != 1 || !strings.Contains(r.stderr, path+problem+"; fix or move it, then retry") || len(s.runner.calls) != 0 {
+		if r := s.run(
+			"setup",
+			"codex",
+			"--yes",
+		); r.code != 1 || !strings.Contains(r.stderr, path+problem+"; fix or move it, then retry") ||
+			len(s.runner.calls) != 0 {
 			t.Fatalf("%s: exit %d, stderr %q", bad, r.code, r.stderr)
 		}
 		if data, _ := os.ReadFile(path); string(data) != bad {

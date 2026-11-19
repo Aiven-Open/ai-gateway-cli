@@ -63,7 +63,11 @@ func TestHelpIsStyledOnlyOnAStdoutTerminal(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, args := range [][]string{nil, {"--help"}, {"setup", "--help"}} {
 				var out, errb strings.Builder
-				handled, code := cli.Informational(args, tc.environ, cli.Deps{Stdout: &out, Stderr: &errb, Term: tc.term})
+				handled, code := cli.Informational(
+					args,
+					tc.environ,
+					cli.Deps{Stdout: &out, Stderr: &errb, Term: tc.term},
+				)
 				if !handled || code != 0 || errb.Len() != 0 {
 					t.Fatalf("%q: handled %v, exit %d, stderr %q", args, handled, code, errb.String())
 				}

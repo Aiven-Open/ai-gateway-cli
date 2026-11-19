@@ -22,7 +22,9 @@ func main() {
 	b := build(info)
 	// Answered before config loads so a broken environment still reports the build.
 	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "version") {
-		os.Exit(cli.Run(context.Background(), os.Args[1:], config.Env{}, cli.Deps{Stdout: os.Stdout, Build: b}))
+		os.Exit(
+			cli.Run(context.Background(), os.Args[1:], config.Env{}, cli.Deps{Stdout: os.Stdout, Build: b}),
+		)
 	}
 	deps := cli.Deps{
 		Stdin:    os.Stdin,

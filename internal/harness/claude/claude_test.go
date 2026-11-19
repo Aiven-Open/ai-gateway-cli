@@ -40,7 +40,12 @@ func granted() []models.Model {
 
 func input(t *testing.T) claude.Input {
 	t.Helper()
-	return claude.Input{Table: granted(), BaseURL: baseURL, UserHome: t.TempDir(), WorkDir: t.TempDir()}
+	return claude.Input{
+		Table:    granted(),
+		BaseURL:  baseURL,
+		UserHome: t.TempDir(),
+		WorkDir:  t.TempDir(),
+	}
 }
 
 func write(t *testing.T, path, data string) {
@@ -76,33 +81,58 @@ func setUp(t *testing.T, in claude.Input) {
 
 func TestSetupWritesTheGatewaySettingsBesideTheUsersOwn(t *testing.T) {
 	in := input(t)
-	write(t, filepath.Join(in.UserHome, ".claude/settings.json"), `{"model":"opus","env":{"ANTHROPIC_API_KEY":"sk-ant-user"}}`)
+	write(
+		t,
+		filepath.Join(in.UserHome, ".claude/settings.json"),
+		`{"model":"opus","env":{"ANTHROPIC_API_KEY":"sk-ant-user"}}`,
+	)
 	path := filepath.Join(in.UserHome, claude.SettingsFile)
-	write(t, path, `{"permissions":{"allow":["Bash(ls)"]},"env":{"FOO":"bar","CLAUDE_CODE_MAX_CONTEXT_TOKENS":"1"}}`)
+	write(
+		t,
+		path,
+		`{"permissions":{"allow":["Bash(ls)"]},"env":{"FOO":"bar","CLAUDE_CODE_MAX_CONTEXT_TOKENS":"1"}}`,
+	)
 	plan, err := claude.Setup(in)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Files) != 1 || plan.Files[0].Path != path || !plan.Files[0].Backup || plan.Argv != nil || plan.Env != nil {
+	if len(plan.Files) != 1 || plan.Files[0].Path != path || !plan.Files[0].Backup ||
+		plan.Argv != nil ||
+		plan.Env != nil {
 		t.Fatalf("plan = %+v", plan)
 	}
 	data := plan.Files[0].Data
 	got := decode(t, data)
 	wantEnv := map[string]any{
-		"FOO": "bar", "ANTHROPIC_BASE_URL": baseURL, "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus[1m]",
-		"ANTHROPIC_DEFAULT_SONNET_MODEL": "glm[1m]", "ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm[1m]", "ANTHROPIC_DEFAULT_FABLE_MODEL": "",
-		"ANTHROPIC_CUSTOM_MODEL_OPTION": "gpt-sol", "ANTHROPIC_AUTH_TOKEN": "", "ANTHROPIC_API_KEY": "", "CLAUDE_CODE_USE_BEDROCK": "",
-		"CLAUDE_CODE_USE_VERTEX": "", "CLAUDE_CODE_USE_FOUNDRY": "", "AWS_BEARER_TOKEN_BEDROCK": "", "ANTHROPIC_CUSTOM_HEADERS": "",
-		"CLAUDE_CODE_MAX_CONTEXT_TOKENS": "", "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "",
+		"FOO":                             "bar",
+		"ANTHROPIC_BASE_URL":              baseURL,
+		"ANTHROPIC_DEFAULT_OPUS_MODEL":    "claude-opus[1m]",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL":  "glm[1m]",
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL":   "glm[1m]",
+		"ANTHROPIC_DEFAULT_FABLE_MODEL":   "",
+		"ANTHROPIC_CUSTOM_MODEL_OPTION":   "gpt-sol",
+		"ANTHROPIC_AUTH_TOKEN":            "",
+		"ANTHROPIC_API_KEY":               "",
+		"CLAUDE_CODE_USE_BEDROCK":         "",
+		"CLAUDE_CODE_USE_VERTEX":          "",
+		"CLAUDE_CODE_USE_FOUNDRY":         "",
+		"AWS_BEARER_TOKEN_BEDROCK":        "",
+		"ANTHROPIC_CUSTOM_HEADERS":        "",
+		"CLAUDE_CODE_MAX_CONTEXT_TOKENS":  "",
+		"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "",
 	}
-	if !reflect.DeepEqual(got["env"], wantEnv) || got["model"] != "glm[1m]" || got["apiKeyHelper"] != claude.APIKeyHelper(baseURL) ||
+	if !reflect.DeepEqual(got["env"], wantEnv) || got["model"] != "glm[1m]" ||
+		got["apiKeyHelper"] != claude.APIKeyHelper(baseURL) ||
 		!reflect.DeepEqual(got["permissions"], map[string]any{"allow": []any{"Bash(ls)"}}) {
 		t.Errorf("settings = %v", got)
 	}
 	if strings.Contains(string(data), key) {
 		t.Errorf("settings hold the key:\n%s", data)
 	}
-	if want := `"apiKeyHelper": "sh -c 'cat ~/` + creds.Rel(baseURL) + `'"`; runtime.GOOS != "windows" && !strings.Contains(string(data), want) {
+	if want := `"apiKeyHelper": "sh -c 'cat ~/` + creds.Rel(
+		baseURL,
+	) + `'"`; runtime.GOOS != "windows" &&
+		!strings.Contains(string(data), want) {
 		t.Errorf("apiKeyHelper not written as the shell reads it:\n%s", data)
 	}
 }
@@ -114,7 +144,10 @@ func TestSetupWiresTheUsersSettingsOnlyWhenAskedToMakeTheGatewayTheDefault(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{filepath.Join(in.UserHome, claude.SettingsFile), filepath.Join(in.UserHome, ".claude/settings.json")}
+	want := []string{
+		filepath.Join(in.UserHome, claude.SettingsFile),
+		filepath.Join(in.UserHome, ".claude/settings.json"),
+	}
 	var paths []string
 	for _, f := range plan.Files {
 		paths = append(paths, f.Path)
@@ -122,20 +155,29 @@ func TestSetupWiresTheUsersSettingsOnlyWhenAskedToMakeTheGatewayTheDefault(t *te
 	if !slices.Equal(paths, want) {
 		t.Fatalf("files = %q, want %q", paths, want)
 	}
-	if got := decode(t, plan.Files[1].Data); got["apiKeyHelper"] != claude.APIKeyHelper(baseURL) || got["model"] != "glm[1m]" {
+	if got := decode(
+		t,
+		plan.Files[1].Data,
+	); got["apiKeyHelper"] != claude.APIKeyHelper(baseURL) ||
+		got["model"] != "glm[1m]" {
 		t.Errorf("settings.json = %v", got)
 	}
 }
 
 func TestSetupKeepsAChosenModelAndDeclaresAWindowUnderOneMillion(t *testing.T) {
 	in := input(t)
-	in.Table = []models.Model{{Alias: "glm-fast", Context: ptr(262_144)}, {Alias: "claude-opus", Context: ptr(1_000_000)}}
+	in.Table = []models.Model{
+		{Alias: "glm-fast", Context: ptr(262_144)},
+		{Alias: "claude-opus", Context: ptr(1_000_000)},
+	}
 	plan, err := claude.Setup(in)
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := decode(t, plan.Files[0].Data)
-	if env, _ := got["env"].(map[string]any); env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] != "262144" || env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] != "" || got["model"] != "glm-fast" {
+	if env, _ := got["env"].(map[string]any); env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] != "262144" ||
+		env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] != "" ||
+		got["model"] != "glm-fast" {
 		t.Errorf("settings = %v", got)
 	}
 	write(t, filepath.Join(in.UserHome, claude.SettingsFile), string(plan.Files[0].Data))
@@ -160,8 +202,15 @@ func TestSetupKeepsAChosenModelAndDeclaresAWindowUnderOneMillion(t *testing.T) {
 		}
 		got := decode(t, plan.Files[0].Data)
 		env, _ := got["env"].(map[string]any)
-		if window, _ := env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"].(string); got["model"] != tc.model || window != tc.window {
-			t.Errorf("chosen %s: model %v, window %q; want window %q", tc.model, got["model"], window, tc.window)
+		if window, _ := env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"].(string); got["model"] != tc.model ||
+			window != tc.window {
+			t.Errorf(
+				"chosen %s: model %v, window %q; want window %q",
+				tc.model,
+				got["model"],
+				window,
+				tc.window,
+			)
 		}
 	}
 }
@@ -169,15 +218,23 @@ func TestSetupKeepsAChosenModelAndDeclaresAWindowUnderOneMillion(t *testing.T) {
 // Claude Code runs env.ANTHROPIC_MODEL over model, so a kept one sets the window.
 func TestSetupDeclaresTheWindowOfAKeptAnthropicModel(t *testing.T) {
 	in := input(t)
-	in.Table = []models.Model{{Alias: "glm-fast", Context: ptr(262_144)}, {Alias: "deepseek-v3.2", Context: ptr(163_840)}}
-	write(t, filepath.Join(in.UserHome, claude.SettingsFile), `{"model":"glm-fast","env":{"ANTHROPIC_MODEL":"deepseek-v3.2"}}`)
+	in.Table = []models.Model{
+		{Alias: "glm-fast", Context: ptr(262_144)},
+		{Alias: "deepseek-v3.2", Context: ptr(163_840)},
+	}
+	write(
+		t,
+		filepath.Join(in.UserHome, claude.SettingsFile),
+		`{"model":"glm-fast","env":{"ANTHROPIC_MODEL":"deepseek-v3.2"}}`,
+	)
 	plan, err := claude.Setup(in)
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := decode(t, plan.Files[0].Data)
 	env, _ := got["env"].(map[string]any)
-	if got["model"] != "glm-fast" || env["ANTHROPIC_MODEL"] != "deepseek-v3.2" || env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] != "163840" {
+	if got["model"] != "glm-fast" || env["ANTHROPIC_MODEL"] != "deepseek-v3.2" ||
+		env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] != "163840" {
 		t.Errorf("settings = %v", got)
 	}
 }
@@ -186,7 +243,10 @@ func TestSetupDeclaresTheWindowOfAKeptAnthropicModel(t *testing.T) {
 // strips the suffix in any case and repeated; setup drops a stale one and never adds one to a choice.
 func TestSetupDropsAOneMillionSuffixTheCatalogueNoLongerSupports(t *testing.T) {
 	in := input(t)
-	in.Table = []models.Model{{Alias: "glm-fast", Context: ptr(262_144)}, {Alias: "claude-opus", Context: ptr(1_000_000)}}
+	in.Table = []models.Model{
+		{Alias: "glm-fast", Context: ptr(262_144)},
+		{Alias: "claude-opus", Context: ptr(1_000_000)},
+	}
 	for _, tc := range []struct{ field, value, want string }{
 		{"model", "glm-fast[1m]", "glm-fast"},
 		{"model", "glm-fast[1M]", "glm-fast"},
@@ -309,7 +369,9 @@ func TestSetupStripsCommentsAndKeepsLayoutInBothSettingsFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 		env, _ := got["env"].(map[string]any)
-		if got["apiKeyHelper"] != claude.APIKeyHelper(baseURL) || env["ANTHROPIC_BASE_URL"] != baseURL || env["ANTHROPIC_API_KEY"] != "" || env["FOO"] != "bar" {
+		if got["apiKeyHelper"] != claude.APIKeyHelper(baseURL) || env["ANTHROPIC_BASE_URL"] != baseURL ||
+			env["ANTHROPIC_API_KEY"] != "" ||
+			env["FOO"] != "bar" {
 			t.Errorf("%s = %v", f.Path, got)
 		}
 	}
@@ -358,7 +420,12 @@ func TestAPIKeyHelperReadsOnlyItsGatewaysKeyFile(t *testing.T) {
 	}
 	home := t.TempDir()
 	// Only another gateway's key file first: the helper must not read it.
-	if _, err := creds.Write(home, config.DefaultBaseURL, "sk-test-other", fsutil.WriteAtomic); err != nil {
+	if _, err := creds.Write(
+		home,
+		config.DefaultBaseURL,
+		"sk-test-other",
+		fsutil.WriteAtomic,
+	); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
@@ -395,16 +462,28 @@ func TestReadyAcceptsOnlyAivenWiringInEitherSettingsFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	write(t, settings, strings.ReplaceAll(string(data), creds.Rel(baseURL), creds.Rel(config.DefaultBaseURL)))
+	write(
+		t,
+		settings,
+		strings.ReplaceAll(string(data), creds.Rel(baseURL), creds.Rel(config.DefaultBaseURL)),
+	)
 	if err := claude.Ready(in.UserHome, baseURL); err == nil {
 		t.Error("Ready with another gateway's key helper")
 	}
 	// The Aiven Console's helper falls back to the environment, which names no gateway.
 	helper, _ := json.Marshal(claude.APIKeyHelper(baseURL))
-	raw := "[ -f ~/" + creds.Rel(baseURL) + " ] && cat ~/" + creds.Rel(baseURL) + " || printf %s \"$" + creds.EnvVar + "\""
+	raw := "[ -f ~/" + creds.Rel(
+		baseURL,
+	) + " ] && cat ~/" + creds.Rel(
+		baseURL,
+	) + " || printf %s \"$" + creds.EnvVar + "\""
 	if runtime.GOOS == "windows" {
 		raw = "powershell.exe -NoProfile -NonInteractive -Command \"$p = Join-Path $env:USERPROFILE '" +
-			strings.ReplaceAll(creds.Rel(baseURL), "/", "\\") + "'; if (Test-Path -LiteralPath $p -PathType Leaf) { Get-Content -LiteralPath $p -Raw } else { $env:" + creds.EnvVar + " }\""
+			strings.ReplaceAll(
+				creds.Rel(baseURL),
+				"/",
+				"\\",
+			) + "'; if (Test-Path -LiteralPath $p -PathType Leaf) { Get-Content -LiteralPath $p -Raw } else { $env:" + creds.EnvVar + " }\""
 	}
 	fallback, _ := json.Marshal(raw)
 	write(t, settings, strings.Replace(string(data), string(helper), string(fallback), 1))
@@ -421,7 +500,11 @@ func TestReadyAcceptsOnlyAivenWiringInEitherSettingsFile(t *testing.T) {
 	if err := claude.Ready(in.UserHome, baseURL); err != nil {
 		t.Errorf("Ready with only settings.json wired: %v", err)
 	}
-	write(t, filepath.Join(in.UserHome, ".claude/settings.json"), `{"apiKeyHelper":"cat ~/key","env":{"ANTHROPIC_BASE_URL":"`+baseURL+`"}}`)
+	write(
+		t,
+		filepath.Join(in.UserHome, ".claude/settings.json"),
+		`{"apiKeyHelper":"cat ~/key","env":{"ANTHROPIC_BASE_URL":"`+baseURL+`"}}`,
+	)
 	if err := claude.Ready(in.UserHome, baseURL); err == nil {
 		t.Error("Ready with another key helper")
 	}
@@ -449,16 +532,23 @@ func TestLaunchPassesOnlyLauncherOwnedSettingsAndTheKeyHelper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Files) != 0 || len(plan.Argv) != 5 || plan.Argv[0] != "claude" || plan.Argv[1] != "--settings" || !slices.Equal(plan.Argv[3:], in.Args) {
+	if len(plan.Files) != 0 || len(plan.Argv) != 5 || plan.Argv[0] != "claude" ||
+		plan.Argv[1] != "--settings" ||
+		!slices.Equal(plan.Argv[3:], in.Args) {
 		t.Fatalf("plan = %+v", plan)
 	}
 	if strings.ContainsAny(plan.Argv[2], "\r\n") {
-		t.Errorf("inline settings span lines, which a Windows batch file cannot receive: %q", plan.Argv[2])
+		t.Errorf(
+			"inline settings span lines, which a Windows batch file cannot receive: %q",
+			plan.Argv[2],
+		)
 	}
 	inline := decode(t, []byte(plan.Argv[2]))
 	env, _ := inline["env"].(map[string]any)
-	if inline["apiKeyHelper"] != claude.APIKeyHelper(baseURL) || inline["model"] != "glm[1m]" || env["ANTHROPIC_BASE_URL"] != baseURL ||
-		env["ANTHROPIC_DEFAULT_OPUS_MODEL"] != "claude-opus[1m]" || env["ANTHROPIC_AUTH_TOKEN"] != "" {
+	if inline["apiKeyHelper"] != claude.APIKeyHelper(baseURL) || inline["model"] != "glm[1m]" ||
+		env["ANTHROPIC_BASE_URL"] != baseURL ||
+		env["ANTHROPIC_DEFAULT_OPUS_MODEL"] != "claude-opus[1m]" ||
+		env["ANTHROPIC_AUTH_TOKEN"] != "" {
 		t.Errorf("inline settings = %v", inline)
 	}
 	for _, kv := range plan.Env {
@@ -484,12 +574,27 @@ func TestLaunchTakesTheModelFromSettingsThenUserAndProjectPins(t *testing.T) {
 	setUp(t, in)
 	write(t, filepath.Join(in.UserHome, claude.SettingsFile), `{"model":"claude-opus","apiKeyHelper":`+
 		string(mustJSON(t, claude.APIKeyHelper(baseURL)))+`,"env":{"ANTHROPIC_BASE_URL":"`+baseURL+`"}}`)
-	if plan, err := claude.Launch(in); err != nil || !slices.Contains(plan.Env, "ANTHROPIC_MODEL=claude-opus[1m]") {
+	if plan, err := claude.Launch(
+		in,
+	); err != nil ||
+		!slices.Contains(plan.Env, "ANTHROPIC_MODEL=claude-opus[1m]") {
 		t.Errorf("settings model not used: %v, %q", err, plan.Env)
 	}
-	write(t, filepath.Join(in.UserHome, ".claude/settings.json"), `{"env":{"ANTHROPIC_DEFAULT_HAIKU_MODEL":"gpt-sol"}}`)
-	write(t, filepath.Join(in.WorkDir, ".claude/settings.json"), `{"model":"glm","env":{"ANTHROPIC_CUSTOM_MODEL_OPTION":"glm"}}`)
-	write(t, filepath.Join(in.WorkDir, ".claude/settings.local.json"), `{"env":{"ANTHROPIC_CUSTOM_MODEL_OPTION":"claude-opus[1m]"}}`)
+	write(
+		t,
+		filepath.Join(in.UserHome, ".claude/settings.json"),
+		`{"env":{"ANTHROPIC_DEFAULT_HAIKU_MODEL":"gpt-sol"}}`,
+	)
+	write(
+		t,
+		filepath.Join(in.WorkDir, ".claude/settings.json"),
+		`{"model":"glm","env":{"ANTHROPIC_CUSTOM_MODEL_OPTION":"glm"}}`,
+	)
+	write(
+		t,
+		filepath.Join(in.WorkDir, ".claude/settings.local.json"),
+		`{"env":{"ANTHROPIC_CUSTOM_MODEL_OPTION":"claude-opus[1m]"}}`,
+	)
 	plan, err := claude.Launch(in)
 	if err != nil {
 		t.Fatal(err)
@@ -506,7 +611,11 @@ func TestLaunchRunsAPinnedAnthropicModelOverAProjectModel(t *testing.T) {
 	in := input(t)
 	in.Table = append(granted(), models.Model{Alias: "deepseek-v3.2", Context: ptr(163_840)})
 	setUp(t, in)
-	write(t, filepath.Join(in.UserHome, ".claude/settings.json"), `{"env":{"ANTHROPIC_MODEL":"deepseek-v3.2"}}`)
+	write(
+		t,
+		filepath.Join(in.UserHome, ".claude/settings.json"),
+		`{"env":{"ANTHROPIC_MODEL":"deepseek-v3.2"}}`,
+	)
 	write(t, filepath.Join(in.WorkDir, ".claude/settings.json"), `{"model":"glm"}`)
 	for _, tc := range []struct {
 		args       []string
@@ -521,21 +630,42 @@ func TestLaunchRunsAPinnedAnthropicModelOverAProjectModel(t *testing.T) {
 			t.Fatal(err)
 		}
 		if !slices.Contains(plan.Env, tc.model) || windowIn(t, plan) != tc.win {
-			t.Errorf("%q: window %q, env %q; want %s and %q", tc.args, windowIn(t, plan), plan.Env, tc.model, tc.win)
+			t.Errorf(
+				"%q: window %q, env %q; want %s and %q",
+				tc.args,
+				windowIn(t, plan),
+				plan.Env,
+				tc.model,
+				tc.win,
+			)
 		}
 	}
 	// A blank ANTHROPIC_MODEL in a later file clears the earlier one, so the project's model runs.
-	write(t, filepath.Join(in.WorkDir, ".claude/settings.json"), `{"model":"glm","env":{"ANTHROPIC_MODEL":""}}`)
+	write(
+		t,
+		filepath.Join(in.WorkDir, ".claude/settings.json"),
+		`{"model":"glm","env":{"ANTHROPIC_MODEL":""}}`,
+	)
 	in.Args = nil
-	if plan, err := claude.Launch(in); err != nil || !slices.Contains(plan.Env, "ANTHROPIC_MODEL=glm[1m]") {
+	if plan, err := claude.Launch(
+		in,
+	); err != nil ||
+		!slices.Contains(plan.Env, "ANTHROPIC_MODEL=glm[1m]") {
 		t.Errorf("blank ANTHROPIC_MODEL did not clear the user's: %v, %q", err, plan.Env)
 	}
 	// The dedicated file's own env.ANTHROPIC_MODEL counts too.
 	in = input(t)
 	in.Table = append(granted(), models.Model{Alias: "deepseek-v3.2", Context: ptr(163_840)})
-	write(t, filepath.Join(in.UserHome, claude.SettingsFile), `{"model":"glm","env":{"ANTHROPIC_MODEL":"deepseek-v3.2"}}`)
+	write(
+		t,
+		filepath.Join(in.UserHome, claude.SettingsFile),
+		`{"model":"glm","env":{"ANTHROPIC_MODEL":"deepseek-v3.2"}}`,
+	)
 	setUp(t, in)
-	if plan, err := claude.Launch(in); err != nil || !slices.Contains(plan.Env, "ANTHROPIC_MODEL=deepseek-v3.2") {
+	if plan, err := claude.Launch(
+		in,
+	); err != nil ||
+		!slices.Contains(plan.Env, "ANTHROPIC_MODEL=deepseek-v3.2") {
 		t.Errorf("dedicated ANTHROPIC_MODEL not run: %v, %q", err, plan.Env)
 	}
 }
@@ -550,11 +680,23 @@ func TestSetupAndLaunchTreatABlankModelAsNoChoice(t *testing.T) {
 	}
 	// Setup sets the model only when the file has none; one it cannot read as a name is the user's to fix.
 	write(t, path, `{"model":5}`)
-	if plan, err := claude.Setup(in); err != nil || decode(t, plan.Files[0].Data)["model"] == "glm[1m]" {
+	if plan, err := claude.Setup(
+		in,
+	); err != nil ||
+		decode(t, plan.Files[0].Data)["model"] == "glm[1m]" {
 		t.Errorf("non-string model replaced by setup: %v, %s", err, plan.Files[0].Data)
 	}
-	write(t, path, `{"model":"","apiKeyHelper":`+string(mustJSON(t, claude.APIKeyHelper(baseURL)))+`,"env":{"ANTHROPIC_BASE_URL":"`+baseURL+`"}}`)
-	if plan, err := claude.Launch(in); err != nil || !slices.Contains(plan.Env, "ANTHROPIC_MODEL=glm[1m]") {
+	write(
+		t,
+		path,
+		`{"model":"","apiKeyHelper":`+string(
+			mustJSON(t, claude.APIKeyHelper(baseURL)),
+		)+`,"env":{"ANTHROPIC_BASE_URL":"`+baseURL+`"}}`,
+	)
+	if plan, err := claude.Launch(
+		in,
+	); err != nil ||
+		!slices.Contains(plan.Env, "ANTHROPIC_MODEL=glm[1m]") {
 		t.Errorf("blank model used by launch: %v, %q", err, plan.Env)
 	}
 }
@@ -592,7 +734,11 @@ func TestLaunchCarriesUsablePinsIntoTheInlineSettings(t *testing.T) {
 	}
 	in := input(t)
 	setUp(t, in)
-	write(t, filepath.Join(in.WorkDir, ".claude/settings.local.json"), `{"env":{"ANTHROPIC_DEFAULT_SONNET_MODEL":"ghost-9"}}`)
+	write(
+		t,
+		filepath.Join(in.WorkDir, ".claude/settings.local.json"),
+		`{"env":{"ANTHROPIC_DEFAULT_SONNET_MODEL":"ghost-9"}}`,
+	)
 	plan, err := claude.Launch(in)
 	if err != nil {
 		t.Fatal(err)
@@ -650,7 +796,14 @@ func windowIn(t *testing.T, plan harness.Plan) string {
 		}
 		v, inInline := inline[name].(string)
 		if !inEnv || !inInline || v != got {
-			t.Fatalf("%s = %q (set %v) in env, %q (set %v) inline; want it set in both, blank unless active", name, got, inEnv, v, inInline)
+			t.Fatalf(
+				"%s = %q (set %v) in env, %q (set %v) inline; want it set in both, blank unless active",
+				name,
+				got,
+				inEnv,
+				v,
+				inInline,
+			)
 		}
 		if got != "" {
 			set = append(set, name+"="+got)

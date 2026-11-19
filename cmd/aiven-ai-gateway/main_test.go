@@ -32,8 +32,11 @@ func TestBuildFallsBackToModuleVersionAndVCSStamp(t *testing.T) {
 		{
 			name: "vcs local build",
 			info: &debug.BuildInfo{
-				Main:     debug.Module{Version: "v0.2.0"},
-				Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: "abc1234"}, {Key: "vcs.time", Value: "2026-10-28T12:00:00Z"}},
+				Main: debug.Module{Version: "v0.2.0"},
+				Settings: []debug.BuildSetting{
+					{Key: "vcs.revision", Value: "abc1234"},
+					{Key: "vcs.time", Value: "2026-10-28T12:00:00Z"},
+				},
 			},
 			want: cli.Build{Version: "0.2.0", Commit: "abc1234", Date: "2026-10-28T12:00:00Z"},
 		},
@@ -65,8 +68,11 @@ func TestBuildFallsBackToModuleVersionAndVCSStamp(t *testing.T) {
 		{
 			name: "devel module with vcs settings",
 			info: &debug.BuildInfo{
-				Main:     debug.Module{Version: "(devel)"},
-				Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: "abc1234"}, {Key: "vcs.time", Value: "2026-10-28T12:00:00Z"}},
+				Main: debug.Module{Version: "(devel)"},
+				Settings: []debug.BuildSetting{
+					{Key: "vcs.revision", Value: "abc1234"},
+					{Key: "vcs.time", Value: "2026-10-28T12:00:00Z"},
+				},
 			},
 			want: cli.Build{Version: "dev", Commit: "abc1234", Date: "2026-10-28T12:00:00Z"},
 		},
@@ -105,8 +111,11 @@ func TestBuildPrefersLdflags(t *testing.T) {
 	version, commit, date = "0.2.0", "9f344f7", "2026-11-10T13:55:10Z"
 	t.Cleanup(func() { version, commit, date = "dev", "none", "unknown" })
 	info := &debug.BuildInfo{
-		Main:     debug.Module{Version: "v9.9.9"},
-		Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: "other"}, {Key: "vcs.time", Value: "2026-01-01T00:00:00Z"}},
+		Main: debug.Module{Version: "v9.9.9"},
+		Settings: []debug.BuildSetting{
+			{Key: "vcs.revision", Value: "other"},
+			{Key: "vcs.time", Value: "2026-01-01T00:00:00Z"},
+		},
 	}
 	want := cli.Build{Version: "0.2.0", Commit: "9f344f7", Date: "2026-11-10T13:55:10Z"}
 	if got := build(info); got != want {
@@ -153,7 +162,12 @@ func TestBinaryRejectsHTTPBeforeCredentialsOrNetwork(t *testing.T) {
 		t.Run(credential, func(t *testing.T) {
 			home := t.TempDir()
 			if credential == "key file" {
-				if _, err := creds.Write(home, server.URL, "sk-binary-synthetic", fsutil.WriteAtomic); err != nil {
+				if _, err := creds.Write(
+					home,
+					server.URL,
+					"sk-binary-synthetic",
+					fsutil.WriteAtomic,
+				); err != nil {
 					t.Fatal(err)
 				}
 			} else if err := os.MkdirAll(creds.Path(home, server.URL), 0o700); err != nil {
@@ -210,13 +224,15 @@ func (c *recordingConn) Read(b []byte) (int, error) {
 
 func TestBinaryVerifiesTLSWithoutDowngrading(t *testing.T) {
 	var requests atomic.Int32
-	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests.Add(1)
-		if r.Header.Get("Authorization") != "Bearer sk-binary-synthetic" {
-			t.Error("unexpected credential")
-		}
-		_, _ = w.Write([]byte(`{"data":[{"id":"synthetic-model"}]}`))
-	}))
+	server := httptest.NewUnstartedServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requests.Add(1)
+			if r.Header.Get("Authorization") != "Bearer sk-binary-synthetic" {
+				t.Error("unexpected credential")
+			}
+			_, _ = w.Write([]byte(`{"data":[{"id":"synthetic-model"}]}`))
+		}),
+	)
 	listener := &recordingListener{Listener: server.Listener}
 	server.Listener = listener
 	server.StartTLS()
@@ -240,7 +256,8 @@ func TestBinaryVerifiesTLSWithoutDowngrading(t *testing.T) {
 		return cmd.CombinedOutput()
 	}
 	out, err := run()
-	if err == nil || !strings.Contains(string(out), "certificate signed by unknown authority") || requests.Load() != 0 {
+	if err == nil || !strings.Contains(string(out), "certificate signed by unknown authority") ||
+		requests.Load() != 0 {
 		t.Fatalf("untrusted TLS: err %v, output %q, requests %d", err, out, requests.Load())
 	}
 	listener.mu.Lock()
@@ -258,7 +275,8 @@ func TestBinaryVerifiesTLSWithoutDowngrading(t *testing.T) {
 	if err := os.WriteFile(certFile, certificate, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := run(); err != nil || !strings.Contains(string(out), "synthetic-model") || requests.Load() != 1 {
+	if out, err := run(); err != nil || !strings.Contains(string(out), "synthetic-model") ||
+		requests.Load() != 1 {
 		t.Fatalf("trusted TLS: err %v, output %q, requests %d", err, out, requests.Load())
 	}
 }
@@ -277,7 +295,8 @@ func TestCommandsRefuseToRunWithoutAHome(t *testing.T) {
 	cmd := exec.Command(bin, "logout")
 	cmd.Dir, cmd.Env = dir, []string{"PATH=" + os.Getenv("PATH")}
 	out, err := cmd.CombinedOutput()
-	if cmd.ProcessState.ExitCode() != 1 || string(out) != "aiven-ai-gateway: "+config.ErrNoHome.Error()+"\n" {
+	if cmd.ProcessState.ExitCode() != 1 ||
+		string(out) != "aiven-ai-gateway: "+config.ErrNoHome.Error()+"\n" {
 		t.Fatalf("err %v, output %q", err, out)
 	}
 	if _, err := os.Stat(key); err != nil {

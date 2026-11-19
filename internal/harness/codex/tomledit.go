@@ -57,7 +57,8 @@ func edit(path string, src []byte, cfg map[string]any) ([]byte, error) {
 	for _, e := range entries {
 		aiven := len(e.path) == 1 && e.path[0] == "model_providers" ||
 			len(e.path) > 1 && e.path[0] == "model_providers" && e.path[1] == "aiven"
-		inTable := e.array == nil && len(e.table) > 1 && e.table[0] == "model_providers" && e.table[1] == "aiven"
+		inTable := e.array == nil && len(e.table) > 1 && e.table[0] == "model_providers" &&
+			e.table[1] == "aiven"
 		if aiven && (e.array != nil || !e.header && !inTable) {
 			return nil, fmt.Errorf("%s declares model_providers in a form setup does not edit; "+
 				"declare the Aiven provider as a [model_providers.aiven] table, then retry", path)
@@ -105,7 +106,10 @@ func parseTOML(src []byte) ([]tomlEntry, error) {
 				arrays = append(arrays, keys)
 			}
 			start := lineStart(src, int(first.Raw.Offset))
-			entries = append(entries, tomlEntry{header: true, array: array, path: keys, start: start, end: lineEnd(src, end)})
+			entries = append(
+				entries,
+				tomlEntry{header: true, array: array, path: keys, start: start, end: lineEnd(src, end)},
+			)
 		case unstable.KeyValue:
 			value := end + bytes.IndexByte(src[end:], '=') + 1
 			for value < len(src) && (src[value] == ' ' || src[value] == '\t') {
@@ -114,7 +118,8 @@ func parseTOML(src []byte) ([]tomlEntry, error) {
 			valueEnd := int(e.Raw.Offset + e.Raw.Length)
 			entries = append(entries, tomlEntry{
 				array: array, path: slices.Concat(table, keys), table: table,
-				start: lineStart(src, int(e.Raw.Offset)), end: lineEnd(src, valueEnd), valueStart: value, valueEnd: valueEnd,
+				start: lineStart(src, int(e.Raw.Offset)), end: lineEnd(src, valueEnd),
+				valueStart: value, valueEnd: valueEnd,
 			})
 		}
 	}
@@ -144,7 +149,8 @@ func splice(src []byte, entries []tomlEntry, want, have map[string]any) ([]byte,
 				firstHeader = i
 			}
 			current = &owner{end: e.end}
-			if v, ok := lookup(want, e.path); e.array == nil && !isTable(v, ok) || e.array != nil && !isArray(lookup(want, e.array)) {
+			v, ok := lookup(want, e.path)
+			if e.array == nil && !isTable(v, ok) || e.array != nil && !isArray(lookup(want, e.array)) {
 				end := len(src)
 				for _, next := range entries[i+1:] {
 					if next.header {

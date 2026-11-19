@@ -38,10 +38,24 @@ func TestNameIsASlugAndAHashOfTheOrigin(t *testing.T) {
 
 func TestPathKeepsTheConsoleKeyFileForTheDefaultGateway(t *testing.T) {
 	home := t.TempDir()
-	if got, want := creds.Path(home, config.DefaultBaseURL), filepath.Join(home, ".config", "aiven", "ai-gateway-key"); got != want {
+	if got, want := creds.Path(
+		home,
+		config.DefaultBaseURL,
+	), filepath.Join(
+		home,
+		".config",
+		"aiven",
+		"ai-gateway-key",
+	); got != want {
 		t.Errorf("default gateway: Path = %q, want %q", got, want)
 	}
-	want := filepath.Join(home, ".config", "aiven", "ai-gateway-keys", "https-gw.example-8443-9db703938f0f")
+	want := filepath.Join(
+		home,
+		".config",
+		"aiven",
+		"ai-gateway-keys",
+		"https-gw.example-8443-9db703938f0f",
+	)
 	if got := creds.Path(home, other); got != want {
 		t.Errorf("other gateway: Path = %q, want %q", got, want)
 	}
@@ -195,7 +209,10 @@ func TestHelperReadsOnlyItsOwnGatewaysKeyFile(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("runs the POSIX forms through sh")
 	}
-	if got := creds.Helper(config.DefaultBaseURL, "linux"); got != "cat ~/.config/aiven/ai-gateway-key" {
+	if got := creds.Helper(
+		config.DefaultBaseURL,
+		"linux",
+	); got != "cat ~/.config/aiven/ai-gateway-key" {
 		t.Errorf("Helper = %q", got)
 	}
 	for _, goos := range []string{runtime.GOOS, "windows"} {
@@ -204,7 +221,12 @@ func TestHelperReadsOnlyItsOwnGatewaysKeyFile(t *testing.T) {
 			run := func(line string) (string, error) {
 				t.Helper()
 				cmd := exec.Command("/bin/sh", "-c", line)
-				cmd.Env = []string{"PATH=/usr/bin:/bin", "HOME=" + home, "USERPROFILE=" + home, "AIVEN_AI_GATEWAY_KEY=sk-env"}
+				cmd.Env = []string{
+					"PATH=/usr/bin:/bin",
+					"HOME=" + home,
+					"USERPROFILE=" + home,
+					"AIVEN_AI_GATEWAY_KEY=sk-env",
+				}
 				out, err := cmd.Output()
 				return string(out), err
 			}
@@ -218,7 +240,11 @@ func TestHelperReadsOnlyItsOwnGatewaysKeyFile(t *testing.T) {
 				t.Fatal(err)
 			}
 			if got, err := run(line); err == nil || got != "" {
-				t.Errorf("with only the default gateway's key file: %q, %v; want a failure and no key", got, err)
+				t.Errorf(
+					"with only the default gateway's key file: %q, %v; want a failure and no key",
+					got,
+					err,
+				)
 			}
 			if _, err := creds.Write(home, other, "sk-other", fsutil.WriteAtomic); err != nil {
 				t.Fatal(err)
@@ -236,14 +262,20 @@ func TestPowerShellHelperHasNothingAShellOrQuotingChanges(t *testing.T) {
 		if i := strings.IndexAny(script, "$\"`\\!%"); i >= 0 {
 			t.Errorf("PowerShell(%q) has %q: %s", origin, script[i], script)
 		}
-		if !strings.Contains(script, "'"+creds.Rel(origin)+"'") || strings.Contains(script, creds.EnvVar) || !strings.HasSuffix(script, "else { [Environment]::Exit(1) }") {
+		if !strings.Contains(script, "'"+creds.Rel(origin)+"'") ||
+			strings.Contains(script, creds.EnvVar) ||
+			!strings.HasSuffix(script, "else { [Environment]::Exit(1) }") {
 			t.Errorf("PowerShell(%q) = %s", origin, script)
 		}
 		name, args := creds.Command(origin, "windows")
-		if name != "powershell.exe" || strings.Join(args, " ") != "-NoProfile -NonInteractive -Command "+script {
+		if name != "powershell.exe" ||
+			strings.Join(args, " ") != "-NoProfile -NonInteractive -Command "+script {
 			t.Errorf("Command = %q %q", name, args)
 		}
-		if got, want := creds.CommandLine(origin, "windows"), `powershell.exe -NoProfile -NonInteractive -Command "`+script+`"`; got != want {
+		if got, want := creds.CommandLine(
+			origin,
+			"windows",
+		), `powershell.exe -NoProfile -NonInteractive -Command "`+script+`"`; got != want {
 			t.Errorf("CommandLine = %q, want %q", got, want)
 		}
 	}

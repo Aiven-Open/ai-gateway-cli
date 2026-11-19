@@ -161,7 +161,8 @@ func TestOmpYAMLSuffixCommentsAnchorsAndScopePreserved(t *testing.T) {
 	writeFile(t, configPath, configBefore)
 	s.deps.Prompter = &callbackPrompter{answers: []string{"y", "y"}}
 	r := s.run("setup", "omp", "--key-stdin")
-	if r.code != 0 || strings.Contains(r.stderr, "SYNTHETIC_secret") || !strings.Contains(r.stderr, "scope can override") {
+	if r.code != 0 || strings.Contains(r.stderr, "SYNTHETIC_secret") ||
+		!strings.Contains(r.stderr, "scope can override") {
 		t.Fatalf("%d %s", r.code, r.stderr)
 	}
 	config := readYAML(t, configPath)
@@ -191,33 +192,39 @@ func TestOmpYAMLSuffixCommentsAnchorsAndScopePreserved(t *testing.T) {
 
 func TestPiAndOmpDefaultQuestionsAreIndependent(t *testing.T) {
 	for _, piDefault := range []bool{false, true} {
-		t.Run(map[bool]string{false: "pi no omp yes", true: "pi yes omp no"}[piDefault], func(t *testing.T) {
-			s := newSession(t, newGatewayDouble(t)).stdin(keyValid)
-			piAnswer, ompAnswer := "n", "y"
-			if piDefault {
-				piAnswer, ompAnswer = "y", "n"
-			}
-			p := &scriptedPrompter{answers: []string{"pi,omp", piAnswer, ompAnswer, "y", "y"}}
-			s.deps.Prompter = p
-			if r := s.run("setup", "--key-stdin"); r.code != 0 {
-				t.Fatalf("%d %s prompts=%q", r.code, r.stderr, p.prompts)
-			}
-			for tool, path := range map[string]string{"pi": ".pi/agent/settings.json", "omp": ".omp/agent/config.yml"} {
-				_, err := os.Stat(filepath.Join(s.fakeHome, path))
-				want := piDefault
-				if tool == "omp" {
-					want = !want
+		t.Run(
+			map[bool]string{false: "pi no omp yes", true: "pi yes omp no"}[piDefault],
+			func(t *testing.T) {
+				s := newSession(t, newGatewayDouble(t)).stdin(keyValid)
+				piAnswer, ompAnswer := "n", "y"
+				if piDefault {
+					piAnswer, ompAnswer = "y", "n"
 				}
-				if (err == nil) != want {
-					t.Fatalf("%s default write: %v want=%v", tool, err, want)
+				p := &scriptedPrompter{answers: []string{"pi,omp", piAnswer, ompAnswer, "y", "y"}}
+				s.deps.Prompter = p
+				if r := s.run("setup", "--key-stdin"); r.code != 0 {
+					t.Fatalf("%d %s prompts=%q", r.code, r.stderr, p.prompts)
 				}
-			}
-			for _, tool := range []string{"Pi", "OMP"} {
-				if !slices.Contains(p.prompts, "Make Aiven the native default for "+tool+"? Enter keeps your current default. [y/N] ") {
-					t.Fatalf("missing independent %s question: %q", tool, p.prompts)
+				for tool, path := range map[string]string{"pi": ".pi/agent/settings.json", "omp": ".omp/agent/config.yml"} {
+					_, err := os.Stat(filepath.Join(s.fakeHome, path))
+					want := piDefault
+					if tool == "omp" {
+						want = !want
+					}
+					if (err == nil) != want {
+						t.Fatalf("%s default write: %v want=%v", tool, err, want)
+					}
 				}
-			}
-		})
+				for _, tool := range []string{"Pi", "OMP"} {
+					if !slices.Contains(
+						p.prompts,
+						"Make Aiven the native default for "+tool+"? Enter keeps your current default. [y/N] ",
+					) {
+						t.Fatalf("missing independent %s question: %q", tool, p.prompts)
+					}
+				}
+			},
+		)
 	}
 }
 
@@ -230,7 +237,8 @@ func TestOmpInitIsRejectedWithoutSideEffects(t *testing.T) {
 			writeFile(t, project, "modelRoles:\n  architect: aiven-gateway/x\n")
 			before := configurationSnapshot(t, s.fakeHome, s.env.WorkDir)
 			r := s.run(args...)
-			if r.code != 1 || !strings.Contains(r.stderr, "omp init was removed") || strings.Contains(r.stderr, "sk-pasted") {
+			if r.code != 1 || !strings.Contains(r.stderr, "omp init was removed") ||
+				strings.Contains(r.stderr, "sk-pasted") {
 				t.Fatalf("%d %s", r.code, r.stderr)
 			}
 			after := configurationSnapshot(t, s.fakeHome, s.env.WorkDir)

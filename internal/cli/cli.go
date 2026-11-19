@@ -47,7 +47,10 @@ func Informational(args, environ []string, deps Deps) (bool, int) {
 	}
 	head, _, _ := strings.Cut(args[0], "=")
 	if head == "--key" || head == "--api-key" {
-		return true, fail(deps, "do not pass API keys on the command line; use login or setup --key-stdin")
+		return true, fail(
+			deps,
+			"do not pass API keys on the command line; use login or setup --key-stdin",
+		)
 	}
 	cmd := args[0]
 	if cmd == "--version" || cmd == "version" {
@@ -57,7 +60,8 @@ func Informational(args, environ []string, deps Deps) (bool, int) {
 		return true, fail(deps, "connect was removed. Run: aiven-ai-gateway setup <harness>")
 	}
 	if cmd == "omp" && len(args) > 1 && args[1] == "init" {
-		return true, fail(deps, "omp init was removed; existing project files are left as they are. Run: aiven-ai-gateway setup omp")
+		return true, fail(deps, "omp init was removed; existing project files are left as they are. "+
+			"Run: aiven-ai-gateway setup omp")
 	}
 	if slices.Contains(toolNames, cmd) {
 		return true, fail(deps, "session shortcut removed. Run: aiven-ai-gateway launch "+cmd)
@@ -77,7 +81,10 @@ func Informational(args, environ []string, deps Deps) (bool, int) {
 		if o, err := parseSetup(args[1:]); err != nil {
 			return true, fail(deps, err.Error())
 		} else if o.tool == "" && deps.Prompter == nil {
-			return true, fail(deps, "setup: a harness is required without a terminal; use login for credential-only input")
+			return true, fail(
+				deps,
+				"setup: a harness is required without a terminal; use login for credential-only input",
+			)
 		}
 	case "launch":
 		if o, err := parseLaunch(args[1:]); err != nil {

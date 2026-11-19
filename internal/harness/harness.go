@@ -110,7 +110,9 @@ func stripJSONC(src []byte) []byte {
 			out = append(out, ' ')
 			i += end + 3
 		default:
-			for j := len(out) - 1; !inStr && (c == '}' || c == ']') && j >= 0 && out[j] <= ',' && (out[j] == ',' || out[j] <= ' '); j-- {
+			closes := !inStr && (c == '}' || c == ']')
+			for j := len(out) - 1; closes && j >= 0 && out[j] <= ',' &&
+				(out[j] == ',' || out[j] <= ' '); j-- {
 				if out[j] == ',' {
 					out[j] = ' '
 					break

@@ -224,7 +224,11 @@ func TestClaudeFallsBackToRouterOnlyWhenKeyGrantsNothingElse(t *testing.T) {
 func TestClaudeCustomOptionSkipsRouter(t *testing.T) {
 	s := newSession(t, newGatewayDouble(t)).loggedIn(keyFlash)
 	s.setupAndLaunch("claude")
-	assertEnv(t, s.launched(), map[string]string{"ANTHROPIC_CUSTOM_MODEL_OPTION": "deepseek-flash[1m]"})
+	assertEnv(
+		t,
+		s.launched(),
+		map[string]string{"ANTHROPIC_CUSTOM_MODEL_OPTION": "deepseek-flash[1m]"},
+	)
 }
 
 func TestClaudeDeclaresMainWindowWhenUnderOneMillion(t *testing.T) {
@@ -240,9 +244,21 @@ func TestClaudeWindowFromProductionMaxInput(t *testing.T) {
 	cases := []struct{ name, pin, model, variable, window string }{
 		{"1M takes the suffix", "", "claude-sonnet-5-5[1m]", "", ""},
 		{"unknown id under 1M", "deepseek-v3.2", "deepseek-v3.2", maxContext, "163840"},
-		{"gateway alias Claude Code does not recognise", "claude-haiku-5.5", "claude-haiku-5.5", maxContext, "200000"},
+		{
+			"gateway alias Claude Code does not recognise",
+			"claude-haiku-5.5",
+			"claude-haiku-5.5",
+			maxContext,
+			"200000",
+		},
 		{"non-Claude id at 200K", "glm-4.7-flash", "glm-4.7-flash", maxContext, "200000"},
-		{"recognised id under 1M lowers the window", "claude-opus-4-8", "claude-opus-4-8", autoCompact, "500000"},
+		{
+			"recognised id under 1M lowers the window",
+			"claude-opus-4-8",
+			"claude-opus-4-8",
+			autoCompact,
+			"500000",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -271,7 +287,8 @@ func TestClaudeWindowFollowsTheChosenModel(t *testing.T) {
 	}
 	s.setupAndLaunch("claude")
 	saved := readJSON(t, settings)
-	if env, _ := saved["env"].(map[string]any); saved["model"] != "deepseek-v3.2" || env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] != "163840" {
+	if env, _ := saved["env"].(map[string]any); saved["model"] != "deepseek-v3.2" ||
+		env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] != "163840" {
 		t.Errorf("saved model %v with env %v", saved["model"], saved["env"])
 	}
 	assertWindow(t, s, s.launched(), "CLAUDE_CODE_MAX_CONTEXT_TOKENS", "163840")
@@ -358,7 +375,9 @@ func TestClaudeAdoptsProjectPinsAndRecomputesSuffix(t *testing.T) {
 				"ANTHROPIC_DEFAULT_FABLE_MODEL":  "claude-opus[1m]",
 			})
 			env := launchSettings(t, s.launched())["env"].(map[string]any)
-			if env["ANTHROPIC_MODEL"] != "claude-opus[1m]" || env["ANTHROPIC_DEFAULT_OPUS_MODEL"] != "gpt-sol" || env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] != "glm[1m]" {
+			if env["ANTHROPIC_MODEL"] != "claude-opus[1m]" ||
+				env["ANTHROPIC_DEFAULT_OPUS_MODEL"] != "gpt-sol" ||
+				env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] != "glm[1m]" {
 				t.Errorf("overlay env = %v", env)
 			}
 		})
@@ -367,8 +386,14 @@ func TestClaudeAdoptsProjectPinsAndRecomputesSuffix(t *testing.T) {
 
 func TestClaudeLocalProjectPinsWinOverSharedPerKey(t *testing.T) {
 	s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid)
-	s.writeProjectSettings("settings.json", `{"env":{"ANTHROPIC_DEFAULT_OPUS_MODEL":"claude-sonnet","ANTHROPIC_DEFAULT_SONNET_MODEL":"gpt-sol"}}`)
-	s.writeProjectSettings("settings.local.json", `{"env":{"ANTHROPIC_DEFAULT_OPUS_MODEL":"claude-opus"}}`)
+	s.writeProjectSettings(
+		"settings.json",
+		`{"env":{"ANTHROPIC_DEFAULT_OPUS_MODEL":"claude-sonnet","ANTHROPIC_DEFAULT_SONNET_MODEL":"gpt-sol"}}`,
+	)
+	s.writeProjectSettings(
+		"settings.local.json",
+		`{"env":{"ANTHROPIC_DEFAULT_OPUS_MODEL":"claude-opus"}}`,
+	)
 	s.setupAndLaunch("claude")
 	assertEnv(t, s.launched(), map[string]string{
 		"ANTHROPIC_DEFAULT_OPUS_MODEL":   "claude-opus[1m]",
@@ -378,7 +403,10 @@ func TestClaudeLocalProjectPinsWinOverSharedPerKey(t *testing.T) {
 
 func TestClaudeIgnoresUnusablePins(t *testing.T) {
 	cases := []struct{ name, local string }{
-		{"non-string pins", `{"env":{"ANTHROPIC_MODEL":5,"ANTHROPIC_DEFAULT_OPUS_MODEL":["gpt-sol"],"ANTHROPIC_DEFAULT_HAIKU_MODEL":null}}`},
+		{
+			"non-string pins",
+			`{"env":{"ANTHROPIC_MODEL":5,"ANTHROPIC_DEFAULT_OPUS_MODEL":["gpt-sol"],"ANTHROPIC_DEFAULT_HAIKU_MODEL":null}}`,
+		},
 		{"blank pin", `{"env":{"ANTHROPIC_MODEL":"","ANTHROPIC_DEFAULT_OPUS_MODEL":"[1m]"}}`},
 	}
 	for _, tc := range cases {
@@ -400,7 +428,11 @@ func TestClaudeIgnoresUnusablePins(t *testing.T) {
 func TestClaudeKeyStaysInTheHelperFile(t *testing.T) {
 	for _, args := range [][]string{nil, {"-p", "hi"}} {
 		s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid)
-		s.env.Environ = append(s.env.Environ, "AIVEN_AI_GATEWAY_KEY="+keyFlash, "ANTHROPIC_AUTH_TOKEN="+keyFlash)
+		s.env.Environ = append(
+			s.env.Environ,
+			"AIVEN_AI_GATEWAY_KEY="+keyFlash,
+			"ANTHROPIC_AUTH_TOKEN="+keyFlash,
+		)
 		s.setupAndLaunch("claude", args...)
 		c := s.launched()
 		if helper := launchSettings(t, c)["apiKeyHelper"]; helper != claude.APIKeyHelper(s.env.BaseURL) {
@@ -429,7 +461,12 @@ func TestClaudeKeyStaysInTheHelperFile(t *testing.T) {
 
 func TestClaudeChildEnvironmentInheritsAndOverridesOnce(t *testing.T) {
 	s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid)
-	s.env.Environ = append(s.env.Environ, "ANTHROPIC_API_KEY=sk-ant-real", "ANTHROPIC_MODEL=old", "EDITOR=vi")
+	s.env.Environ = append(
+		s.env.Environ,
+		"ANTHROPIC_API_KEY=sk-ant-real",
+		"ANTHROPIC_MODEL=old",
+		"EDITOR=vi",
+	)
 	s.setupAndLaunch("claude")
 	c := s.launched()
 	if v, _ := c.envVar("EDITOR"); v != "vi" {
@@ -470,7 +507,10 @@ func TestClaudeLeavesDefaultProfileAlone(t *testing.T) {
 	if err != nil || !info.ModTime().Equal(old) {
 		t.Errorf("profile dir changed: %v, %v", info, err)
 	}
-	if entries, _ := os.ReadDir(s.fakeHome); len(entries) != 2 || entries[0].Name() != ".claude" || entries[1].Name() != ".config" {
+	if entries, _ := os.ReadDir(
+		s.fakeHome,
+	); len(entries) != 2 || entries[0].Name() != ".claude" ||
+		entries[1].Name() != ".config" {
 		t.Errorf("HOME entries = %v, want only .claude and the key file's .config", entries)
 	}
 }
@@ -480,8 +520,22 @@ func TestClaudeExecsNothingWhenLaunchCannotProceed(t *testing.T) {
 		name, key, want string
 	}{
 		{"no key", "", "aiven-ai-gateway: no key stored. Run: aiven-ai-gateway login\n"},
-		{"gateway rejects key", "sk-bad", catalogueFailed("the gateway rejected the key", "key rejected by gateway (401): Authentication Error. Create a key in Aiven Console and run: aiven-ai-gateway login")},
-		{"key grants no models", keyEmpty, catalogueFailed("the key grants no models", "key grants no models. Create a key in Aiven Console and run: aiven-ai-gateway login")},
+		{
+			"gateway rejects key",
+			"sk-bad",
+			catalogueFailed(
+				"the gateway rejected the key",
+				"key rejected by gateway (401): Authentication Error. Create a key in Aiven Console and run: aiven-ai-gateway login",
+			),
+		},
+		{
+			"key grants no models",
+			keyEmpty,
+			catalogueFailed(
+				"the key grants no models",
+				"key grants no models. Create a key in Aiven Console and run: aiven-ai-gateway login",
+			),
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -502,7 +556,14 @@ func TestClaudeExecsNothingWhenLaunchCannotProceed(t *testing.T) {
 			if len(s.runner.calls) != 0 {
 				t.Errorf("exec'd %v", s.runner.calls)
 			}
-			if after := configurationSnapshot(t, s.fakeHome, s.env.WorkDir); !reflect.DeepEqual(before, after) {
+			if after := configurationSnapshot(
+				t,
+				s.fakeHome,
+				s.env.WorkDir,
+			); !reflect.DeepEqual(
+				before,
+				after,
+			) {
 				t.Error("launch changed files")
 			}
 		})
@@ -516,7 +577,12 @@ func TestClaudeReportsExecFailure(t *testing.T) {
 	}
 	s.deps.Runner = &failingRunner{err: errors.New("claude is required but not installed")}
 	r := s.run("launch", "claude")
-	if r.code != 1 || r.stderr != launched(s.env.BaseURL, 5, "Claude Code")+"aiven-ai-gateway: claude is required but not installed\n" {
+	if r.code != 1 ||
+		r.stderr != launched(
+			s.env.BaseURL,
+			5,
+			"Claude Code",
+		)+"aiven-ai-gateway: claude is required but not installed\n" {
 		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
 	}
 }
@@ -533,7 +599,8 @@ func TestClaudeMissingBinaryFailsBeforeGatewayOrWrites(t *testing.T) {
 	s := newSession(t, g).loggedIn(keyValid)
 	s.runner.missing = []string{"claude"}
 	r := s.run("launch", "claude")
-	if r.code != 1 || r.stdout != "" || r.stderr != "aiven-ai-gateway: claude is required but not installed; install it, then run aiven-ai-gateway setup claude\n" {
+	if r.code != 1 || r.stdout != "" ||
+		r.stderr != "aiven-ai-gateway: claude is required but not installed; install it, then run aiven-ai-gateway setup claude\n" {
 		t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
 	}
 	if n := len(g.journal()); n != 0 {
@@ -581,19 +648,27 @@ func TestClaudeConnectKeepsAChosenModelDeclaresWindowAndRefusesMalformed(t *test
 	}
 	path := filepath.Join(s.fakeHome, ".claude", "aiven.settings.json")
 	got := readJSON(t, path)
-	if env, _ := got["env"].(map[string]any); env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] != "262144" || got["model"] != "glm-fast" {
+	if env, _ := got["env"].(map[string]any); env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] != "262144" ||
+		got["model"] != "glm-fast" {
 		t.Errorf("settings = %v", got)
 	}
 	if _, err := os.Stat(filepath.Join(s.env.WorkDir, ".claude")); !os.IsNotExist(err) {
 		t.Errorf("connect claude touched the project: %v", err)
 	}
 	s.writeUserSettings("aiven.settings.json", `{"model":"claude-opus"}`)
-	if r := s.stdin(keyValid).run("setup", "--key-stdin", "claude"); r.code != 0 || readJSON(t, path)["model"] != "claude-opus" {
+	if r := s.stdin(keyValid).
+		run("setup", "--key-stdin", "claude"); r.code != 0 ||
+		readJSON(t, path)["model"] != "claude-opus" {
 		t.Errorf("chosen model replaced: exit %d, settings %v", r.code, readJSON(t, path))
 	}
 	s = newSession(t, newGatewayDouble(t)).stdin(keyValid)
 	s.writeUserSettings("aiven.settings.json", `{"env":[]}`)
-	if r := s.run("setup", "--key-stdin", "claude"); r.code != 1 || !strings.Contains(r.stderr, "not a JSON object") {
+	if r := s.run(
+		"setup",
+		"--key-stdin",
+		"claude",
+	); r.code != 1 ||
+		!strings.Contains(r.stderr, "not a JSON object") {
 		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
 	}
 	if _, err := os.Stat(s.keyPath()); !os.IsNotExist(err) {
@@ -648,7 +723,11 @@ func TestClaudeConnectWritesGatewaySettingsBesideTheUsersOwn(t *testing.T) {
 		r.stdout != "" || !strings.Contains(r.stderr, "written: "+path+" (previous version: "+backup+")\n") || !strings.Contains(r.stderr, "directly\n  claude --settings ~/.claude/aiven.settings.json\n") {
 		t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
 	}
-	if data, _ := os.ReadFile(filepath.Join(s.fakeHome, ".claude", "settings.json")); string(data) != user {
+	if data, _ := os.ReadFile(
+		filepath.Join(s.fakeHome, ".claude", "settings.json"),
+	); string(
+		data,
+	) != user {
 		t.Errorf("settings.json = %s", data)
 	}
 	data, _ := os.ReadFile(path)
@@ -657,16 +736,31 @@ func TestClaudeConnectWritesGatewaySettingsBesideTheUsersOwn(t *testing.T) {
 	}
 	got := readJSON(t, path)
 	wantEnv := map[string]any{
-		"FOO": "bar", "ANTHROPIC_BASE_URL": g.URL, "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus[1m]",
-		"ANTHROPIC_DEFAULT_SONNET_MODEL": "glm[1m]", "ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm[1m]", "ANTHROPIC_DEFAULT_FABLE_MODEL": "",
-		"ANTHROPIC_CUSTOM_MODEL_OPTION": "gpt-sol", "ANTHROPIC_AUTH_TOKEN": "", "ANTHROPIC_API_KEY": "", "CLAUDE_CODE_USE_BEDROCK": "",
-		"CLAUDE_CODE_USE_VERTEX": "", "CLAUDE_CODE_USE_FOUNDRY": "", "AWS_BEARER_TOKEN_BEDROCK": "", "ANTHROPIC_CUSTOM_HEADERS": "",
-		"CLAUDE_CODE_MAX_CONTEXT_TOKENS": "", "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "",
+		"FOO":                             "bar",
+		"ANTHROPIC_BASE_URL":              g.URL,
+		"ANTHROPIC_DEFAULT_OPUS_MODEL":    "claude-opus[1m]",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL":  "glm[1m]",
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL":   "glm[1m]",
+		"ANTHROPIC_DEFAULT_FABLE_MODEL":   "",
+		"ANTHROPIC_CUSTOM_MODEL_OPTION":   "gpt-sol",
+		"ANTHROPIC_AUTH_TOKEN":            "",
+		"ANTHROPIC_API_KEY":               "",
+		"CLAUDE_CODE_USE_BEDROCK":         "",
+		"CLAUDE_CODE_USE_VERTEX":          "",
+		"CLAUDE_CODE_USE_FOUNDRY":         "",
+		"AWS_BEARER_TOKEN_BEDROCK":        "",
+		"ANTHROPIC_CUSTOM_HEADERS":        "",
+		"CLAUDE_CODE_MAX_CONTEXT_TOKENS":  "",
+		"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "",
 	}
-	if !reflect.DeepEqual(got["env"], wantEnv) || got["model"] != "glm[1m]" || !reflect.DeepEqual(got["permissions"], map[string]any{"allow": []any{"Bash(ls)"}}) {
+	if !reflect.DeepEqual(got["env"], wantEnv) || got["model"] != "glm[1m]" ||
+		!reflect.DeepEqual(got["permissions"], map[string]any{"allow": []any{"Bash(ls)"}}) {
 		t.Errorf("settings = %v", got)
 	}
-	if want := `"apiKeyHelper": "sh -c 'cat ~/.config/aiven/ai-gateway-keys/` + creds.Name(g.URL) + `'"`; runtime.GOOS != "windows" && !strings.Contains(string(data), want) {
+	if want := `"apiKeyHelper": "sh -c 'cat ~/.config/aiven/ai-gateway-keys/` + creds.Name(
+		g.URL,
+	) + `'"`; runtime.GOOS != "windows" &&
+		!strings.Contains(string(data), want) {
 		t.Errorf("apiKeyHelper not written as the shell reads it:\n%s", data)
 	}
 }
@@ -685,7 +779,18 @@ func TestClaudeForwardsNativeArgsAfterSeparator(t *testing.T) {
 	s.setupAndLaunch("claude", "-p", "hi", "--model", "chosen-native-model")
 	c := s.launched()
 	overlay := c.argv[2]
-	if want := []string{"claude", "--settings", overlay, "-p", "hi", "--model", "chosen-native-model"}; !slices.Equal(c.argv, want) {
+	if want := []string{
+		"claude",
+		"--settings",
+		overlay,
+		"-p",
+		"hi",
+		"--model",
+		"chosen-native-model",
+	}; !slices.Equal(
+		c.argv,
+		want,
+	) {
 		t.Errorf("argv = %q, want %q", c.argv, want)
 	}
 	if v, ok := c.envVar("CLAUDE_CONFIG_DIR"); ok {
@@ -708,14 +813,25 @@ func TestClaudeLaunchInAnotherProjectDoesNotRewriteSetup(t *testing.T) {
 	if after, _ := os.ReadFile(settings); string(after) != string(before) {
 		t.Errorf("launch in another project rewrote setup:\n%s", after)
 	}
-	if after := configurationSnapshot(t, s.fakeHome, first, s.env.WorkDir); !reflect.DeepEqual(files, after) {
+	if after := configurationSnapshot(
+		t,
+		s.fakeHome,
+		first,
+		s.env.WorkDir,
+	); !reflect.DeepEqual(
+		files,
+		after,
+	) {
 		t.Error("launch in another project changed files")
 	}
 }
 
 func TestClaudePinNotGrantedIsUsedByItsID(t *testing.T) {
 	s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid)
-	s.writeProjectSettings("settings.local.json", `{"env":{"ANTHROPIC_DEFAULT_SONNET_MODEL":"ghost-9[1m]"}}`)
+	s.writeProjectSettings(
+		"settings.local.json",
+		`{"env":{"ANTHROPIC_DEFAULT_SONNET_MODEL":"ghost-9[1m]"}}`,
+	)
 	s.setupAndLaunch("claude")
 	assertEnv(t, s.launched(), map[string]string{
 		"ANTHROPIC_DEFAULT_SONNET_MODEL":             "ghost-9",
@@ -727,7 +843,11 @@ func TestClaudePinNotGrantedIsUsedByItsID(t *testing.T) {
 func TestSetupSummaryNotesThatDirectClaudeLoadsExtraSettings(t *testing.T) {
 	s := newSession(t, newGatewayDouble(t)).stdin(keyValid)
 	r := s.run("setup", "--key-stdin", "--yes", "claude")
-	if r.code != 0 || !strings.Contains(r.stderr, "Direct claude --settings also loads extra settings kept in that file;\n") {
+	if r.code != 0 ||
+		!strings.Contains(
+			r.stderr,
+			"Direct claude --settings also loads extra settings kept in that file;\n",
+		) {
 		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
 	}
 }
@@ -738,10 +858,12 @@ func TestClaudeRefusesRemovedIsolatedLauncherFlag(t *testing.T) {
 	s := newSession(t, g).loggedIn(keyValid).configured("claude")
 	before, requests := configurationSnapshot(t, s.fakeHome, s.env.WorkDir), len(g.journal())
 	r := s.run("launch", "claude", "--isolated")
-	if want := "aiven-ai-gateway: launch: name one harness and put native arguments after --. Run: aiven-ai-gateway launch --help\n"; r.code != 1 || r.stderr != want {
+	if want := "aiven-ai-gateway: launch: name one harness and put native arguments after --. Run: aiven-ai-gateway launch --help\n"; r.code != 1 ||
+		r.stderr != want {
 		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
 	}
-	if len(s.runner.calls) != 0 || len(g.journal()) != requests || !reflect.DeepEqual(before, configurationSnapshot(t, s.fakeHome, s.env.WorkDir)) {
+	if len(s.runner.calls) != 0 || len(g.journal()) != requests ||
+		!reflect.DeepEqual(before, configurationSnapshot(t, s.fakeHome, s.env.WorkDir)) {
 		t.Fatalf("removed isolation flag exec'd %v, reached the gateway or changed files", s.runner.calls)
 	}
 }
@@ -772,7 +894,11 @@ func TestClaudeLaunchRefusesASymlinkedProjectSettingsFile(t *testing.T) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Skip("no symlink privilege:", err)
 	}
-	if r := s.run("launch", "claude"); r.code != 1 || !strings.Contains(r.stderr, link+" is a symlink") || len(s.runner.calls) != 0 {
+	if r := s.run(
+		"launch",
+		"claude",
+	); r.code != 1 || !strings.Contains(r.stderr, link+" is a symlink") ||
+		len(s.runner.calls) != 0 {
 		t.Errorf("exit %d, calls %d: %s", r.code, len(s.runner.calls), r.stderr)
 	}
 }

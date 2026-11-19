@@ -40,8 +40,11 @@ func Setup(in harness.Input) (harness.Plan, error) {
 	}
 	// Codex refuses any top-level profile; removing one that names another profile would drop the user's choice.
 	if p, set := cfg["profile"]; set && p != "aiven" {
-		return harness.Plan{}, fmt.Errorf("%s sets profile, which Codex no longer supports; remove it and select that "+
-			"profile with `codex --profile <name>`, which reads <name>.config.toml, then retry", path)
+		return harness.Plan{}, fmt.Errorf(
+			"%s sets profile, which Codex no longer supports; remove it and select that "+
+				"profile with `codex --profile <name>`, which reads <name>.config.toml, then retry",
+			path,
+		)
 	}
 	// Codex refuses `-p aiven` while config.toml still declares that profile itself, so the legacy forms go, their
 	// settings moving to the profile file unless it sets them already.
@@ -59,7 +62,10 @@ func Setup(in harness.Input) (harness.Plan, error) {
 	}
 	command, args := creds.Command(in.BaseURL, runtime.GOOS)
 	provider := map[string]any{
-		"name": "Aiven AI Gateway", "base_url": in.BaseURL + "/v1", "wire_api": "responses", "requires_openai_auth": false,
+		"name":                 "Aiven AI Gateway",
+		"base_url":             in.BaseURL + "/v1",
+		"wire_api":             "responses",
+		"requires_openai_auth": false,
 		// Codex runs auth without a shell and again after a 401, so a replaced key file takes effect mid-session.
 		"auth": map[string]any{"command": command, "args": args},
 	}
@@ -113,14 +119,22 @@ func wireProvider(cfg map[string]any, path string, owned map[string]any) error {
 	}
 	providers, ok := cfg["model_providers"].(map[string]any)
 	if !ok {
-		return fmt.Errorf("%s: %q is not a TOML table; fix or move it, then retry", path, "model_providers")
+		return fmt.Errorf(
+			"%s: %q is not a TOML table; fix or move it, then retry",
+			path,
+			"model_providers",
+		)
 	}
 	if providers["aiven"] == nil {
 		providers["aiven"] = map[string]any{}
 	}
 	provider, ok := providers["aiven"].(map[string]any)
 	if !ok {
-		return fmt.Errorf("%s: %q is not a TOML table; fix or move it, then retry", path, "model_providers.aiven")
+		return fmt.Errorf(
+			"%s: %q is not a TOML table; fix or move it, then retry",
+			path,
+			"model_providers.aiven",
+		)
 	}
 	for field, value := range owned {
 		provider[field] = value
@@ -155,8 +169,11 @@ func Ready(home, baseURL string) (bool, error) {
 			return false, fmt.Errorf("%s is not valid TOML", name)
 		}
 		profiles, _ := cfg["profiles"].(map[string]any)
-		if _, legacy := profiles["aiven"]; name == "config.toml" && (cfg["profile"] == "aiven" || legacy) {
-			return false, errors.New("config.toml declares the aiven profile itself, which makes Codex refuse -p aiven")
+		if _, legacy := profiles["aiven"]; name == "config.toml" &&
+			(cfg["profile"] == "aiven" || legacy) {
+			return false, errors.New(
+				"config.toml declares the aiven profile itself, which makes Codex refuse -p aiven",
+			)
 		}
 		providers, _ := cfg["model_providers"].(map[string]any)
 		if p, exists := providers["aiven"]; exists {
@@ -179,13 +196,17 @@ func Ready(home, baseURL string) (bool, error) {
 	auth, _ := provider["auth"].(map[string]any)
 	args, _ := auth["args"].([]any)
 	command, want := creds.Command(baseURL, runtime.GOOS)
-	helper := auth["command"] == command && slices.EqualFunc(args, want, func(a any, w string) bool { return a == w })
+	helper := auth["command"] == command &&
+		slices.EqualFunc(args, want, func(a any, w string) bool { return a == w })
 	envKey, hasAuth := provider["env_key"], provider["auth"] != nil
 	// Codex refuses a provider whose auth command comes with env_key, a bearer token or requires_openai_auth.
 	if provider["base_url"] != baseURL+"/v1" || provider["wire_api"] != "responses" ||
 		envKey != nil && envKey != creds.EnvVar || hasAuth && !helper || (envKey != nil) == hasAuth ||
-		hasAuth && (provider["experimental_bearer_token"] != nil || provider["requires_openai_auth"] == true) {
-		return false, errors.New("config.toml or aiven.config.toml has incompatible Aiven provider wiring")
+		hasAuth &&
+			(provider["experimental_bearer_token"] != nil || provider["requires_openai_auth"] == true) {
+		return false, errors.New(
+			"config.toml or aiven.config.toml has incompatible Aiven provider wiring",
+		)
 	}
 	return provider["env_key"] == creds.EnvVar, nil
 }

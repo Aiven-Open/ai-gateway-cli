@@ -82,8 +82,11 @@ func setUp(t *testing.T, in harness.Input) map[string]any {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Files) != 1 || plan.Files[0].Path != configPath(in) || !plan.Files[0].Backup || !plan.Files[0].Models ||
-		plan.Files[0].Reference == nil || plan.Argv != nil || plan.Env != nil {
+	if len(plan.Files) != 1 || plan.Files[0].Path != configPath(in) || !plan.Files[0].Backup ||
+		!plan.Files[0].Models ||
+		plan.Files[0].Reference == nil ||
+		plan.Argv != nil ||
+		plan.Env != nil {
 		t.Fatalf("plan = %+v", plan)
 	}
 	write(t, plan.Files[0].Path, string(plan.Files[0].Data))
@@ -97,10 +100,13 @@ func TestSetupAddsTheProviderAndLeavesTheDefaultAlone(t *testing.T) {
 			"npm": "@ai-sdk/openai-compatible", "name": "Aiven AI Gateway",
 			"options": map[string]any{"baseURL": baseURL + "/v1", "apiKey": opencode.APIKey(baseURL)},
 			"models": map[string]any{
-				"glm":           map[string]any{"name": "glm"},
-				"gpt-sol":       map[string]any{"name": "GPT Sol"},
-				"kimi":          map[string]any{"name": "Kimi"},
-				"claude-sonnet": map[string]any{"name": "Claude Sonnet", "limit": map[string]any{"context": 1e6, "output": 64000.0}},
+				"glm":     map[string]any{"name": "glm"},
+				"gpt-sol": map[string]any{"name": "GPT Sol"},
+				"kimi":    map[string]any{"name": "Kimi"},
+				"claude-sonnet": map[string]any{
+					"name":  "Claude Sonnet",
+					"limit": map[string]any{"context": 1e6, "output": 64000.0},
+				},
 			},
 		}},
 	}
@@ -121,11 +127,17 @@ func TestSetupKeepsTheUsersConfigUnlessAskedForTheDefault(t *testing.T) {
 	got := setUp(t, in)
 	providers := got["provider"].(map[string]any)
 	aiven := providers["aiven"].(map[string]any)
-	if got["$schema"] != "https://example.test/schema.json" || got["model"] != "local/qwen" || got["theme"] != "dark" ||
-		!reflect.DeepEqual(providers["local"], map[string]any{"npm": "x"}) || aiven["x"] != nil || len(aiven["models"].(map[string]any)) != 4 {
+	if got["$schema"] != "https://example.test/schema.json" || got["model"] != "local/qwen" ||
+		got["theme"] != "dark" ||
+		!reflect.DeepEqual(providers["local"], map[string]any{"npm": "x"}) ||
+		aiven["x"] != nil ||
+		len(aiven["models"].(map[string]any)) != 4 {
 		t.Errorf("opencode.json = %v", got)
 	}
-	if data, err := os.ReadFile(configPath(in)); err != nil || !strings.Contains(string(data), "  // the user's own\n") ||
+	if data, err := os.ReadFile(
+		configPath(in),
+	); err != nil ||
+		!strings.Contains(string(data), "  // the user's own\n") ||
 		!strings.Contains(string(data), `"local": {"npm": "x"}`) {
 		t.Errorf("opencode.json lost the user's layout: %v\n%s", err, data)
 	}
@@ -202,11 +214,17 @@ func TestLaunchAddsTheDefaultModelUnlessTheArgsChooseOne(t *testing.T) {
 	}
 	in.Args = nil
 	in.Table = []models.Model{{Alias: "claude-sonnet-5-5"}}
-	if _, err := opencode.Launch(in); err == nil || !strings.Contains(err.Error(), "refresh with setup") {
+	if _, err := opencode.Launch(
+		in,
+	); err == nil ||
+		!strings.Contains(err.Error(), "refresh with setup") {
 		t.Errorf("Launch with a default missing from the catalogue: %v", err)
 	}
 	write(t, configPath(in), `{`)
-	if _, err := opencode.Launch(in); err == nil || strings.Contains(err.Error(), "refresh with setup") {
+	if _, err := opencode.Launch(
+		in,
+	); err == nil ||
+		strings.Contains(err.Error(), "refresh with setup") {
 		t.Errorf("Launch with an unreadable opencode.json: %v", err)
 	}
 }
@@ -228,7 +246,11 @@ func TestReadyChecksTheProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	write(t, wired, strings.ReplaceAll(string(data), creds.Rel(baseURL), creds.Rel(config.DefaultBaseURL)))
+	write(
+		t,
+		wired,
+		strings.ReplaceAll(string(data), creds.Rel(baseURL), creds.Rel(config.DefaultBaseURL)),
+	)
 	if _, err := opencode.Ready(in.UserHome, "", baseURL); err == nil {
 		t.Error("Ready with another gateway's key helper")
 	}
@@ -280,7 +302,10 @@ func TestSetupWritesTheJSONCFileWhenOneExists(t *testing.T) {
 func TestSetupSkipsAJSONCDirectory(t *testing.T) {
 	in := input(t)
 	write(t, configPath(in), `{"model": "openai/gpt"}`)
-	if err := os.Mkdir(filepath.Join(in.UserHome, ".config", "opencode", "opencode.jsonc"), 0o700); err != nil {
+	if err := os.Mkdir(
+		filepath.Join(in.UserHome, ".config", "opencode", "opencode.jsonc"),
+		0o700,
+	); err != nil {
 		t.Fatal(err)
 	}
 	plan, err := opencode.Setup(in)
@@ -308,13 +333,21 @@ func TestSetupLaunchAndReadyFollowXDGConfigHome(t *testing.T) {
 	}
 	in.ConfigHome = "xdg"
 	t.Chdir(in.UserHome)
-	if _, err := opencode.Setup(in); err == nil || !strings.Contains(err.Error(), "XDG_CONFIG_HOME is not an absolute path") {
+	if _, err := opencode.Setup(
+		in,
+	); err == nil ||
+		!strings.Contains(err.Error(), "XDG_CONFIG_HOME is not an absolute path") {
 		t.Errorf("Setup with a relative XDG_CONFIG_HOME: %v", err)
 	}
 	if _, err := opencode.Launch(in); err == nil || !strings.Contains(err.Error(), "XDG_CONFIG_HOME") {
 		t.Errorf("Launch with a relative XDG_CONFIG_HOME: %v", err)
 	}
-	if _, err := opencode.Ready(in.UserHome, in.ConfigHome, baseURL); err == nil || !strings.Contains(err.Error(), "XDG_CONFIG_HOME") {
+	if _, err := opencode.Ready(
+		in.UserHome,
+		in.ConfigHome,
+		baseURL,
+	); err == nil ||
+		!strings.Contains(err.Error(), "XDG_CONFIG_HOME") {
 		t.Errorf("Ready with a relative XDG_CONFIG_HOME: %v", err)
 	}
 }
@@ -330,8 +363,10 @@ func TestSetupRemovesTheProviderFromTheFileOpenCodeReadsFirst(t *testing.T) {
 		write(t, configPath(in), tc.before)
 		write(t, jsonc, "{}\n")
 		plan, err := opencode.Setup(in)
-		if err != nil || len(plan.Files) != 2 || plan.Files[0].Path != jsonc || plan.Files[1].Path != configPath(in) ||
-			!plan.Files[1].Backup || plan.Files[1].Reference == nil {
+		if err != nil || len(plan.Files) != 2 || plan.Files[0].Path != jsonc ||
+			plan.Files[1].Path != configPath(in) ||
+			!plan.Files[1].Backup ||
+			plan.Files[1].Reference == nil {
 			t.Fatalf("plan = %+v, %v", plan, err)
 		}
 		write(t, configPath(in), string(plan.Files[1].Data))

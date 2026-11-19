@@ -9,8 +9,19 @@ description = "Build dist/aiven-ai-gateway for the host platform"
 run = "CGO_ENABLED=0 go build -trimpath -o dist/aiven-ai-gateway ./cmd/aiven-ai-gateway"
 
 [tasks.fmt]
-description = "Format Go source files with gofmt"
-run = "gofmt -w cmd internal npm"
+description = "Format Go source files with gofmt and golines"
+# golines rewraps a long expression one level per pass, so repeat until nothing changes.
+run = '''
+set -eu
+for _ in 1 2 3 4 5; do
+  golangci-lint fmt ./...
+  if golangci-lint fmt --diff ./... >/dev/null; then
+    exit 0
+  fi
+done
+echo "golangci-lint fmt did not settle after 5 passes" >&2
+exit 1
+'''
 
 [tasks.lint]
 description = "Check gofmt, go vet and golangci-lint"

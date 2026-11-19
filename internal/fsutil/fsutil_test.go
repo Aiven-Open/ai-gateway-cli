@@ -75,11 +75,18 @@ func TestBackupCopiesContentAndModeOrSkipsMissing(t *testing.T) {
 			if runtime.GOOS == "windows" {
 				wantMode = 0o666
 			}
-			if got, _ := os.ReadFile(dest); err != nil || string(got) != "old" || fi.Mode().Perm() != wantMode {
+			if got, _ := os.ReadFile(
+				dest,
+			); err != nil || string(got) != "old" ||
+				fi.Mode().Perm() != wantMode {
 				t.Fatalf("backup = %q (%v), want old %v", got, err, wantMode)
 			}
 			_ = os.WriteFile(path, []byte("new"), mode)
-			if err := d.Backup(filepath.Base(path), filepath.Base(dest)); err == nil || !strings.Contains(err.Error(), dest+" already exists") {
+			if err := d.Backup(
+				filepath.Base(path),
+				filepath.Base(dest),
+			); err == nil ||
+				!strings.Contains(err.Error(), dest+" already exists") {
 				t.Fatalf("second backup to %s: %v, want refusal", dest, err)
 			}
 			if got, _ := os.ReadFile(dest); string(got) != "old" {
@@ -137,14 +144,21 @@ func TestOpenDirCreatesMissingDirectoriesAndRefusesASymlink(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = d.Close()
-	if info, err := os.Stat(filepath.Join(home, ".pi", "agent")); err != nil || !info.IsDir() || d.Path != filepath.Join(home, ".pi", "agent") {
+	if info, err := os.Stat(
+		filepath.Join(home, ".pi", "agent"),
+	); err != nil || !info.IsDir() ||
+		d.Path != filepath.Join(home, ".pi", "agent") {
 		t.Fatalf("stat %v, %v; path %s", info, err, d.Path)
 	}
 	elsewhere := t.TempDir()
 	if err := os.Symlink(elsewhere, filepath.Join(home, ".codex")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fsutil.OpenDir(home, ".codex"); err == nil || !strings.Contains(err.Error(), filepath.Join(home, ".codex")+" is not a regular directory") {
+	if _, err := fsutil.OpenDir(
+		home,
+		".codex",
+	); err == nil ||
+		!strings.Contains(err.Error(), filepath.Join(home, ".codex")+" is not a regular directory") {
 		t.Fatalf("OpenDir through a symlink: %v", err)
 	}
 }
@@ -177,7 +191,10 @@ func TestDirWritesWhereItWasOpenedAfterItsPathIsReplaced(t *testing.T) {
 			t.Errorf("%s = %q, want new in the directory opened", name, got)
 		}
 	}
-	if data, _, existed, err := d.Read("models.json"); err != nil || !existed || string(data) != "new" {
+	if data, _, existed, err := d.Read(
+		"models.json",
+	); err != nil || !existed ||
+		string(data) != "new" {
 		t.Errorf("Read = %q, %v, %v", data, existed, err)
 	}
 }
@@ -219,20 +236,29 @@ func TestReadFileReadsOnlyARegularFile(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		wantPerm = 0o666
 	}
-	if data, perm, err := fsutil.ReadRegular(path); err != nil || string(data) != "data" || perm != wantPerm {
+	if data, perm, err := fsutil.ReadRegular(
+		path,
+	); err != nil || string(data) != "data" ||
+		perm != wantPerm {
 		t.Errorf("ReadRegular = %q, %v, %v; want data, %v", data, perm, err, wantPerm)
 	}
 	if _, err := fsutil.ReadFile(filepath.Join(dir, "missing")); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("missing file: %v, want os.ErrNotExist", err)
 	}
-	if _, err := fsutil.ReadFile(dir); err == nil || !strings.Contains(err.Error(), dir+" is not a regular file") {
+	if _, err := fsutil.ReadFile(
+		dir,
+	); err == nil ||
+		!strings.Contains(err.Error(), dir+" is not a regular file") {
 		t.Errorf("directory: %v", err)
 	}
 	link := filepath.Join(dir, "link")
 	if err := os.Symlink(path, link); err != nil {
 		t.Skip("no symlink privilege:", err)
 	}
-	if _, err := fsutil.ReadFile(link); err == nil || !strings.Contains(err.Error(), link+" is a symlink, not a regular file") {
+	if _, err := fsutil.ReadFile(
+		link,
+	); err == nil ||
+		!strings.Contains(err.Error(), link+" is a symlink, not a regular file") {
 		t.Errorf("symlink: %v", err)
 	}
 }

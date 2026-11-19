@@ -22,7 +22,8 @@ import (
 func TestModelsListsByPublisherWithExactIDs(t *testing.T) {
 	s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid)
 	r := s.run("models")
-	if r.code != 0 || r.stderr != "Gateway: "+s.env.BaseURL+"\n  Retrieving available models…\n  OK 5 models available\n" {
+	if r.code != 0 ||
+		r.stderr != "Gateway: "+s.env.BaseURL+"\n  Retrieving available models…\n  OK 5 models available\n" {
 		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
 	}
 	want := "Anthropic\n  Claude Opus    claude-opus\n  claude-sonnet\n\n" +
@@ -62,7 +63,8 @@ func TestModelsShowsGatewayBeforeAuthenticatedRequest(t *testing.T) {
 func TestModelsWithoutKeyAsksForLogin(t *testing.T) {
 	g := newGatewayDouble(t)
 	r := newSession(t, g).run("models")
-	if r.code != 1 || r.stderr != "Gateway: "+g.URL+"\naiven-ai-gateway: no key stored. Run: aiven-ai-gateway login\n" {
+	if r.code != 1 ||
+		r.stderr != "Gateway: "+g.URL+"\naiven-ai-gateway: no key stored. Run: aiven-ai-gateway login\n" {
 		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
 	}
 	if len(g.journal()) != 0 {
@@ -84,7 +86,9 @@ func TestOnlyTheGatewaysOwnKeyFileIsSent(t *testing.T) {
 			}
 			s.env.Environ = append(s.env.Environ, "AIVEN_AI_GATEWAY_KEY="+keyFlash)
 			for _, args := range [][]string{{"models"}, {"launch", "pi"}} {
-				if r := s.run(args...); r.code == 0 || !strings.Contains(r.stderr, "no key stored. Run: aiven-ai-gateway login") {
+				if r := s.run(
+					args...); r.code == 0 ||
+					!strings.Contains(r.stderr, "no key stored. Run: aiven-ai-gateway login") {
 					t.Errorf("%s: exit %d, stderr %q", args[0], r.code, r.stderr)
 				}
 			}
@@ -103,7 +107,8 @@ func TestOnlyTheGatewaysOwnKeyFileIsSent(t *testing.T) {
 func TestLogoutRemovesKey(t *testing.T) {
 	s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid)
 	r := s.run("logout")
-	if r.code != 0 || r.stdout != "" || r.stderr != "Local key removed. Inherited environment credentials remain; no server key was revoked.\n" {
+	if r.code != 0 || r.stdout != "" ||
+		r.stderr != "Local key removed. Inherited environment credentials remain; no server key was revoked.\n" {
 		t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
 	}
 	if files := s.homeFiles(); len(files) != 0 {
@@ -119,7 +124,8 @@ func TestLogoutRemovesKey(t *testing.T) {
 
 func TestLogoutWithoutKeySucceeds(t *testing.T) {
 	r := newSession(t, newGatewayDouble(t)).run("logout")
-	if r.code != 0 || r.stdout != "" || r.stderr != "Local key removed. Inherited environment credentials remain; no server key was revoked.\n" {
+	if r.code != 0 || r.stdout != "" ||
+		r.stderr != "Local key removed. Inherited environment credentials remain; no server key was revoked.\n" {
 		t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
 	}
 }
@@ -130,16 +136,43 @@ func TestGatewayFailuresAreReported(t *testing.T) {
 		handler http.HandlerFunc
 		want    string
 	}{
-		{"server error", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(502) }, catalogueFailed("the gateway reported a server error", "gateway returned HTTP 502")},
+		{
+			"server error",
+			func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(502) },
+			catalogueFailed("the gateway reported a server error", "gateway returned HTTP 502"),
+		},
 		{"rejected with a full stop", func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(401)
 			_, _ = w.Write([]byte(`{"error":{"message":"Authentication Error."}}`))
 		}, catalogueFailed("the gateway rejected the key", "key rejected by gateway (401): Authentication Error. Create a key in Aiven Console and run: aiven-ai-gateway login")},
-		{"forbidden", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(403) }, catalogueFailed("the gateway refused the request (HTTP 403)", "gateway returned HTTP 403")},
-		{"not json", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("<html>")) }, catalogueFailed("the gateway sent an unexpected response", "unexpected response from gateway")},
-		{"no data array", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"object":"list"}`)) }, catalogueFailed("the gateway sent an unexpected response", "unexpected response from gateway")},
-		{"null data", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"data":null}`)) }, catalogueFailed("the gateway sent an unexpected response", "unexpected response from gateway")},
-		{"empty data", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"data":[]}`)) }, catalogueFailed("the key grants no models", "key grants no models. Create a key in Aiven Console and run: aiven-ai-gateway login")},
+		{
+			"forbidden",
+			func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(403) },
+			catalogueFailed("the gateway refused the request (HTTP 403)", "gateway returned HTTP 403"),
+		},
+		{
+			"not json",
+			func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("<html>")) },
+			catalogueFailed("the gateway sent an unexpected response", "unexpected response from gateway"),
+		},
+		{
+			"no data array",
+			func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"object":"list"}`)) },
+			catalogueFailed("the gateway sent an unexpected response", "unexpected response from gateway"),
+		},
+		{
+			"null data",
+			func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"data":null}`)) },
+			catalogueFailed("the gateway sent an unexpected response", "unexpected response from gateway"),
+		},
+		{
+			"empty data",
+			func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"data":[]}`)) },
+			catalogueFailed(
+				"the key grants no models",
+				"key grants no models. Create a key in Aiven Console and run: aiven-ai-gateway login",
+			),
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -165,14 +198,20 @@ func TestUnreachableGatewayNamesURL(t *testing.T) {
 	s.env.BaseURL = url
 	s.loggedIn(keyValid)
 	r := s.run("models")
-	if want := "Gateway: " + url + "\n" + catalogueFailed("the gateway could not be reached", "cannot reach gateway at "+url+": "); r.code != 1 || !strings.HasPrefix(r.stderr, strings.TrimSuffix(want, "\n")) || !strings.Contains(r.stderr, "refused") {
+	if want := "Gateway: " + url + "\n" + catalogueFailed(
+		"the gateway could not be reached",
+		"cannot reach gateway at "+url+": ",
+	); r.code != 1 || !strings.HasPrefix(r.stderr, strings.TrimSuffix(want, "\n")) ||
+		!strings.Contains(r.stderr, "refused") {
 		t.Fatalf("exit %d, stderr %q, want prefix %q and the dial cause", r.code, r.stderr, want)
 	}
 }
 
 func TestSlowGatewayTimesOutAsUnreachable(t *testing.T) {
 	release := make(chan struct{})
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))
+	srv := httptest.NewTLSServer(
+		http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }),
+	)
 	defer srv.Close()
 	defer close(release)
 	s := newSession(t, &gatewayDouble{Server: srv}).loggedIn(keyValid)
@@ -180,7 +219,11 @@ func TestSlowGatewayTimesOutAsUnreachable(t *testing.T) {
 	client.Timeout = 50 * time.Millisecond
 	s.deps.HTTP = &client
 	r := s.run("models")
-	if want := "Gateway: " + srv.URL + "\n" + catalogueFailed("the gateway could not be reached", "cannot reach gateway at "); r.code != 1 || !strings.HasPrefix(r.stderr, strings.TrimSuffix(want, "\n")) {
+	if want := "Gateway: " + srv.URL + "\n" + catalogueFailed(
+		"the gateway could not be reached",
+		"cannot reach gateway at ",
+	); r.code != 1 ||
+		!strings.HasPrefix(r.stderr, strings.TrimSuffix(want, "\n")) {
 		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
 	}
 }
@@ -197,7 +240,11 @@ func TestKeyFileReadFailureIsShownNotMistakenForMissingKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := s.run("models")
-	if r.code != 1 || !strings.HasPrefix(r.stderr, "Gateway: "+s.env.BaseURL+"\naiven-ai-gateway: read the key file: ") {
+	if r.code != 1 ||
+		!strings.HasPrefix(
+			r.stderr,
+			"Gateway: "+s.env.BaseURL+"\naiven-ai-gateway: read the key file: ",
+		) {
 		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
 	}
 }

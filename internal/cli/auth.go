@@ -42,7 +42,10 @@ func login(ctx context.Context, env config.Env, deps Deps) int {
 	p.ui.line(2, "Login checked model access only: no inference request was sent and no tool")
 	p.ui.line(2, "was configured. Configure one before launching it:")
 	p.ui.command(4, "aiven-ai-gateway setup <harness>")
-	renderModels(newUI(deps.Stdout, deps.Term.StdoutTTY, deps.Term.StdoutWidth, plainRequested(env.Environ)), table)
+	renderModels(
+		newUI(deps.Stdout, deps.Term.StdoutTTY, deps.Term.StdoutWidth, plainRequested(env.Environ)),
+		table,
+	)
 	return 0
 }
 
@@ -54,7 +57,10 @@ func listModels(ctx context.Context, env config.Env, deps Deps) int {
 	if code != 0 {
 		return code
 	}
-	renderModels(newUI(deps.Stdout, deps.Term.StdoutTTY, deps.Term.StdoutWidth, plainRequested(env.Environ)), table)
+	renderModels(
+		newUI(deps.Stdout, deps.Term.StdoutTTY, deps.Term.StdoutWidth, plainRequested(env.Environ)),
+		table,
+	)
 	return 0
 }
 
@@ -62,7 +68,10 @@ func logout(env config.Env, deps Deps) int {
 	if err := removeKey(env, deps); err != nil {
 		return fail(deps, err.Error())
 	}
-	_, _ = fmt.Fprintln(deps.Stderr, "Local key removed. Inherited environment credentials remain; no server key was revoked.")
+	_, _ = fmt.Fprintln(
+		deps.Stderr,
+		"Local key removed. Inherited environment credentials remain; no server key was revoked.",
+	)
 	return 0
 }
 
@@ -101,6 +110,10 @@ func failGateway(deps Deps, err error) int {
 
 func fail(deps Deps, msg string) int {
 	// errors.Join separates its errors with newlines, which safe drops; keep the messages apart on one line.
-	_, _ = fmt.Fprintf(deps.Stderr, "aiven-ai-gateway: %s\n", safe(strings.ReplaceAll(msg, "\n", "; ")))
+	_, _ = fmt.Fprintf(
+		deps.Stderr,
+		"aiven-ai-gateway: %s\n",
+		safe(strings.ReplaceAll(msg, "\n", "; ")),
+	)
 	return 1
 }

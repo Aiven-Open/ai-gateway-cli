@@ -94,7 +94,16 @@ func TestCopiedNativeCommandPassesThePublicSelectorLiterally(t *testing.T) {
 				t.Fatalf("%q: %v", direct, err)
 			}
 			flag := map[string]string{"pi": "--model", "opencode": "-m"}[tool]
-			if got, want := strings.Split(strings.TrimSuffix(string(out), "\n"), "\n"), []string{flag, "aiven/claude-sonnet"}; !slices.Equal(got, want) {
+			if got, want := strings.Split(
+				strings.TrimSuffix(string(out), "\n"),
+				"\n",
+			), []string{
+				flag,
+				"aiven/claude-sonnet",
+			}; !slices.Equal(
+				got,
+				want,
+			) {
 				t.Errorf("%q passed %q, want %q", direct, got, want)
 			}
 			if _, err := os.Stat(filepath.Join(home, "shell-marker")); err == nil {

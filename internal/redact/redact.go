@@ -18,4 +18,5 @@ const Word = `(?:` + words + `|\bpat\b|_pat\b)`
 // Token matches a value shaped like a known credential, whatever holds it: a gateway key in the characters
 // creds.ValidKey allows, an sk- key, a GitHub token or an AWS access key ID. It stays case-sensitive inside a
 // case-insensitive pattern.
-const Token = `(?-i:AVNS_[A-Za-z0-9._-]+|\bsk-[A-Za-z0-9._-]{8,}|\bghp_[A-Za-z0-9]{20,}|\bgithub_pat_[A-Za-z0-9_]{20,}|\bAKIA[0-9A-Z]{16}\b)`
+const Token = `(?-i:AVNS_[A-Za-z0-9._-]+|\bsk-[A-Za-z0-9._-]{8,}|\bghp_[A-Za-z0-9]{20,}|` +
+	`\bgithub_pat_[A-Za-z0-9_]{20,}|\bAKIA[0-9A-Z]{16}\b)`

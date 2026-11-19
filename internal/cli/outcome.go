@@ -11,7 +11,13 @@ import (
 )
 
 // toolLabels are the harnesses' product names, for headings and summaries; commands keep the binary names.
-var toolLabels = map[string]string{"claude": "Claude Code", "codex": "Codex", "pi": "Pi", "opencode": "OpenCode", "omp": "OMP"}
+var toolLabels = map[string]string{
+	"claude":   "Claude Code",
+	"codex":    "Codex",
+	"pi":       "Pi",
+	"opencode": "OpenCode",
+	"omp":      "OMP",
+}
 
 func toolLabel(tool string) string {
 	if l := toolLabels[tool]; l != "" {
@@ -198,7 +204,10 @@ func (r *setupRun) finish() int {
 			if o.asDefault && o.status == statusConfigured {
 				u.line(indent, "Aiven is now the native default")
 				if o.tool == "omp" {
-					u.line(indent, "OMP project settings and enabled-model scope can override this stored default.")
+					u.line(
+						indent,
+						"OMP project settings and enabled-model scope can override this stored default.",
+					)
 					u.line(indent, "A disabled Aiven provider must be enabled in OMP before starting a session.")
 				}
 			} else {
@@ -219,7 +228,8 @@ func (r *setupRun) finish() int {
 		u.heading("Or start the native tool directly")
 		for _, o := range ready {
 			if !u.command(2, directCommand(o.tool, r.table, o.asDefault && o.status == statusConfigured)) {
-				u.line(2, toolLabel(o.tool)+": direct command unavailable because an argument contains terminal controls.")
+				u.line(2, toolLabel(o.tool)+": direct command unavailable because an argument "+
+					"contains terminal controls.")
 				u.line(2, "Use aiven-ai-gateway launch "+o.tool+" instead; its arguments remain literal.")
 			}
 		}
@@ -276,7 +286,8 @@ func directCommand(tool string, table []models.Model, asDefault bool) string {
 // shellQuote makes s one literal word for bash, zsh and sh. Words of plainly safe characters stay as they are, so
 // the common command reads as typed; anything else is single-quoted.
 func shellQuote(s string) string {
-	if s != "" && strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@%+:,./-") == "" {
+	if s != "" &&
+		strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@%+:,./-") == "" {
 		return s
 	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"

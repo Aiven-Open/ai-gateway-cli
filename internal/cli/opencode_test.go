@@ -24,7 +24,8 @@ func TestOpencodeLaunchesWithGatewayProviderConfig(t *testing.T) {
 		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
 	}
 	c := s.launched()
-	if c.name != "opencode" || !slices.Equal(c.argv, []string{"opencode", "-m", "aiven/claude-sonnet"}) {
+	if c.name != "opencode" ||
+		!slices.Equal(c.argv, []string{"opencode", "-m", "aiven/claude-sonnet"}) {
 		t.Fatalf("exec %q %q", c.name, c.argv)
 	}
 	assertUnset(t, c, "OPENCODE_CONFIG", "AIVEN_AI_GATEWAY_KEY")
@@ -32,13 +33,21 @@ func TestOpencodeLaunchesWithGatewayProviderConfig(t *testing.T) {
 	provider := cfg["provider"].(map[string]any)["aiven"].(map[string]any)
 	options, got := provider["options"].(map[string]any), provider["models"].(map[string]any)
 	want := map[string]any{
-		"aiven-model":   map[string]any{"name": "aiven-model"},
-		"claude-opus":   map[string]any{"name": "Claude Opus"},
-		"claude-sonnet": map[string]any{"name": "claude-sonnet", "limit": map[string]any{"context": 1e6, "output": 64000.0}},
-		"glm":           map[string]any{"name": "glm"},
-		"gpt-sol":       map[string]any{"name": "gpt-sol"},
+		"aiven-model": map[string]any{"name": "aiven-model"},
+		"claude-opus": map[string]any{"name": "Claude Opus"},
+		"claude-sonnet": map[string]any{
+			"name":  "claude-sonnet",
+			"limit": map[string]any{"context": 1e6, "output": 64000.0},
+		},
+		"glm":     map[string]any{"name": "glm"},
+		"gpt-sol": map[string]any{"name": "gpt-sol"},
 	}
-	if cfg["$schema"] != "https://opencode.ai/config.json" || cfg["model"] != nil || provider["npm"] != "@ai-sdk/openai-compatible" || provider["name"] != "Aiven AI Gateway" || options["baseURL"] != g.URL+"/v1" || options["apiKey"] != "{file:~/.config/aiven/ai-gateway-keys/"+creds.Name(g.URL)+"}" || !reflect.DeepEqual(got, want) {
+	if cfg["$schema"] != "https://opencode.ai/config.json" || cfg["model"] != nil ||
+		provider["npm"] != "@ai-sdk/openai-compatible" ||
+		provider["name"] != "Aiven AI Gateway" ||
+		options["baseURL"] != g.URL+"/v1" ||
+		options["apiKey"] != "{file:~/.config/aiven/ai-gateway-keys/"+creds.Name(g.URL)+"}" ||
+		!reflect.DeepEqual(got, want) {
 		t.Errorf("cfg = %v, provider = %v, models = %v", cfg, provider, got)
 	}
 }
@@ -54,7 +63,10 @@ func TestOpencodeDefaultsToFirstAliasWithoutSonnet(t *testing.T) {
 func TestOpencodeDefaultsToProductionSonnet(t *testing.T) {
 	s := newSession(t, newGatewayDouble(t)).loggedIn(keyProduction)
 	s.setupAndLaunch("opencode")
-	if got := s.launched().argv; !slices.Equal(got, []string{"opencode", "-m", "aiven/claude-sonnet-5-5"}) {
+	if got := s.launched().argv; !slices.Equal(
+		got,
+		[]string{"opencode", "-m", "aiven/claude-sonnet-5-5"},
+	) {
 		t.Errorf("argv = %q", got)
 	}
 }
@@ -87,7 +99,11 @@ func TestOpencodeLeavesTheUsersDefaultAndModelChoiceAlone(t *testing.T) {
 		if got := s.launched().argv; !slices.Equal(got, tc.want) {
 			t.Errorf("argv = %q, want %q", got, tc.want)
 		}
-		if cfg := opencodeConfig(t, s); cfg["model"] != "anthropic/claude" || cfg["$schema"] != "./local.json" {
+		if cfg := opencodeConfig(
+			t,
+			s,
+		); cfg["model"] != "anthropic/claude" ||
+			cfg["$schema"] != "./local.json" {
 			t.Errorf("model %v, $schema %v", cfg["model"], cfg["$schema"])
 		}
 	}

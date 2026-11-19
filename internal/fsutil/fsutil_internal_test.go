@@ -33,7 +33,13 @@ func TestOpenChildRefusesADirectorySwappedForASymlinkAfterInspection(t *testing.
 		t.Fatal(err)
 	}
 	path := filepath.Join(home, "agent")
-	if child, err := openChild(root, "agent", path, info); err == nil || !strings.Contains(err.Error(), path+" is not a regular directory") {
+	if child, err := openChild(
+		root,
+		"agent",
+		path,
+		info,
+	); err == nil ||
+		!strings.Contains(err.Error(), path+" is not a regular directory") {
 		if child != nil {
 			_ = child.Close()
 		}

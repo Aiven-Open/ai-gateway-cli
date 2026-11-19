@@ -65,7 +65,8 @@ func (r redactor) yamlValues(value any, field string) {
 		}
 	case nil:
 	default:
-		if text := fmt.Sprint(value); yamlCredential.MatchString(field) && !r.keeps(field+":", strconv.Quote(text)) {
+		text := fmt.Sprint(value)
+		if yamlCredential.MatchString(field) && !r.keeps(field+":", strconv.Quote(text)) {
 			r.mask(text)
 		}
 	}

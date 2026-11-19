@@ -132,7 +132,12 @@ func (d *Dir) Read(name string) ([]byte, os.FileMode, bool, error) {
 
 // WriteAtomic replaces name with data and mode through an exclusive temp file and a rename. check, when set, runs
 // once the temp file is complete and just before the rename; its error leaves name as it was.
-func (d *Dir) WriteAtomic(name string, data []byte, mode os.FileMode, check func() error) (err error) {
+func (d *Dir) WriteAtomic(
+	name string,
+	data []byte,
+	mode os.FileMode,
+	check func() error,
+) (err error) {
 	path := filepath.Join(d.Path, name)
 	tmp := name + ".tmp" + rand.Text()
 	f, err := d.root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)

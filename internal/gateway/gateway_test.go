@@ -24,9 +24,21 @@ func TestModelsContextWindowFallsBackToMaxInput(t *testing.T) {
 		{"context window alone", `"context_window_tokens":262144.9`, ptr(262144)},
 		{"max input alone", `"max_input_tokens":163840`, ptr(163840)},
 		{"null context window", `"context_window_tokens":null,"max_input_tokens":163840`, ptr(163840)},
-		{"zero context window falls back", `"context_window_tokens":0,"max_input_tokens":163840`, ptr(163840)},
-		{"negative context window falls back", `"context_window_tokens":-100,"max_input_tokens":163840`, ptr(163840)},
-		{"context window wins", `"context_window_tokens":1000000,"max_input_tokens":200000`, ptr(1000000)},
+		{
+			"zero context window falls back",
+			`"context_window_tokens":0,"max_input_tokens":163840`,
+			ptr(163840),
+		},
+		{
+			"negative context window falls back",
+			`"context_window_tokens":-100,"max_input_tokens":163840`,
+			ptr(163840),
+		},
+		{
+			"context window wins",
+			`"context_window_tokens":1000000,"max_input_tokens":200000`,
+			ptr(1000000),
+		},
 		{"zero ignored", `"max_input_tokens":0`, nil},
 		{"negative ignored", `"context_window_tokens":-5,"max_input_tokens":-1`, nil},
 		{"neither", `"object":"model"`, nil},
@@ -37,7 +49,13 @@ func TestModelsContextWindowFallsBackToMaxInput(t *testing.T) {
 				_, _ = w.Write([]byte(`{"data":[{"id":"claude-sonnet",` + tc.fields + `}]}`))
 			}))
 			defer srv.Close()
-			ms, err := gateway.Client{HTTP: gateway.NewHTTPClient(), BaseURL: srv.URL}.Models(context.Background(), "sk")
+			ms, err := gateway.Client{
+				HTTP:    gateway.NewHTTPClient(),
+				BaseURL: srv.URL,
+			}.Models(
+				context.Background(),
+				"sk",
+			)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -87,8 +105,14 @@ func TestProbeSendsOneTokenCompletionAndMapsStatus(t *testing.T) {
 	}{
 		{200, func(err error) bool { return err == nil }},
 		{401, func(err error) bool { return errors.Is(err, gateway.ErrUnauthorized) }},
-		{500, func(err error) bool { var h *gateway.HTTPError; return errors.As(err, &h) && h.Status == 500 }},
-		{302, func(err error) bool { var h *gateway.HTTPError; return errors.As(err, &h) && h.Status == 302 }},
+		{
+			500,
+			func(err error) bool { var h *gateway.HTTPError; return errors.As(err, &h) && h.Status == 500 },
+		},
+		{
+			302,
+			func(err error) bool { var h *gateway.HTTPError; return errors.As(err, &h) && h.Status == 302 },
+		},
 	}
 	for _, tc := range cases {
 		t.Run(http.StatusText(tc.status), func(t *testing.T) {
@@ -103,7 +127,15 @@ func TestProbeSendsOneTokenCompletionAndMapsStatus(t *testing.T) {
 				}
 			}))
 			defer srv.Close()
-			_, err := gateway.Client{HTTP: gateway.NewHTTPClient(), BaseURL: srv.URL}.Probe(context.Background(), "sk", "m\"1", models.ChatCompletions)
+			_, err := gateway.Client{
+				HTTP:    gateway.NewHTTPClient(),
+				BaseURL: srv.URL,
+			}.Probe(
+				context.Background(),
+				"sk",
+				"m\"1",
+				models.ChatCompletions,
+			)
 			if !tc.check(err) {
 				t.Fatalf("err = %v", err)
 			}
@@ -116,19 +148,44 @@ func TestProbeSendsOneTokenCompletionAndMapsStatus(t *testing.T) {
 	srv := httptest.NewServer(http.NotFoundHandler())
 	srv.Close()
 	var unreachable *gateway.UnreachableError
-	if _, err := (gateway.Client{HTTP: gateway.NewHTTPClient(), BaseURL: srv.URL}).Probe(context.Background(), "sk", "m", models.ChatCompletions); !errors.As(err, &unreachable) {
+	if _, err := (gateway.Client{HTTP: gateway.NewHTTPClient(), BaseURL: srv.URL}).Probe(
+		context.Background(),
+		"sk",
+		"m",
+		models.ChatCompletions,
+	); !errors.As(
+		err,
+		&unreachable,
+	) {
 		t.Fatalf("closed server: err = %v, want UnreachableError", err)
 	}
 }
 
 func TestModelsDecodesMaxOutput(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"data":[{"id":"claude-sonnet","max_output_tokens":64000.9},{"id":"gpt-sol","max_output_tokens":0},{"id":"glm"}]}`))
+		_, _ = w.Write(
+			[]byte(
+				`{"data":[{"id":"claude-sonnet","max_output_tokens":64000.9},{"id":"gpt-sol","max_output_tokens":0},{"id":"glm"}]}`,
+			),
+		)
 	}))
 	defer srv.Close()
-	ms, err := gateway.Client{HTTP: gateway.NewHTTPClient(), BaseURL: srv.URL}.Models(context.Background(), "sk")
-	if err != nil || !reflect.DeepEqual(ms[0].MaxOutput, ptr(64000)) || ms[1].MaxOutput != nil || ms[2].MaxOutput != nil {
-		t.Fatalf("err = %v, MaxOutputs = %v %v %v", err, deref(ms[0].MaxOutput), deref(ms[1].MaxOutput), deref(ms[2].MaxOutput))
+	ms, err := gateway.Client{
+		HTTP:    gateway.NewHTTPClient(),
+		BaseURL: srv.URL,
+	}.Models(
+		context.Background(),
+		"sk",
+	)
+	if err != nil || !reflect.DeepEqual(ms[0].MaxOutput, ptr(64000)) || ms[1].MaxOutput != nil ||
+		ms[2].MaxOutput != nil {
+		t.Fatalf(
+			"err = %v, MaxOutputs = %v %v %v",
+			err,
+			deref(ms[0].MaxOutput),
+			deref(ms[1].MaxOutput),
+			deref(ms[2].MaxOutput),
+		)
 	}
 }
 
@@ -136,8 +193,18 @@ func TestModelsDecodesMaxOutput(t *testing.T) {
 func TestModelsDecodesOwnerAndDisplayNameWithoutControlCharacters(t *testing.T) {
 	cases := []struct{ name, fields, owner, display string }{
 		{"absent", `"object":"model"`, "", ""},
-		{"plain", `"owned_by":"Anthropic","display_name":"Claude Sonnet 5.5"`, "Anthropic", "Claude Sonnet 5.5"},
-		{"escape sequences", `"owned_by":"\u001b[31mEvil","display_name":"Name\u001b]0;title\u0007\r\n"`, "[31mEvil", "Name]0;title"},
+		{
+			"plain",
+			`"owned_by":"Anthropic","display_name":"Claude Sonnet 5.5"`,
+			"Anthropic",
+			"Claude Sonnet 5.5",
+		},
+		{
+			"escape sequences",
+			`"owned_by":"\u001b[31mEvil","display_name":"Name\u001b]0;title\u0007\r\n"`,
+			"[31mEvil",
+			"Name]0;title",
+		},
 		{"bidi override", `"display_name":"abc\u202edcba"`, "", "abcdcba"},
 		{"padding", `"owned_by":"  zai  "`, "zai", ""},
 	}
@@ -147,7 +214,13 @@ func TestModelsDecodesOwnerAndDisplayNameWithoutControlCharacters(t *testing.T) 
 				_, _ = w.Write([]byte(`{"data":[{"id":"claude-sonnet",` + tc.fields + `}]}`))
 			}))
 			defer srv.Close()
-			ms, err := gateway.Client{HTTP: gateway.NewHTTPClient(), BaseURL: srv.URL}.Models(context.Background(), "sk")
+			ms, err := gateway.Client{
+				HTTP:    gateway.NewHTTPClient(),
+				BaseURL: srv.URL,
+			}.Models(
+				context.Background(),
+				"sk",
+			)
 			if err != nil {
 				t.Fatal(err)
 			}

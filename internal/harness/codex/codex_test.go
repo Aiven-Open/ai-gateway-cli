@@ -65,7 +65,10 @@ func setUp(t *testing.T, in harness.Input) (config, profile map[string]any) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{filepath.Join(in.UserHome, ".codex/config.toml"), filepath.Join(in.UserHome, ".codex/aiven.config.toml")}
+	want := []string{
+		filepath.Join(in.UserHome, ".codex/config.toml"),
+		filepath.Join(in.UserHome, ".codex/aiven.config.toml"),
+	}
 	if len(plan.Files) != 2 || plan.Files[0].Path != want[0] || plan.Files[1].Path != want[1] ||
 		!plan.Files[0].Backup || !plan.Files[1].Backup || plan.Argv != nil || plan.Env != nil {
 		t.Fatalf("plan = %+v", plan)
@@ -83,8 +86,11 @@ var aivenProvider = func() map[string]any {
 		list = append(list, a)
 	}
 	return map[string]any{
-		"name": "Aiven AI Gateway", "base_url": baseURL + "/v1", "wire_api": "responses", "requires_openai_auth": false,
-		"auth": map[string]any{"command": command, "args": list},
+		"name":                 "Aiven AI Gateway",
+		"base_url":             baseURL + "/v1",
+		"wire_api":             "responses",
+		"requires_openai_auth": false,
+		"auth":                 map[string]any{"command": command, "args": list},
 	}
 }()
 
@@ -132,25 +138,45 @@ query_params = { a = "1" }
 [mcp_servers.docs]
 command = "docs-mcp"
 `)
-	write(t, filepath.Join(in.UserHome, ".codex/aiven.config.toml"), `model = "gpt-terra"`+"\n"+`web_search = "cached"`+"\n")
+	write(
+		t,
+		filepath.Join(in.UserHome, ".codex/aiven.config.toml"),
+		`model = "gpt-terra"`+"\n"+`web_search = "cached"`+"\n",
+	)
 	cfg, profile := setUp(t, in)
-	if data, _ := os.ReadFile(filepath.Join(in.UserHome, ".codex/config.toml")); !strings.HasPrefix(string(data), "# my settings\nmodel = \"o3\"\n") {
+	if data, _ := os.ReadFile(
+		filepath.Join(in.UserHome, ".codex/config.toml"),
+	); !strings.HasPrefix(
+		string(data),
+		"# my settings\nmodel = \"o3\"\n",
+	) {
 		t.Errorf("config.toml lost its comment or layout:\n%s", data)
 	}
-	if cfg["model"] != "o3" || cfg["model_provider"] != "openai" || cfg["profile"] != nil || cfg["web_search"] != "live" ||
+	if cfg["model"] != "o3" || cfg["model_provider"] != "openai" || cfg["profile"] != nil ||
+		cfg["web_search"] != "live" ||
 		!reflect.DeepEqual(cfg["profiles"], map[string]any{"work": map[string]any{"model": "o3"}}) ||
-		!reflect.DeepEqual(cfg["mcp_servers"], map[string]any{"docs": map[string]any{"command": "docs-mcp"}}) {
+		!reflect.DeepEqual(
+			cfg["mcp_servers"],
+			map[string]any{"docs": map[string]any{"command": "docs-mcp"}},
+		) {
 		t.Errorf("config.toml = %v", cfg)
 	}
 	provider := cfg["model_providers"].(map[string]any)["aiven"].(map[string]any)
-	if provider["env_key"] != nil || provider["experimental_bearer_token"] != nil || provider["requires_openai_auth"] != false || !reflect.DeepEqual(provider["query_params"], map[string]any{"a": "1"}) {
+	if provider["env_key"] != nil || provider["experimental_bearer_token"] != nil ||
+		provider["requires_openai_auth"] != false ||
+		!reflect.DeepEqual(provider["query_params"], map[string]any{"a": "1"}) {
 		t.Errorf("provider = %v", provider)
 	}
-	if profile["model"] != "gpt-terra" || profile["model_provider"] != "aiven" || profile["web_search"] != "disabled" {
+	if profile["model"] != "gpt-terra" || profile["model_provider"] != "aiven" ||
+		profile["web_search"] != "disabled" {
 		t.Errorf("chosen model replaced or web search kept: %v", profile)
 	}
 	in.Default = true
-	if cfg, _ = setUp(t, in); cfg["model_provider"] != "aiven" || cfg["model"] != "gpt-terra" || cfg["web_search"] != "live" {
+	if cfg, _ = setUp(
+		t,
+		in,
+	); cfg["model_provider"] != "aiven" || cfg["model"] != "gpt-terra" ||
+		cfg["web_search"] != "live" {
 		t.Errorf("default not wired: %v", cfg)
 	}
 }
@@ -197,7 +223,8 @@ func TestLaunchSelectsTheAivenProfileAndForwardsArgs(t *testing.T) {
 	in := input(t, "gpt-6.1-sol")
 	in.Args = []string{"exec", "hi"}
 	plan, err := codex.Launch(in)
-	if err != nil || plan.Files != nil || plan.Env != nil || !slices.Equal(plan.Argv, []string{"codex", "-p", "aiven", "exec", "hi"}) {
+	if err != nil || plan.Files != nil || plan.Env != nil ||
+		!slices.Equal(plan.Argv, []string{"codex", "-p", "aiven", "exec", "hi"}) {
 		t.Fatalf("plan = %+v, %v", plan, err)
 	}
 }
@@ -228,7 +255,11 @@ func TestReadyAcceptsSetupAndCompatibleManualWiring(t *testing.T) {
 	}
 	write(t, config, manual)
 	write(t, profile, "model = \"gpt-6.1-sol\"\n")
-	if _, err := codex.Ready(in.UserHome, baseURL); err == nil || !strings.Contains(err.Error(), "no Aiven model selection") {
+	if _, err := codex.Ready(
+		in.UserHome,
+		baseURL,
+	); err == nil ||
+		!strings.Contains(err.Error(), "no Aiven model selection") {
 		t.Errorf("Ready without the profile's provider: %v", err)
 	}
 }
@@ -243,10 +274,17 @@ func TestSetupMovesTheLegacyProfileAndDropsTheTableLeftEmpty(t *testing.T) {
 	if profile["model"] != "x" {
 		t.Errorf("legacy model not moved: %v", profile)
 	}
-	write(t, filepath.Join(in.UserHome, ".codex/config.toml"),
-		"[profiles.aiven]\nmodel = \"x\"\nmodel_reasoning_effort = \"high\"\nmodel_provider = \"openai\"\n")
+	write(
+		t,
+		filepath.Join(in.UserHome, ".codex/config.toml"),
+		"[profiles.aiven]\nmodel = \"x\"\nmodel_reasoning_effort = \"high\"\nmodel_provider = \"openai\"\n",
+	)
 	write(t, filepath.Join(in.UserHome, ".codex/aiven.config.toml"), "model = \"gpt-terra\"\n")
-	if _, profile = setUp(t, in); profile["model"] != "gpt-terra" || profile["model_reasoning_effort"] != "high" ||
+	if _, profile = setUp(
+		t,
+		in,
+	); profile["model"] != "gpt-terra" ||
+		profile["model_reasoning_effort"] != "high" ||
 		profile["model_provider"] != "aiven" {
 		t.Errorf("profile file's own settings replaced or legacy setting lost: %v", profile)
 	}
@@ -270,7 +308,12 @@ func TestReadyRefusesIncompatibleWiring(t *testing.T) {
 		for i, a := range args {
 			quoted[i] = strconv.Quote(a)
 		}
-		return "[model_providers.aiven.auth]\ncommand = " + strconv.Quote(command) + "\nargs = [" + strings.Join(quoted, ", ") + "]\n", quoted[len(quoted)-1]
+		return "[model_providers.aiven.auth]\ncommand = " + strconv.Quote(
+			command,
+		) + "\nargs = [" + strings.Join(
+			quoted,
+			", ",
+		) + "]\n", quoted[len(quoted)-1]
 	}
 	helper, script := auth(baseURL)
 	otherGateway, _ := auth(config.DefaultBaseURL)
@@ -293,7 +336,11 @@ func TestReadyRefusesIncompatibleWiring(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			home := t.TempDir()
 			write(t, filepath.Join(home, ".codex/config.toml"), tc.config)
-			write(t, filepath.Join(home, ".codex/aiven.config.toml"), "model = \"gpt-6.1-sol\"\nmodel_provider = \"aiven\"\n")
+			write(
+				t,
+				filepath.Join(home, ".codex/aiven.config.toml"),
+				"model = \"gpt-6.1-sol\"\nmodel_provider = \"aiven\"\n",
+			)
 			if _, err := codex.Ready(home, baseURL); err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v, want %q", err, tc.want)
 			}
