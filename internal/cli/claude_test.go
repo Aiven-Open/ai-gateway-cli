@@ -718,8 +718,16 @@ func TestClaudeConnectWritesGatewaySettingsBesideTheUsersOwn(t *testing.T) {
 	path := filepath.Join(s.fakeHome, ".claude", "aiven.settings.json")
 	backup := fsutil.BackupPath(path, fixedNow)
 	r := s.run("setup", "--key-stdin", "--yes", "claude")
+	hasDirect := strings.Contains(
+		r.stderr,
+		"directly\n  claude --settings ~/.claude/aiven.settings.json\n",
+	)
+	if runtime.GOOS == "windows" {
+		hasDirect = strings.Contains(r.stderr, "directly\n  claude --settings "+path+"\n") ||
+			strings.Contains(r.stderr, "directly\n  claude --settings \""+path+"\"\n")
+	}
 	if r.code != 0 || len(s.runner.calls) != 0 ||
-		r.stdout != "" || !strings.Contains(r.stderr, "written: "+path+" (previous version: "+backup+")\n") || !strings.Contains(r.stderr, "directly\n  claude --settings ~/.claude/aiven.settings.json\n") {
+		r.stdout != "" || !strings.Contains(r.stderr, "written: "+path+" (previous version: "+backup+")\n") || !hasDirect {
 		t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
 	}
 	if data, _ := os.ReadFile(

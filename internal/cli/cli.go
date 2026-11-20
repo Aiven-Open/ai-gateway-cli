@@ -134,14 +134,18 @@ type helpCommand struct {
 }
 
 var helpCommands = []helpCommand{
-	{"setup", "[harness] [--key-stdin] [-y|--yes] [--plain]", []string{
-		"Check a key, choose models, preview and approve changes, then save and write.",
-		"List models; send one minimal request per configured protocol and model.",
-		"These basic checks may incur usage; they do not test native tool requests.",
-		"Never starts a session. Without a harness, a terminal offers installed tools.",
-		"Interactive steps support Esc / Shift+Tab to go back before saving.",
-		"Enter and --yes keep direct native tool defaults unchanged.",
-	}},
+	{
+		"setup",
+		"[harness] [--key-stdin] [-y|--yes] [--plain]",
+		[]string{
+			"Check a key, choose models, preview and approve changes, then save and write.",
+			"List models; send one minimal request per configured protocol and model.",
+			"These basic checks may incur usage; they do not test native tool requests.",
+			"Never starts a session. Without a harness, a terminal offers installed tools.",
+			"Interactive steps support Esc / Shift+Tab to go back before saving.",
+			"Interactive setup sets Aiven as default; --yes leaves tool defaults unchanged.",
+		},
+	},
 	{"launch", "[harness] [--plain] [-- native args]", []string{
 		"Start one configured tool. Setup is required first; launch writes no",
 		"configuration. Without a harness, a terminal offers one installed tool.",
