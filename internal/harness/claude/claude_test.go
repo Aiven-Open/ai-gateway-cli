@@ -107,10 +107,9 @@ func TestSetupWritesTheGatewaySettingsBesideTheUsersOwn(t *testing.T) {
 		"FOO":                             "bar",
 		"ANTHROPIC_BASE_URL":              baseURL,
 		"ANTHROPIC_DEFAULT_OPUS_MODEL":    "claude-opus[1m]",
-		"ANTHROPIC_DEFAULT_SONNET_MODEL":  "glm[1m]",
-		"ANTHROPIC_DEFAULT_HAIKU_MODEL":   "glm[1m]",
-		"ANTHROPIC_DEFAULT_FABLE_MODEL":   "",
-		"ANTHROPIC_CUSTOM_MODEL_OPTION":   "gpt-sol",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL":  "claude-opus[1m]",
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL":   "claude-opus[1m]",
+		"ANTHROPIC_DEFAULT_FABLE_MODEL":   "claude-opus[1m]",
 		"ANTHROPIC_AUTH_TOKEN":            "",
 		"ANTHROPIC_API_KEY":               "",
 		"CLAUDE_CODE_USE_BEDROCK":         "",
@@ -121,7 +120,7 @@ func TestSetupWritesTheGatewaySettingsBesideTheUsersOwn(t *testing.T) {
 		"CLAUDE_CODE_MAX_CONTEXT_TOKENS":  "",
 		"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "",
 	}
-	if !reflect.DeepEqual(got["env"], wantEnv) || got["model"] != "glm[1m]" ||
+	if !reflect.DeepEqual(got["env"], wantEnv) || got["model"] != "claude-opus[1m]" ||
 		got["apiKeyHelper"] != claude.APIKeyHelper(baseURL) ||
 		!reflect.DeepEqual(got["permissions"], map[string]any{"allow": []any{"Bash(ls)"}}) {
 		t.Errorf("settings = %v", got)
@@ -159,7 +158,7 @@ func TestSetupWiresTheUsersSettingsOnlyWhenAskedToMakeTheGatewayTheDefault(t *te
 		t,
 		plan.Files[1].Data,
 	); got["apiKeyHelper"] != claude.APIKeyHelper(baseURL) ||
-		got["model"] != "glm[1m]" {
+		got["model"] != "claude-opus[1m]" {
 		t.Errorf("settings.json = %v", got)
 	}
 }
@@ -175,9 +174,9 @@ func TestSetupKeepsAChosenModelAndDeclaresAWindowUnderOneMillion(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := decode(t, plan.Files[0].Data)
-	if env, _ := got["env"].(map[string]any); env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] != "262144" ||
+	if env, _ := got["env"].(map[string]any); env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] != "" ||
 		env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] != "" ||
-		got["model"] != "glm-fast" {
+		got["model"] != "claude-opus[1m]" {
 		t.Errorf("settings = %v", got)
 	}
 	write(t, filepath.Join(in.UserHome, claude.SettingsFile), string(plan.Files[0].Data))
@@ -245,6 +244,7 @@ func TestSetupDropsAOneMillionSuffixTheCatalogueNoLongerSupports(t *testing.T) {
 	in := input(t)
 	in.Table = []models.Model{
 		{Alias: "glm-fast", Context: ptr(262_144)},
+		{Alias: "claude-sonnet", Context: ptr(262_144)},
 		{Alias: "claude-opus", Context: ptr(1_000_000)},
 	}
 	for _, tc := range []struct{ field, value, want string }{
@@ -545,7 +545,8 @@ func TestLaunchPassesOnlyLauncherOwnedSettingsAndTheKeyHelper(t *testing.T) {
 	}
 	inline := decode(t, []byte(plan.Argv[2]))
 	env, _ := inline["env"].(map[string]any)
-	if inline["apiKeyHelper"] != claude.APIKeyHelper(baseURL) || inline["model"] != "glm[1m]" ||
+	if inline["apiKeyHelper"] != claude.APIKeyHelper(baseURL) ||
+		inline["model"] != "claude-opus[1m]" ||
 		env["ANTHROPIC_BASE_URL"] != baseURL ||
 		env["ANTHROPIC_DEFAULT_OPUS_MODEL"] != "claude-opus[1m]" ||
 		env["ANTHROPIC_AUTH_TOKEN"] != "" {
@@ -560,8 +561,8 @@ func TestLaunchPassesOnlyLauncherOwnedSettingsAndTheKeyHelper(t *testing.T) {
 		t.Errorf("key in argv: %q", plan.Argv)
 	}
 	for _, kv := range []string{
-		"ANTHROPIC_MODEL=glm[1m]", "ANTHROPIC_AUTH_TOKEN=", "ANTHROPIC_API_KEY=", "ANTHROPIC_DEFAULT_OPUS_MODEL_NAME=claude-opus (gateway)",
-		"ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION=Claude Opus via Aiven AI Gateway", "ANTHROPIC_DEFAULT_FABLE_MODEL_NAME=",
+		"ANTHROPIC_MODEL=claude-opus[1m]", "ANTHROPIC_AUTH_TOKEN=", "ANTHROPIC_API_KEY=", "ANTHROPIC_DEFAULT_OPUS_MODEL_NAME=claude-opus (gateway)",
+		"ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION=Claude Opus via Aiven AI Gateway", "ANTHROPIC_CUSTOM_MODEL_OPTION=",
 	} {
 		if !slices.Contains(plan.Env, kv) {
 			t.Errorf("env lacks %q: %q", kv, plan.Env)
@@ -675,7 +676,7 @@ func TestSetupAndLaunchTreatABlankModelAsNoChoice(t *testing.T) {
 	path := filepath.Join(in.UserHome, claude.SettingsFile)
 	write(t, path, `{"model":"[1m]"}`)
 	plan, err := claude.Setup(in)
-	if err != nil || decode(t, plan.Files[0].Data)["model"] != "glm[1m]" {
+	if err != nil || decode(t, plan.Files[0].Data)["model"] != "claude-opus[1m]" {
 		t.Errorf("blank model kept by setup: %v, %s", err, plan.Files[0].Data)
 	}
 	// Setup sets the model only when the file has none; one it cannot read as a name is the user's to fix.
@@ -683,7 +684,7 @@ func TestSetupAndLaunchTreatABlankModelAsNoChoice(t *testing.T) {
 	if plan, err := claude.Setup(
 		in,
 	); err != nil ||
-		decode(t, plan.Files[0].Data)["model"] == "glm[1m]" {
+		decode(t, plan.Files[0].Data)["model"] == "claude-opus[1m]" {
 		t.Errorf("non-string model replaced by setup: %v, %s", err, plan.Files[0].Data)
 	}
 	write(
@@ -696,7 +697,7 @@ func TestSetupAndLaunchTreatABlankModelAsNoChoice(t *testing.T) {
 	if plan, err := claude.Launch(
 		in,
 	); err != nil ||
-		!slices.Contains(plan.Env, "ANTHROPIC_MODEL=glm[1m]") {
+		!slices.Contains(plan.Env, "ANTHROPIC_MODEL=claude-opus[1m]") {
 		t.Errorf("blank model used by launch: %v, %q", err, plan.Env)
 	}
 }
@@ -709,7 +710,7 @@ func TestLaunchCarriesUsablePinsIntoTheInlineSettings(t *testing.T) {
 	}{
 		{"unusable pins", `{"model":5}`,
 			`{"env":{"ANTHROPIC_MODEL":5,"ANTHROPIC_DEFAULT_OPUS_MODEL":["gpt-sol"],"ANTHROPIC_DEFAULT_HAIKU_MODEL":null,"ANTHROPIC_DEFAULT_SONNET_MODEL":"[1m]"}}`,
-			map[string]string{"ANTHROPIC_MODEL": "glm[1m]", "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus[1m]", "ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm[1m]", "ANTHROPIC_DEFAULT_SONNET_MODEL": "glm[1m]"}},
+			map[string]string{"ANTHROPIC_MODEL": "claude-opus[1m]", "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus[1m]", "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-opus[1m]", "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-opus[1m]"}},
 		{"blank local clears shared", `{"env":{"ANTHROPIC_DEFAULT_OPUS_MODEL":"gpt-sol[1m]"}}`, `{"env":{"ANTHROPIC_DEFAULT_OPUS_MODEL":""}}`,
 			map[string]string{"ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus[1m]"}},
 		{"pin not granted", `{}`, `{"env":{"ANTHROPIC_DEFAULT_SONNET_MODEL":"ghost-9[1m]"}}`,
@@ -758,7 +759,7 @@ func TestLaunchDeclaresTheMainWindowOnlyUnderOneMillion(t *testing.T) {
 		table []models.Model
 		want  string
 	}{
-		{"262K main", []models.Model{{Alias: "glm-fast", Context: ptr(262_144)}, {Alias: "claude-opus", Context: ptr(1_000_000)}}, "CLAUDE_CODE_MAX_CONTEXT_TOKENS=262144"},
+		{"262K main", []models.Model{{Alias: "glm-fast", Context: ptr(262_144)}}, "CLAUDE_CODE_MAX_CONTEXT_TOKENS=262144"},
 		{"200K non-claude main", []models.Model{{Alias: "glm-4.7-flash", Context: ptr(200_000)}}, "CLAUDE_CODE_MAX_CONTEXT_TOKENS=200000"},
 		{"500K gateway alias", []models.Model{{Alias: "claude-opus", Context: ptr(500_000)}}, "CLAUDE_CODE_MAX_CONTEXT_TOKENS=500000"},
 		{"200K recognised main", []models.Model{{Alias: "claude-haiku-4-5", Context: ptr(200_000)}}, "CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000"},
@@ -921,8 +922,8 @@ func TestEffectiveResolvesLayeredModelAndSelectingPath(t *testing.T) {
 		in := input(t)
 		write(t, filepath.Join(in.UserHome, ".claude/settings.json"), `{}`)
 		_, alias, err := claude.Effective(in.Table, in.UserHome, "", nil)
-		if err != nil || alias != "glm" {
-			t.Errorf("Effective = %q, %v; want glm", alias, err)
+		if err != nil || alias != "claude-opus" {
+			t.Errorf("Effective = %q, %v; want claude-opus", alias, err)
 		}
 	})
 	t.Run("explicit dedicated choice overrides ungranted user ANTHROPIC_MODEL", func(t *testing.T) {
@@ -1059,7 +1060,7 @@ func TestSetupWithPresetReplacesModelAndSlotsAndRecomputesWindow(t *testing.T) {
 		env["ANTHROPIC_DEFAULT_SONNET_MODEL"] != "glm-5[1m]" ||
 		env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] != "glm-4.7-flash" ||
 		env["ANTHROPIC_DEFAULT_FABLE_MODEL"] != "glm-5[1m]" ||
-		env["ANTHROPIC_CUSTOM_MODEL_OPTION"] != "glm-5[1m]" ||
+		env["ANTHROPIC_CUSTOM_MODEL_OPTION"] != nil ||
 		env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] != "" ||
 		env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] != "" ||
 		env["FOO"] != "bar" {
@@ -1096,7 +1097,7 @@ func TestSetupWithCustomModelAlignsAllSlotsAndRecomputesWindow(t *testing.T) {
 		env["ANTHROPIC_DEFAULT_SONNET_MODEL"] != "deepseek-v3.2" ||
 		env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] != "deepseek-v3.2" ||
 		env["ANTHROPIC_DEFAULT_FABLE_MODEL"] != "deepseek-v3.2" ||
-		env["ANTHROPIC_CUSTOM_MODEL_OPTION"] != "gpt-6.1-sol" ||
+		env["ANTHROPIC_CUSTOM_MODEL_OPTION"] != nil ||
 		env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] != "163840" ||
 		env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] != "" ||
 		env["KEEP"] != "1" {

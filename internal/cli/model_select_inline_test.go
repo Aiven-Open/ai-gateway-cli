@@ -117,8 +117,8 @@ func TestInlinePatternYBadgesUserClaudeLayerResolvesInlineAndTogglesDirect(t *te
 				{picked: []int{0, 3}},
 				// Beat 2 (Models inline conflict fix): 0 = Switch Claude Code -> claude-sonnet-5-5 & use Recommended defaults
 				{picked: []int{0}},
-				// Beat 3 (Direct invocation): 1 = Yes — all 2 tools directly (toggles asDefault ON!)
-				{picked: []int{1}},
+				// Beat 3 (Direct invocation): 0 = Yes — all 2 tools directly (default, toggles asDefault ON!)
+				{picked: []int{0}},
 				// Review table: 0 = Apply all
 				{picked: []int{0}},
 			},
@@ -200,12 +200,12 @@ func TestInlineBackNavigationMemoizesProbesAndUsesInlineEnvKeyMenu(t *testing.T)
 				{picked: []int{1}},
 				// Beat 2 (Models): 1 = Open-weight (glm-5)
 				{picked: []int{1}},
-				// Beat 3 (Direct): 0 = No
-				{picked: []int{0}},
+				// Beat 3 (Direct): 1 = No
+				{picked: []int{1}},
 				// Review: errBack -> returns to Beat 3!
 				{err: errBack},
-				// Beat 3 again: 1 = Yes (direct opencode!)
-				{picked: []int{1}},
+				// Beat 3 again: 0 = Yes (direct opencode!)
+				{picked: []int{0}},
 				// Review again: 0 = Apply
 				{picked: []int{0}},
 			},

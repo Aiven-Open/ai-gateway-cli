@@ -254,7 +254,7 @@ func printReviewTable(u ui, env config.Env, pending []pendingPreview, table []mo
 	for _, item := range pending {
 		t := item.target
 		model := resolvedToolModel(t.out.tool, env, table, t.plan, t.out.selection)
-		direct := "no (launch only)"
+		direct := "launch only"
 		if t.out.asDefault {
 			direct = "yes"
 		}
@@ -273,7 +273,7 @@ func printReviewTable(u ui, env config.Env, pending []pendingPreview, table []mo
 		})
 	}
 	u.printf("\n")
-	u.table(2, []string{"TOOL", "DEFAULT MODEL", "DIRECT", "FILES"}, rows)
+	u.table(2, []string{"TOOL", "DEFAULT MODEL", "DEFAULT", "FILES"}, rows)
 }
 
 func printSinglePreviewHeader(u ui, item pendingPreview, env config.Env) {
@@ -312,9 +312,9 @@ func printFileSummary(u ui, indent int, item pendingPreview, env config.Env) {
 	}
 	if setupTools[tool].bin != "" {
 		if item.target.out.asDefault {
-			u.line(indent, "Direct invocation: Aiven becomes the default for "+toolLabel(tool))
+			u.line(indent, "Default provider: Aiven becomes the default for "+toolLabel(tool))
 		} else {
-			u.line(indent, "Direct invocation: left as it is")
+			u.line(indent, "Default provider: left as it is")
 		}
 	}
 }
@@ -336,7 +336,7 @@ func promptMultiReview(deps Deps, p presenter, count int, allowBack bool) (int, 
 		}
 		actions := []int{multiActionApply, multiActionInspect}
 		if allowBack {
-			opts = append(opts, option{label: "Back", detail: "change direct invocation or models"})
+			opts = append(opts, option{label: "Back", detail: "change default provider or models"})
 			actions = append(actions, multiActionBack)
 		}
 		opts = append(opts, option{label: "Cancel", detail: "leave keys and files unchanged"})
@@ -358,7 +358,7 @@ func promptMultiReview(deps Deps, p presenter, count int, allowBack bool) (int, 
 	p.ui.line(4, "2) Inspect redacted diffs (view unified diffs, then return here)")
 	maxOpt := 3
 	if allowBack {
-		p.ui.line(4, "3) Back (change direct invocation or models)")
+		p.ui.line(4, "3) Back (change default provider or models)")
 		p.ui.line(4, "4) Cancel (leave keys and files unchanged)")
 		maxOpt = 4
 	} else {
@@ -428,7 +428,7 @@ func approveSingleInteractive(
 			acts = append(acts, actFull)
 		}
 		if allowBack {
-			opts = append(opts, option{label: "Back", detail: "change direct invocation or model"})
+			opts = append(opts, option{label: "Back", detail: "change default provider or model"})
 			acts = append(acts, actBack)
 		}
 		opts = append(opts, option{label: "Cancel", detail: "leave keys and files unchanged"})
@@ -490,7 +490,7 @@ func approveSingleInteractive(
 	backOpt := 0
 	if allowBack {
 		backOpt = optNum
-		p.ui.line(4, fmt.Sprintf("%d) Back (change direct invocation or model)", backOpt))
+		p.ui.line(4, fmt.Sprintf("%d) Back (change default provider or model)", backOpt))
 		optNum++
 	}
 	cancelOpt := optNum

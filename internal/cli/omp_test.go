@@ -73,7 +73,7 @@ func TestOmpNoAndYesFlagLeaveConfigBytesUnchanged(t *testing.T) {
 			if yesFlag {
 				args = append(args, "--yes")
 			} else {
-				s.deps.Prompter = &callbackPrompter{answers: []string{"", "", "y"}}
+				s.deps.Prompter = &callbackPrompter{answers: []string{"", "n", "y"}}
 			}
 			if r := s.run(args...); r.code != 0 {
 				t.Fatalf("%d %s", r.code, r.stderr)

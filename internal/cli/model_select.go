@@ -3,7 +3,6 @@
 package cli
 
 import (
-	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -863,7 +862,6 @@ func selectDirectInvocation(
 	if len(eligible) == 1 {
 		t := eligible[0]
 		tool := t.out.tool
-		bin := cmp.Or(setupTools[tool].bin, tool)
 		nativeFile := nativeDefaultFile(tool, env)
 		yesDetail := "updates " + nativeFile
 		if tool == "claude" && t.existing.present && !t.existing.granted &&
@@ -872,60 +870,60 @@ func selectDirectInvocation(
 		}
 		opts := []option{
 			{
-				label:  fmt.Sprintf("No — only via 'aiven-ai-gateway launch %s'", tool),
-				detail: "keeps existing " + nativeFile + " default",
+				label:  fmt.Sprintf("Yes — make Aiven the default for %s", toolLabel(tool)),
+				detail: yesDetail,
 			},
 			{
-				label:  fmt.Sprintf("Yes — make Aiven default when running %s directly", bin),
-				detail: yesDetail,
+				label:  fmt.Sprintf("No — only via 'aiven-ai-gateway launch %s'", tool),
+				detail: "keeps existing " + nativeFile + " default",
 			},
 		}
 		pickedIdx, err := chooseDirectOption(
 			deps,
 			p,
-			fmt.Sprintf("Run %s directly against Aiven?", bin),
+			fmt.Sprintf("Use Aiven AI Gateway as the default for %s?", toolLabel(tool)),
 			opts,
 		)
 		if err != nil {
 			return "", err
 		}
-		t.out.asDefault = pickedIdx == 1
+		t.out.asDefault = pickedIdx == 0
 		if t.out.asDefault {
-			return fmt.Sprintf("direct %s (%s)", bin, nativeFile), nil
+			return fmt.Sprintf("%s (%s)", toolLabel(tool), nativeFile), nil
 		}
-		return fmt.Sprintf("via 'aiven-ai-gateway launch %s'", tool), nil
+		return "launch command only", nil
 	}
 
 	opts := []option{
 		{
-			label:  "No — only via 'aiven-ai-gateway launch <tool>'",
-			detail: "keeps existing defaults",
+			label:  fmt.Sprintf("Yes — all %d tools", len(eligible)),
+			detail: "running tools directly uses Aiven automatically",
 		},
 		{
-			label:  fmt.Sprintf("Yes — all %d tools directly", len(eligible)),
-			detail: "makes Aiven default when running tools directly",
+			label:  "No — only via 'aiven-ai-gateway launch'",
+			detail: "keeps your current defaults",
 		},
 		{
 			label:  "Choose per tool…",
-			detail: "pick which native configs to update",
+			detail: "pick which tool configs to update",
 		},
 	}
 	for {
-		pickedIdx, err := chooseDirectOption(deps, p, "Run tools directly against Aiven?", opts)
+		pickedIdx, err := chooseDirectOption(deps, p, "Use Aiven AI Gateway as the default?", opts)
 		if err != nil {
 			return "", err
 		}
 		switch pickedIdx {
 		case 0:
 			for _, t := range eligible {
-				t.out.asDefault = false
-			}
-			return "via 'aiven-ai-gateway launch <tool>'", nil
-		case 1:
-			for _, t := range eligible {
 				t.out.asDefault = true
 			}
-			return fmt.Sprintf("all %d tools directly", len(eligible)), nil
+			return fmt.Sprintf("all %d tools", len(eligible)), nil
+		case 1:
+			for _, t := range eligible {
+				t.out.asDefault = false
+			}
+			return "launch command only", nil
 		case 2:
 			summary, err := selectDirectPerTool(deps, p, env, eligible)
 			if errors.Is(err, errBack) {
@@ -961,7 +959,7 @@ func chooseDirectOption(deps Deps, p presenter, title string, opts []option) (in
 	}
 	for range 3 {
 		answer, err := deps.Prompter.ReadLine(
-			`Choose direct-invocation option (Enter for 1, or "back"): `,
+			`Choose default-provider option (Enter for 1, or "back"): `,
 		)
 		if errors.Is(err, io.EOF) || errors.Is(err, errInputEnded) {
 			return 0, errInputEnded
@@ -971,9 +969,9 @@ func chooseDirectOption(deps Deps, p presenter, title string, opts []option) (in
 		}
 		trimmed := strings.ToLower(strings.TrimSpace(answer))
 		switch trimmed {
-		case "", "n", "no":
+		case "", "y", "yes":
 			return 0, nil
-		case "y", "yes":
+		case "n", "no":
 			return 1, nil
 		case "b", "back":
 			return 0, errBack
@@ -983,7 +981,7 @@ func chooseDirectOption(deps Deps, p presenter, title string, opts []option) (in
 		}
 		p.ui.line(2, fmt.Sprintf("Choose a number from 1 to %d.", len(opts)))
 	}
-	return 0, errors.New("no answer: expected direct-invocation option")
+	return 0, errors.New("no answer: expected default-provider option")
 }
 
 func selectDirectPerTool(
@@ -994,7 +992,7 @@ func selectDirectPerTool(
 ) (string, error) {
 	if p.inline != nil {
 		c := choice{
-			title:     "Direct invocation per tool",
+			title:     "Default provider per tool",
 			multi:     true,
 			allowBack: true,
 			rail:      true,
@@ -1034,7 +1032,7 @@ func selectDirectPerTool(
 	}
 	var names []string
 	offered := make([]string, len(eligible))
-	p.ui.line(2, "Choose tools to make Aiven default for direct invocation:")
+	p.ui.line(2, "Choose tools to use Aiven AI Gateway as the default:")
 	for i, t := range eligible {
 		offered[i] = t.out.tool
 		p.ui.line(

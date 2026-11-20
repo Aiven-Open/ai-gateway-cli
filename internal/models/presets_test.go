@@ -12,7 +12,7 @@ import (
 func TestPresetsFilterAndResolveByGrantedCatalogue(t *testing.T) {
 	t.Parallel()
 
-	t.Run("full catalogue offers all three presets in order", func(t *testing.T) {
+	t.Run("full catalogue offers all four presets in order", func(t *testing.T) {
 		t.Parallel()
 		catalogue := []models.Model{
 			{Alias: models.Router},
@@ -20,6 +20,9 @@ func TestPresetsFilterAndResolveByGrantedCatalogue(t *testing.T) {
 			{Alias: "claude-opus-5-5"},
 			{Alias: "claude-sonnet-5-5"},
 			{Alias: "deepseek-v3.2"},
+			{Alias: "deepseek-v4.1-flash"},
+			{Alias: "gemini-3.8-flash"},
+			{Alias: "gemini-4-argon"},
 			{Alias: "glm-4.7-flash"},
 			{Alias: "glm-5"},
 			{Alias: "gpt-5.4"},
@@ -31,7 +34,12 @@ func TestPresetsFilterAndResolveByGrantedCatalogue(t *testing.T) {
 		for _, p := range presets {
 			ids = append(ids, p.ID)
 		}
-		wantIDs := []models.PresetID{models.PresetAnthropic, models.PresetOpenAI, models.PresetOpenWeight}
+		wantIDs := []models.PresetID{
+			models.PresetAnthropic,
+			models.PresetOpenAI,
+			models.PresetGemini,
+			models.PresetOpenWeight,
+		}
 		if !slices.Equal(ids, wantIDs) {
 			t.Fatalf("preset ids = %v, want %v", ids, wantIDs)
 		}
@@ -48,14 +56,38 @@ func TestPresetsFilterAndResolveByGrantedCatalogue(t *testing.T) {
 			t.Errorf("OpenAI preset = %+v", oai)
 		}
 
-		ow := presets[2]
-		if ow.Main != "glm-5" || ow.Opus != "glm-5" || ow.Sonnet != "glm-5" ||
-			ow.Haiku != "glm-4.7-flash" || ow.Fable != "glm-5" || ow.Custom != "glm-5" {
+		gem := presets[2]
+		if gem.Main != "gemini-4-argon" || gem.Opus != "gemini-4-argon" ||
+			gem.Sonnet != "gemini-4-argon" || gem.Haiku != "gemini-3.8-flash" {
+			t.Errorf("Gemini preset = %+v", gem)
+		}
+
+		ow := presets[3]
+		if ow.Main != "deepseek-v4.1-flash" || ow.Opus != "deepseek-v4.1-flash" ||
+			ow.Sonnet != "deepseek-v4.1-flash" || ow.Haiku != "deepseek-v4.1-flash" ||
+			ow.Fable != "deepseek-v4.1-flash" || ow.Custom != "deepseek-v4.1-flash" {
 			t.Errorf("Open-weight preset = %+v", ow)
 		}
 	})
 
-	t.Run("open-weight-only LA key offers only Open-weight preset", func(t *testing.T) {
+	t.Run("Gemini-only key resolves Gemini preset and SonnetOrFirst", func(t *testing.T) {
+		t.Parallel()
+		gemOnly := []models.Model{
+			{Alias: "gemini-3.5-flash-lite"},
+			{Alias: "gemini-3.8-flash"},
+			{Alias: "gemini-4-argon"},
+		}
+		presets := models.Presets(gemOnly)
+		if len(presets) != 1 || presets[0].ID != models.PresetGemini ||
+			presets[0].Main != "gemini-4-argon" || presets[0].Haiku != "gemini-3.8-flash" {
+			t.Fatalf("Gemini-only presets = %+v", presets)
+		}
+		if got := models.SonnetOrFirst(gemOnly); got != "gemini-4-argon" {
+			t.Errorf("SonnetOrFirst(Gemini-only) = %q, want gemini-4-argon", got)
+		}
+	})
+
+	t.Run("open-weight-only LA key prefers latest DeepSeek over GLM", func(t *testing.T) {
 		t.Parallel()
 		la := []models.Model{
 			{Alias: "deepseek-v3.2"},
@@ -69,14 +101,14 @@ func TestPresetsFilterAndResolveByGrantedCatalogue(t *testing.T) {
 		if len(presets) != 1 || presets[0].ID != models.PresetOpenWeight {
 			t.Fatalf("presets = %+v, want only Open-weight", presets)
 		}
-		if presets[0].Main != "glm-5" || presets[0].Haiku != "glm-4.7-flash" {
+		if presets[0].Main != "deepseek-v3.2" || presets[0].Haiku != "glm-4.7-flash" {
 			t.Errorf("Open-weight preset = %+v", presets[0])
 		}
-		if got := models.SonnetOrFirst(la); got != "glm-5" {
-			t.Errorf("SonnetOrFirst(LA) = %q, want glm-5", got)
+		if got := models.SonnetOrFirst(la); got != "deepseek-v3.2" {
+			t.Errorf("SonnetOrFirst(LA) = %q, want deepseek-v3.2", got)
 		}
-		if got := models.CodexOrFirst(la); got != "glm-5" {
-			t.Errorf("CodexOrFirst(LA) = %q, want glm-5", got)
+		if got := models.CodexOrFirst(la); got != "deepseek-v3.2" {
+			t.Errorf("CodexOrFirst(LA) = %q, want deepseek-v3.2", got)
 		}
 	})
 
@@ -121,7 +153,7 @@ func TestPresetsFilterAndResolveByGrantedCatalogue(t *testing.T) {
 				[]models.Model{{Alias: "qwen3-coder-480b"}, {Alias: "deepseek-v3.2"}},
 				models.PresetOpenWeight,
 			)
-			if !ok || p.Main != "qwen3-coder-480b" || p.Haiku != "qwen3-coder-480b" {
+			if !ok || p.Main != "deepseek-v3.2" || p.Haiku != "deepseek-v3.2" {
 				t.Fatalf("Open-weight = %+v, %v", p, ok)
 			}
 		},

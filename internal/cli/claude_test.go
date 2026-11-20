@@ -48,22 +48,22 @@ func TestClaudeLaunchesWithGatewayEnvAndOverlay(t *testing.T) {
 		"ANTHROPIC_API_KEY":                          "",
 		"ANTHROPIC_CUSTOM_HEADERS":                   "",
 		"CLAUDE_CODE_USE_BEDROCK":                    "",
-		"ANTHROPIC_MODEL":                            "glm[1m]",
+		"ANTHROPIC_MODEL":                            "claude-sonnet[1m]",
 		"ANTHROPIC_DEFAULT_OPUS_MODEL":               "claude-opus[1m]",
 		"ANTHROPIC_DEFAULT_OPUS_MODEL_NAME":          "claude-opus (gateway)",
 		"ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION":   "Claude Opus via Aiven AI Gateway",
-		"ANTHROPIC_DEFAULT_SONNET_MODEL":             "glm[1m]",
-		"ANTHROPIC_DEFAULT_SONNET_MODEL_NAME":        "glm (gateway)",
-		"ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION": "glm via Aiven AI Gateway",
-		"ANTHROPIC_DEFAULT_HAIKU_MODEL":              "glm[1m]",
-		"ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME":         "glm (gateway)",
-		"ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION":  "glm via Aiven AI Gateway",
-		"ANTHROPIC_DEFAULT_FABLE_MODEL":              "",
-		"ANTHROPIC_DEFAULT_FABLE_MODEL_NAME":         "",
-		"ANTHROPIC_DEFAULT_FABLE_MODEL_DESCRIPTION":  "",
-		"ANTHROPIC_CUSTOM_MODEL_OPTION":              "gpt-sol",
-		"ANTHROPIC_CUSTOM_MODEL_OPTION_NAME":         "gpt-sol (gateway)",
-		"ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION":  "gpt-sol via Aiven AI Gateway",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL":             "claude-sonnet[1m]",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL_NAME":        "claude-sonnet (gateway)",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION": "claude-sonnet via Aiven AI Gateway",
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL":              "claude-sonnet[1m]",
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME":         "claude-sonnet (gateway)",
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION":  "claude-sonnet via Aiven AI Gateway",
+		"ANTHROPIC_DEFAULT_FABLE_MODEL":              "claude-opus[1m]",
+		"ANTHROPIC_DEFAULT_FABLE_MODEL_NAME":         "claude-opus (gateway)",
+		"ANTHROPIC_DEFAULT_FABLE_MODEL_DESCRIPTION":  "Claude Opus via Aiven AI Gateway",
+		"ANTHROPIC_CUSTOM_MODEL_OPTION":              "",
+		"ANTHROPIC_CUSTOM_MODEL_OPTION_NAME":         "",
+		"ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION":  "",
 	}
 	for name, v := range want {
 		if got, ok := c.envVar(name); !ok || got != v {
@@ -81,12 +81,12 @@ func TestClaudeOverlayCarriesModelAndEnvButNotKey(t *testing.T) {
 	overlay := launchSettings(t, s.launched())
 	wantEnv := map[string]any{
 		"ANTHROPIC_BASE_URL":              g.URL,
-		"ANTHROPIC_MODEL":                 "glm[1m]",
+		"ANTHROPIC_MODEL":                 "claude-sonnet[1m]",
 		"ANTHROPIC_DEFAULT_OPUS_MODEL":    "claude-opus[1m]",
-		"ANTHROPIC_DEFAULT_SONNET_MODEL":  "glm[1m]",
-		"ANTHROPIC_DEFAULT_HAIKU_MODEL":   "glm[1m]",
-		"ANTHROPIC_DEFAULT_FABLE_MODEL":   "",
-		"ANTHROPIC_CUSTOM_MODEL_OPTION":   "gpt-sol",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL":  "claude-sonnet[1m]",
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL":   "claude-sonnet[1m]",
+		"ANTHROPIC_DEFAULT_FABLE_MODEL":   "claude-opus[1m]",
+		"ANTHROPIC_CUSTOM_MODEL_OPTION":   "",
 		"ANTHROPIC_API_KEY":               "",
 		"CLAUDE_CODE_USE_BEDROCK":         "",
 		"CLAUDE_CODE_USE_VERTEX":          "",
@@ -97,7 +97,7 @@ func TestClaudeOverlayCarriesModelAndEnvButNotKey(t *testing.T) {
 		"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "",
 	}
 	wantEnv["ANTHROPIC_AUTH_TOKEN"] = ""
-	if overlay["model"] != "glm[1m]" || !reflect.DeepEqual(overlay["env"], wantEnv) {
+	if overlay["model"] != "claude-sonnet[1m]" || !reflect.DeepEqual(overlay["env"], wantEnv) {
 		t.Fatalf("overlay = %v", overlay)
 	}
 }
@@ -132,14 +132,13 @@ func TestClaudeFillsEveryAliasFromClaudeOnlyKey(t *testing.T) {
 	s.setupAndLaunch("claude")
 	c := s.launched()
 	assertEnv(t, c, map[string]string{
-		"ANTHROPIC_MODEL":                "claude-opus[1m]",
+		"ANTHROPIC_MODEL":                "claude-sonnet[1m]",
 		"ANTHROPIC_DEFAULT_OPUS_MODEL":   "claude-opus[1m]",
 		"ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet[1m]",
 		// 200000 is under the 1M floor: no suffix.
 		"ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku",
-		"ANTHROPIC_DEFAULT_FABLE_MODEL": "",
-		// Every alias is taken, so the custom option falls back to the first one.
-		"ANTHROPIC_CUSTOM_MODEL_OPTION": "claude-haiku",
+		"ANTHROPIC_DEFAULT_FABLE_MODEL": "claude-opus[1m]",
+		"ANTHROPIC_CUSTOM_MODEL_OPTION": "",
 	})
 	assertWindow(t, s, c, "", "")
 }
@@ -153,7 +152,7 @@ func TestClaudeFillsEverySlotFromProductionIds(t *testing.T) {
 		"ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-5-5",
 		"ANTHROPIC_DEFAULT_HAIKU_MODEL":  "claude-haiku-5.5",
 		"ANTHROPIC_DEFAULT_FABLE_MODEL":  "claude-opus-5-5",
-		"ANTHROPIC_CUSTOM_MODEL_OPTION":  "gpt-6.1-sol",
+		"ANTHROPIC_CUSTOM_MODEL_OPTION":  "",
 	})
 }
 
@@ -162,7 +161,7 @@ func TestClaudeFallsBackWithinProductionIds(t *testing.T) {
 	s.setupAndLaunch("claude")
 	assertEnv(t, s.launched(), map[string]string{
 		"ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-4-5",
-		"ANTHROPIC_CUSTOM_MODEL_OPTION": "gpt-6-sol",
+		"ANTHROPIC_CUSTOM_MODEL_OPTION": "",
 	})
 }
 
@@ -194,12 +193,12 @@ func assertUnset(t *testing.T, c execCall, names ...string) {
 	}
 }
 
-func TestClaudeMainPrefersFlashOverRouter(t *testing.T) {
+func TestClaudeMainPrefersClaudeOverNonAnthropic(t *testing.T) {
 	s := newSession(t, newGatewayDouble(t)).loggedIn(keyFlash)
 	s.setupAndLaunch("claude")
 	c := s.launched()
 	assertEnv(t, c, map[string]string{
-		"ANTHROPIC_MODEL":              "deepseek-flash[1m]",
+		"ANTHROPIC_MODEL":              "claude-opus[1m]",
 		"ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus[1m]",
 	})
 	assertWindow(t, s, c, "", "")
@@ -221,13 +220,13 @@ func TestClaudeFallsBackToRouterOnlyWhenKeyGrantsNothingElse(t *testing.T) {
 	}
 }
 
-func TestClaudeCustomOptionSkipsRouter(t *testing.T) {
+func TestClaudeCustomOptionStaysEmptyByDefault(t *testing.T) {
 	s := newSession(t, newGatewayDouble(t)).loggedIn(keyFlash)
 	s.setupAndLaunch("claude")
 	assertEnv(
 		t,
 		s.launched(),
-		map[string]string{"ANTHROPIC_CUSTOM_MODEL_OPTION": "deepseek-flash[1m]"},
+		map[string]string{"ANTHROPIC_CUSTOM_MODEL_OPTION": ""},
 	)
 }
 
@@ -417,9 +416,9 @@ func TestClaudeIgnoresUnusablePins(t *testing.T) {
 				t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
 			}
 			assertEnv(t, s.launched(), map[string]string{
-				"ANTHROPIC_MODEL":               "glm[1m]",
+				"ANTHROPIC_MODEL":               "claude-sonnet[1m]",
 				"ANTHROPIC_DEFAULT_OPUS_MODEL":  "claude-opus[1m]",
-				"ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm[1m]",
+				"ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-sonnet[1m]",
 			})
 		})
 	}
@@ -739,10 +738,9 @@ func TestClaudeConnectWritesGatewaySettingsBesideTheUsersOwn(t *testing.T) {
 		"FOO":                             "bar",
 		"ANTHROPIC_BASE_URL":              g.URL,
 		"ANTHROPIC_DEFAULT_OPUS_MODEL":    "claude-opus[1m]",
-		"ANTHROPIC_DEFAULT_SONNET_MODEL":  "glm[1m]",
-		"ANTHROPIC_DEFAULT_HAIKU_MODEL":   "glm[1m]",
-		"ANTHROPIC_DEFAULT_FABLE_MODEL":   "",
-		"ANTHROPIC_CUSTOM_MODEL_OPTION":   "gpt-sol",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL":  "claude-sonnet[1m]",
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL":   "claude-sonnet[1m]",
+		"ANTHROPIC_DEFAULT_FABLE_MODEL":   "claude-opus[1m]",
 		"ANTHROPIC_AUTH_TOKEN":            "",
 		"ANTHROPIC_API_KEY":               "",
 		"CLAUDE_CODE_USE_BEDROCK":         "",
@@ -753,7 +751,7 @@ func TestClaudeConnectWritesGatewaySettingsBesideTheUsersOwn(t *testing.T) {
 		"CLAUDE_CODE_MAX_CONTEXT_TOKENS":  "",
 		"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "",
 	}
-	if !reflect.DeepEqual(got["env"], wantEnv) || got["model"] != "glm[1m]" ||
+	if !reflect.DeepEqual(got["env"], wantEnv) || got["model"] != "claude-sonnet[1m]" ||
 		!reflect.DeepEqual(got["permissions"], map[string]any{"allow": []any{"Bash(ls)"}}) {
 		t.Errorf("settings = %v", got)
 	}

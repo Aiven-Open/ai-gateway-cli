@@ -37,6 +37,8 @@ func init() {
 		`{"id":"claude-opus-5-5","object":"model","created":0,"owned_by":"Anthropic","context_window_tokens":1000000}`,
 		`{"id":"claude-sonnet-5-5","object":"model","created":0,"owned_by":"Anthropic","context_window_tokens":1000000}`,
 		`{"id":"deepseek-v3.2","object":"model","created":0,"owned_by":"DeepSeek"}`,
+		`{"id":"gemini-3.8-flash","object":"model","created":0,"owned_by":"Google","context_window_tokens":1048576}`,
+		`{"id":"gemini-4-argon","object":"model","created":0,"owned_by":"Google","context_window_tokens":1048576}`,
 		`{"id":"glm-4.7-flash","object":"model","created":0,"owned_by":"Z.ai"}`,
 		`{"id":"glm-5","object":"model","created":0,"owned_by":"Z.ai"}`,
 		`{"id":"gpt-5.4","object":"model","created":0,"owned_by":"OpenAI"}`,
@@ -90,14 +92,14 @@ func TestSetupToLaunchPersistsChosenModelWithoutNativeDefault(t *testing.T) {
 			t.Parallel()
 			g := newGatewayDouble(t)
 			s := newSession(t, g).stdin(keyProductionOwned)
-			// Beat 2: 1=Anthropic, 2=OpenAI, 3=Open-weight (glm-5); Beat 3: 1=No (launch only); Review: y=Apply.
-			s.deps.Prompter = &scriptedPrompter{answers: []string{"3", "1", "y"}}
+			// Beat 2: 1=Anthropic, 2=OpenAI, 3=Gemini, 4=Open-weight (deepseek-v3.2); Beat 3: 2=No (launch only); Review: y=Apply.
+			s.deps.Prompter = &scriptedPrompter{answers: []string{"4", "2", "y"}}
 			r := s.run("setup", tc.tool, "--key-stdin", "--plain")
 			if r.code != 0 {
 				t.Fatalf("setup %s: exit %d, stderr:\n%s", tc.tool, r.code, r.stderr)
 			}
 
-			// Verify ai-gateway-models.json persisted glm-5 with mode 0600 on Unix.
+			// Verify ai-gateway-models.json persisted deepseek-v3.2 with mode 0600 on Unix.
 			prefsPath := config.ModelPrefsPath(s.fakeHome)
 			if runtime.GOOS != "windows" {
 				info, err := os.Stat(prefsPath)
@@ -109,8 +111,8 @@ func TestSetupToLaunchPersistsChosenModelWithoutNativeDefault(t *testing.T) {
 				}
 			}
 			gotPref, err := config.LoadModelPref(s.fakeHome, s.env.BaseURL, tc.tool)
-			if err != nil || gotPref != "glm-5" {
-				t.Fatalf("LoadModelPref = %q, %v; want glm-5", gotPref, err)
+			if err != nil || gotPref != "deepseek-v3.2" {
+				t.Fatalf("LoadModelPref = %q, %v; want deepseek-v3.2", gotPref, err)
 			}
 			// Direct invocation stayed OFF.
 			if tc.tool != "opencode" {
@@ -124,26 +126,29 @@ func TestSetupToLaunchPersistsChosenModelWithoutNativeDefault(t *testing.T) {
 				}
 			}
 
-			// 1. launch without args must inject aiven/glm-5!
+			// 1. launch without args must inject aiven/deepseek-v3.2!
 			if lr := s.run("launch", tc.tool); lr.code != 0 {
 				t.Fatalf("launch %s: exit %d, stderr:\n%s", tc.tool, lr.code, lr.stderr)
 			}
-			if got := s.runner.calls[0].argv; !slices.Equal(got, []string{tc.tool, tc.flag, "aiven/glm-5"}) {
-				t.Fatalf("launch argv = %v, want [%s %s aiven/glm-5]", got, tc.tool, tc.flag)
+			if got := s.runner.calls[0].argv; !slices.Equal(
+				got,
+				[]string{tc.tool, tc.flag, "aiven/deepseek-v3.2"},
+			) {
+				t.Fatalf("launch argv = %v, want [%s %s aiven/deepseek-v3.2]", got, tc.tool, tc.flag)
 			}
 
-			// 1b. launch with non-model native args also injects aiven/glm-5 (R1)!
+			// 1b. launch with non-model native args also injects aiven/deepseek-v3.2 (R1)!
 			var extraArgs, wantExtraArgv []string
 			switch tc.tool {
 			case "pi":
 				extraArgs = []string{"--continue"}
-				wantExtraArgv = []string{"pi", "--model", "aiven/glm-5", "--continue"}
+				wantExtraArgv = []string{"pi", "--model", "aiven/deepseek-v3.2", "--continue"}
 			case "omp":
 				extraArgs = []string{"-p", "hi"}
-				wantExtraArgv = []string{"omp", "--model", "aiven/glm-5", "-p", "hi"}
+				wantExtraArgv = []string{"omp", "--model", "aiven/deepseek-v3.2", "-p", "hi"}
 			case "opencode":
 				extraArgs = []string{"run", "--pure", "hi"}
-				wantExtraArgv = []string{"opencode", "run", "-m", "aiven/glm-5", "--pure", "hi"}
+				wantExtraArgv = []string{"opencode", "run", "-m", "aiven/deepseek-v3.2", "--pure", "hi"}
 			}
 			if lr := s.run(append([]string{"launch", tc.tool, "--"}, extraArgs...)...); lr.code != 0 {
 				t.Fatalf("launch extra args %s: exit %d, stderr:\n%s", tc.tool, lr.code, lr.stderr)
@@ -153,12 +158,12 @@ func TestSetupToLaunchPersistsChosenModelWithoutNativeDefault(t *testing.T) {
 			}
 
 			// 2. Explicit native --model/-m after -- still overrides.
-			if lr := s.run("launch", tc.tool, "--", tc.flag, "aiven/deepseek-v3.2"); lr.code != 0 {
+			if lr := s.run("launch", tc.tool, "--", tc.flag, "aiven/glm-5"); lr.code != 0 {
 				t.Fatalf("launch override: exit %d, stderr:\n%s", lr.code, lr.stderr)
 			}
 			if got := s.runner.calls[2].argv; !slices.Equal(
 				got,
-				[]string{tc.tool, tc.flag, "aiven/deepseek-v3.2"},
+				[]string{tc.tool, tc.flag, "aiven/glm-5"},
 			) {
 				t.Fatalf("override argv = %v", got)
 			}
@@ -204,40 +209,40 @@ func TestSetupPlainFreshOpenWeightPresetOnLAKey(t *testing.T) {
 			if r.code != 0 {
 				t.Fatalf("exit %d, stderr %s", r.code, r.stderr)
 			}
-			if !strings.Contains(r.stderr, "1) Open-weight (glm-5") {
+			if !strings.Contains(r.stderr, "1) Open-weight (deepseek-v3.2") {
 				t.Fatalf("expected Open-weight as default option 1:\n%s", r.stderr)
 			}
 			gotProbes := probes()
 			switch tool {
 			case "claude":
-				if !slices.Equal(gotProbes["/v1/messages"], []string{"glm-5"}) {
+				if !slices.Equal(gotProbes["/v1/messages"], []string{"deepseek-v3.2"}) {
 					t.Fatalf("claude probes = %v", gotProbes)
 				}
 				cfg := readJSON(t, filepath.Join(s.fakeHome, claude.SettingsFile))
 				env := cfg["env"].(map[string]any)
-				if cfg["model"] != "glm-5[1m]" || env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] != "glm-4.7-flash" {
+				if cfg["model"] != "deepseek-v3.2" || env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] != "glm-4.7-flash" {
 					t.Fatalf("claude settings = %v", cfg)
 				}
 			case "codex":
-				if !slices.Equal(gotProbes["/v1/responses"], []string{"glm-5"}) {
+				if !slices.Equal(gotProbes["/v1/responses"], []string{"deepseek-v3.2"}) {
 					t.Fatalf("codex probes = %v", gotProbes)
 				}
-				if got := codexConfigOf(t, s).Model; got != "glm-5" {
-					t.Fatalf("codex model = %q, want glm-5", got)
+				if got := codexConfigOf(t, s).Model; got != "deepseek-v3.2" {
+					t.Fatalf("codex model = %q, want deepseek-v3.2", got)
 				}
 			case "pi":
-				if !slices.Contains(gotProbes["/v1/chat/completions"], "glm-5") ||
-					!strings.Contains(r.stderr, "pi --model aiven/glm-5\n") {
+				if !slices.Contains(gotProbes["/v1/chat/completions"], "deepseek-v3.2") ||
+					!strings.Contains(r.stderr, "pi --model aiven/deepseek-v3.2\n") {
 					t.Fatalf("pi probes=%v stderr=%s", gotProbes, r.stderr)
 				}
 			case "opencode":
-				if !slices.Equal(gotProbes["/v1/chat/completions"], []string{"glm-5"}) ||
-					!strings.Contains(r.stderr, "opencode -m aiven/glm-5\n") {
+				if !slices.Equal(gotProbes["/v1/chat/completions"], []string{"deepseek-v3.2"}) ||
+					!strings.Contains(r.stderr, "opencode -m aiven/deepseek-v3.2\n") {
 					t.Fatalf("opencode probes=%v stderr=%s", gotProbes, r.stderr)
 				}
 			case "omp":
-				if !slices.Contains(gotProbes["/v1/chat/completions"], "glm-5") ||
-					!strings.Contains(r.stderr, "omp --model aiven/glm-5\n") {
+				if !slices.Contains(gotProbes["/v1/chat/completions"], "deepseek-v3.2") ||
+					!strings.Contains(r.stderr, "omp --model aiven/deepseek-v3.2\n") {
 					t.Fatalf("omp probes=%v stderr=%s", gotProbes, r.stderr)
 				}
 			}
@@ -288,8 +293,8 @@ func TestSetupZeroInstalledToolsExitsBeforeKeyAndNonInteractiveWithoutYesSavesNo
 		t.Parallel()
 		g := newGatewayDouble(t)
 		s := newSession(t, g).stdin(keyProductionOwned)
-		// Choose Open-weight (glm-5), No direct, Decline (n).
-		s.deps.Prompter = &scriptedPrompter{answers: []string{"3", "1", "n"}}
+		// Choose Open-weight (deepseek-v3.2), No direct (2), Decline (n).
+		s.deps.Prompter = &scriptedPrompter{answers: []string{"4", "2", "n"}}
 		r := s.run("setup", "pi", "--key-stdin", "--plain")
 		if r.code != 0 || !strings.Contains(r.stderr, "declined") {
 			t.Fatalf("exit %d, stderr:\n%s", r.code, r.stderr)
@@ -332,31 +337,31 @@ func TestClaudeUntouchedUserAndProjectLayerRecoveryBoundaries(t *testing.T) {
 			probes := recordProbes(t, g)
 			s := newSession(t, g).stdin(keyOpenWeightLA)
 			s.writeUserSettings("settings.json", `{"env":{"ANTHROPIC_MODEL":"claude-retired"}}`)
-			// Beat 2: 1=Keep unchanged, 2=Open-weight (glm-5); Beat 3: 1=No (direct OFF); Review: 1=Apply.
-			s.deps.Prompter = &scriptedPrompter{answers: []string{"2", "1", "1"}}
+			// Beat 2: 1=Keep unchanged, 2=Open-weight (deepseek-v3.2); Beat 3: 2=No (direct OFF); Review: 1=Apply.
+			s.deps.Prompter = &scriptedPrompter{answers: []string{"2", "2", "1"}}
 			r := s.run("setup", "claude", "--key-stdin", "--plain")
 			if r.code != 0 {
 				t.Fatalf("setup exit %d, stderr:\n%s", r.code, r.stderr)
 			}
-			if got := probes()["/v1/messages"]; !slices.Equal(got, []string{"glm-5"}) {
-				t.Fatalf("probes = %v, want [glm-5]", got)
+			if got := probes()["/v1/messages"]; !slices.Equal(got, []string{"deepseek-v3.2"}) {
+				t.Fatalf("probes = %v, want [deepseek-v3.2]", got)
 			}
 			cfg := readJSON(t, filepath.Join(s.fakeHome, claude.SettingsFile))
 			env := cfg["env"].(map[string]any)
-			if cfg["model"] != "glm-5[1m]" || env["ANTHROPIC_MODEL"] != "" {
-				t.Fatalf("aiven.settings.json = %v, want model=glm-5[1m] and blank ANTHROPIC_MODEL", cfg)
+			if cfg["model"] != "deepseek-v3.2" || env["ANTHROPIC_MODEL"] != "" {
+				t.Fatalf("aiven.settings.json = %v, want model=deepseek-v3.2 and blank ANTHROPIC_MODEL", cfg)
 			}
 			// Untouched ~/.claude/settings.json stays as user left it.
 			userCfg := readJSON(t, filepath.Join(s.fakeHome, ".claude", "settings.json"))
 			if userCfg["env"].(map[string]any)["ANTHROPIC_MODEL"] != "claude-retired" {
 				t.Fatalf("user settings.json was unexpectedly modified: %v", userCfg)
 			}
-			// launch claude must run glm-5[1m], not claude-retired.
+			// launch claude must run deepseek-v3.2, not claude-retired.
 			if lr := s.run("launch", "claude"); lr.code != 0 {
 				t.Fatalf("launch claude exit %d: %s", lr.code, lr.stderr)
 			}
-			if got, _ := s.launched().envVar("ANTHROPIC_MODEL"); got != "glm-5[1m]" {
-				t.Errorf("launch ANTHROPIC_MODEL = %q, want glm-5[1m]", got)
+			if got, _ := s.launched().envVar("ANTHROPIC_MODEL"); got != "deepseek-v3.2" {
+				t.Errorf("launch ANTHROPIC_MODEL = %q, want deepseek-v3.2", got)
 			}
 		},
 	)
@@ -383,27 +388,49 @@ func TestClaudeUntouchedUserAndProjectLayerRecoveryBoundaries(t *testing.T) {
 	})
 }
 
-// R4: Repeat setup (--yes --plain) probes the persisted launcher model (glm-5) rather than SonnetOrFirst.
+// R4: Repeat setup (--yes --plain) probes the persisted launcher model (deepseek-v3.2) rather than SonnetOrFirst.
 func TestRepeatSetupProbesPersistedLauncherModel(t *testing.T) {
 	t.Parallel()
 	g := newGatewayDouble(t)
 	s := newSession(t, g).stdin(keyProductionOwned)
-	// First setup: choose Open-weight (option 3 -> glm-5), direct OFF (1), Apply (1).
-	s.deps.Prompter = &scriptedPrompter{answers: []string{"3", "1", "1"}}
+	// First setup: choose Open-weight (option 4 -> deepseek-v3.2), direct OFF (2), Apply (1).
+	s.deps.Prompter = &scriptedPrompter{answers: []string{"4", "2", "1"}}
 	if r := s.run("setup", "opencode", "--key-stdin", "--plain"); r.code != 0 {
 		t.Fatalf("first setup exit %d: %s", r.code, r.stderr)
 	}
-	// Second setup: --yes --plain with no prompt must probe glm-5 (persisted), not claude-sonnet-5-5!
+	// Second setup: --yes --plain with no prompt must probe deepseek-v3.2 (persisted), not claude-sonnet-5-5!
 	probes := recordProbes(t, g)
 	s.deps.Prompter = nil
 	r := s.run("setup", "opencode", "--yes", "--plain")
 	if r.code != 0 {
 		t.Fatalf("repeat setup exit %d: %s", r.code, r.stderr)
 	}
-	if got := probes()["/v1/chat/completions"]; !slices.Equal(got, []string{"glm-5"}) {
-		t.Fatalf("repeat setup probed %v, want [glm-5]", got)
+	if got := probes()["/v1/chat/completions"]; !slices.Equal(got, []string{"deepseek-v3.2"}) {
+		t.Fatalf("repeat setup probed %v, want [deepseek-v3.2]", got)
 	}
-	if !strings.Contains(r.stderr, "opencode -m aiven/glm-5") {
-		t.Errorf("repeat setup output did not retain glm-5:\n%s", r.stderr)
+	if !strings.Contains(r.stderr, "opencode -m aiven/deepseek-v3.2") {
+		t.Errorf("repeat setup output did not retain deepseek-v3.2:\n%s", r.stderr)
+	}
+}
+
+func TestSetupPlainSelectsGeminiPreset(t *testing.T) {
+	t.Parallel()
+	g := newGatewayDouble(t)
+	probes := recordProbes(t, g)
+	s := newSession(t, g).stdin(keyProductionOwned)
+	// Beat 2: 1=Anthropic, 2=OpenAI, 3=Gemini (gemini-4-argon), 4=Open-weight; Beat 3: 2=No; Review: 1=Apply.
+	s.deps.Prompter = &scriptedPrompter{answers: []string{"3", "2", "1"}}
+	r := s.run("setup", "claude", "--key-stdin", "--plain")
+	if r.code != 0 {
+		t.Fatalf("setup claude Gemini exit %d: %s", r.code, r.stderr)
+	}
+	if got := probes()["/v1/messages"]; !slices.Equal(got, []string{"gemini-4-argon"}) {
+		t.Fatalf("probes = %v, want [gemini-4-argon]", got)
+	}
+	cfg := readJSON(t, filepath.Join(s.fakeHome, claude.SettingsFile))
+	env := cfg["env"].(map[string]any)
+	if cfg["model"] != "gemini-4-argon[1m]" ||
+		env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] != "gemini-3.8-flash[1m]" {
+		t.Fatalf("claude Gemini settings = %v", cfg)
 	}
 }

@@ -68,9 +68,9 @@ func TestSetupAnnouncesEachRequestBeforeSendingItAndSavesOnlyAfterTheProbe(t *te
 	s.deps.Prompter = &scriptedPrompter{answers: []string{"all"}}
 	code := cli.Run(t.Context(), []string{"setup", "--key-stdin", "--yes"}, s.env, s.deps)
 	reqs := seen()
-	// The listing, then one check per distinct protocol and model: Claude Code checks Messages with glm and Pi with
-	// claude-sonnet; Pi checks Chat Completions with aiven-model and OpenCode with claude-sonnet.
-	if code != 0 || len(reqs) != 6 {
+	// The listing, then one check per distinct protocol and model: Claude Code and Pi share Messages with
+	// claude-sonnet; Pi checks Chat Completions with aiven-model and OpenCode with claude-sonnet; Codex Responses.
+	if code != 0 || len(reqs) != 5 {
 		t.Fatalf("exit %d, %d requests, stderr %q", code, len(reqs), stderr.String())
 	}
 	list := reqs[0]

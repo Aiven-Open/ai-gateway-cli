@@ -14,6 +14,7 @@ type PresetID string
 const (
 	PresetAnthropic  PresetID = "anthropic"
 	PresetOpenAI     PresetID = "openai"
+	PresetGemini     PresetID = "gemini"
 	PresetOpenWeight PresetID = "open-weight"
 )
 
@@ -43,20 +44,30 @@ var (
 	openAIOrder = []string{
 		"gpt-6.1-sol", "gpt-6-sol", "gpt-5.4", "gpt-5.5",
 	}
+	geminiMainOrder = []string{
+		"gemini-4-carbon", "gemini-4-argon", "gemini-4-neon",
+		"gemini-3.8-pro", "gemini-3.5-pro", "gemini-2.5-pro",
+	}
+	geminiFastOrder = []string{
+		"gemini-4-hydrogen", "gemini-3.8-flash", "gemini-3.5-flash",
+		"gemini-3.5-flash-lite", "gemini-2.5-flash",
+	}
 	openWeightMainOrder = []string{
-		"glm-5", "qwen3-coder-480b", "gpt-oss-120b", "deepseek-v3.2", "kimi-k3",
+		"deepseek-v4.1", "deepseek-v4", "deepseek-v4.1-flash", "deepseek-v3.5", "deepseek-v3.2",
+		"glm-5.3", "glm-5", "qwen3-coder-480b", "gpt-oss-120b", "kimi-k3",
 		"minimax-m2.5", "glm-4.7", "deepseek-v3.1", "kimi-k2.5", "qwen3-235b", "devstral-2-123b",
 	}
 	openWeightFastOrder = []string{
-		"glm-4.7-flash", "qwen3-coder-30b", "gpt-oss-20b", "gemma-3-27b", "nemotron-nano-3-30b",
+		"deepseek-v4.1-flash", "glm-4.7-flash", "qwen3-coder-30b", "gpt-oss-20b",
+		"gemma-3-27b", "nemotron-nano-3-30b",
 	}
 )
 
 // Presets returns the curated v1 presets that have at least one granted primary model in ms,
-// ordered Anthropic, OpenAI, Open-weight.
+// ordered Anthropic, OpenAI, Gemini, Open-weight.
 func Presets(ms []Model) []Preset {
 	var out []Preset
-	for _, id := range []PresetID{PresetAnthropic, PresetOpenAI, PresetOpenWeight} {
+	for _, id := range []PresetID{PresetAnthropic, PresetOpenAI, PresetGemini, PresetOpenWeight} {
 		if p, ok := FindPreset(ms, id); ok {
 			out = append(out, p)
 		}
@@ -105,6 +116,22 @@ func FindPreset(ms []Model, id PresetID) (Preset, bool) {
 			Fable:  main,
 			Custom: main,
 		}, true
+	case PresetGemini:
+		main := geminiMain(ms)
+		if main == "" {
+			return Preset{}, false
+		}
+		haiku := cmp.Or(FirstGranted(ms, geminiFastOrder...), main)
+		return Preset{
+			ID:     PresetGemini,
+			Name:   "Gemini",
+			Main:   main,
+			Opus:   main,
+			Sonnet: main,
+			Haiku:  haiku,
+			Fable:  main,
+			Custom: main,
+		}, true
 	case PresetOpenWeight:
 		main := FirstGranted(ms, openWeightMainOrder...)
 		if main == "" {
@@ -143,6 +170,26 @@ func openAIMain(ms []Model) string {
 	for _, m := range Sorted(ms) {
 		if strings.HasPrefix(m.Alias, "gpt-") && m.Alias != "gpt-oss" &&
 			!strings.HasPrefix(m.Alias, "gpt-oss-") {
+			return m.Alias
+		}
+	}
+	return ""
+}
+
+func geminiMain(ms []Model) string {
+	if a := FirstGranted(ms, geminiMainOrder...); a != "" {
+		return a
+	}
+	for _, m := range Sorted(ms) {
+		if strings.HasPrefix(m.Alias, "gemini-") && !strings.Contains(m.Alias, "flash") {
+			return m.Alias
+		}
+	}
+	if a := FirstGranted(ms, geminiFastOrder...); a != "" {
+		return a
+	}
+	for _, m := range Sorted(ms) {
+		if strings.HasPrefix(m.Alias, "gemini-") {
 			return m.Alias
 		}
 	}

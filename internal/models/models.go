@@ -61,8 +61,8 @@ func DefaultAlias(ms []Model, prefix string) string {
 	return SonnetOrFirst(ms)
 }
 
-// SonnetOrFirst returns `claude-sonnet-5-5` or `claude-sonnet` when granted, else the Anthropic, OpenAI
-// or Open-weight preference order, else FirstAlias.
+// SonnetOrFirst returns `claude-sonnet-5-5` or `claude-sonnet` when granted, else the Anthropic, OpenAI,
+// Gemini or Open-weight preference order, else FirstAlias.
 func SonnetOrFirst(ms []Model) string {
 	if a := FirstGranted(
 		ms,
@@ -78,6 +78,9 @@ func SonnetOrFirst(ms []Model) string {
 		return p.Main
 	}
 	if p, ok := FindPreset(ms, PresetOpenAI); ok {
+		return p.Main
+	}
+	if p, ok := FindPreset(ms, PresetGemini); ok {
 		return p.Main
 	}
 	return OpenWeightOrFirst(ms)

@@ -44,7 +44,7 @@ func (p *answerPrompter) ReadSecret(prompt string) (string, error) {
 
 func isPickPrompt(p string) bool {
 	return strings.HasPrefix(p, "Numbers or names") || strings.HasPrefix(p, "Apply option for ") ||
-		strings.HasPrefix(p, "Choose model ") || strings.HasPrefix(p, "Choose direct-invocation ") ||
+		strings.HasPrefix(p, "Choose model ") || strings.HasPrefix(p, "Choose default-provider ") ||
 		strings.HasPrefix(p, "Choose apply ")
 }
 
@@ -590,7 +590,7 @@ func TestSetupKeepsThePreviewedBackupNameWhenAnotherRunTakesIt(t *testing.T) {
 
 func TestSetupPreviewsAToolChangeBeforeWritingIt(t *testing.T) {
 	modelAsk := "Choose model option (Enter for 1): "
-	dflt := `Choose direct-invocation option (Enter for 1, or "back"): `
+	dflt := `Choose default-provider option (Enter for 1, or "back"): `
 	ask := "Apply option for codex (Enter for 1): "
 	for _, tc := range []struct {
 		name, want  string
@@ -666,7 +666,7 @@ func TestSetupSummarisesModelListsAndSkipsAConfiguredTool(t *testing.T) {
 		strings.Contains(r.stderr, `"id":`) {
 		t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
 	}
-	p := &answerPrompter{}
+	p := &scriptedPrompter{answers: []string{"", "n"}}
 	s.deps.Prompter = p
 	r = s.stdin(keyProduction).run("setup", "--key-stdin", "pi")
 	if r.code != 0 || !strings.Contains(r.stderr, "Already configured; no file needs a change.\n") ||
@@ -774,16 +774,16 @@ func TestSetupMakesAivenTheDefaultOnlyWhenAsked(t *testing.T) {
 			s := newSession(t, newGatewayDouble(t))
 			path := filepath.Join(s.fakeHome, tc.file)
 			writeFile(t, path, tc.before)
-			ask := `Choose direct-invocation option (Enter for 1, or "back"): `
-			p := &answerPrompter{}
-			s.deps.Prompter = p
+			ask := `Choose default-provider option (Enter for 1, or "back"): `
+			pNo := &scriptedPrompter{answers: []string{"", "n", "1"}}
+			s.deps.Prompter = pNo
 			if r := s.stdin(keyValid).
-				run("setup", "--key-stdin", tc.tool); r.code != 0 || !slices.Contains(p.prompts, ask) ||
+				run("setup", "--key-stdin", tc.tool); r.code != 0 || !slices.Contains(pNo.prompts, ask) ||
 				!strings.Contains(r.stderr, "native default left as it was\n") {
-				t.Fatalf("enter: exit %d, prompts %q, stderr %q", r.code, p.prompts, r.stderr)
+				t.Fatalf("no: exit %d, prompts %q, stderr %q", r.code, pNo.prompts, r.stderr)
 			}
 			if got, _ := os.ReadFile(path); strings.Contains(string(got), tc.want) {
-				t.Fatalf("enter made Aiven the default: %s", got)
+				t.Fatalf("no made Aiven the default: %s", got)
 			}
 			original, _ := os.ReadFile(path)
 			if r := s.stdin(keyValid).
@@ -791,7 +791,8 @@ func TestSetupMakesAivenTheDefaultOnlyWhenAsked(t *testing.T) {
 				!strings.Contains(r.stderr, "native default left as it was\n") {
 				t.Fatalf("--yes: exit %d, stderr %q", r.code, r.stderr)
 			}
-			p.answer = "y"
+			// Enter on Beat 3 defaults to Yes (direct invocation).
+			s.deps.Prompter = &scriptedPrompter{answers: []string{"", "", "1"}}
 			r := s.stdin(keyValid).run("setup", "--key-stdin", tc.tool)
 			if r.code != 0 ||
 				!strings.Contains(r.stderr, "+++ "+path+" (previous version: "+path+".aiven-") ||
@@ -826,12 +827,13 @@ func TestSetupMakesAivenTheDefaultOnlyWhenAsked(t *testing.T) {
 			if bak := latestBackup(t, filepath.Join(fresh.fakeHome, tc.file)); bak != tc.before {
 				t.Errorf("fresh backup = %q, want %q", bak, tc.before)
 			}
-			p.prompts = nil
+			pAgain := &scriptedPrompter{answers: []string{"", ""}}
+			s.deps.Prompter = pAgain
 			if r := s.stdin(keyValid).
-				run("setup", "--key-stdin", tc.tool); r.code != 0 || len(p.prompts) != 2 || !strings.Contains(r.stderr, "Already configured; no file needs a change.") ||
+				run("setup", "--key-stdin", tc.tool); r.code != 0 || len(pAgain.prompts) != 2 || !strings.Contains(r.stderr, "Already configured; no file needs a change.") ||
 				strings.Contains(r.stderr, "Aiven is now the native default") ||
 				strings.Contains(r.stderr, "directly\n  "+tc.tool+"\n") {
-				t.Fatalf("again: exit %d, prompts %q, stderr %q", r.code, p.prompts, r.stderr)
+				t.Fatalf("again: exit %d, prompts %q, stderr %q", r.code, pAgain.prompts, r.stderr)
 			}
 		})
 	}
@@ -913,7 +915,7 @@ func TestTopLevelKeyFlagIsRefusedWithoutEchoingIt(t *testing.T) {
 
 func TestUnrecognisedAnswerIsAskedAgain(t *testing.T) {
 	s := newSession(t, newGatewayDouble(t)).stdin(keyValid)
-	ask := `Choose direct-invocation option (Enter for 1, or "back"): `
+	ask := `Choose default-provider option (Enter for 1, or "back"): `
 	p := &scriptedPrompter{answers: []string{"", "maybe", "maybe", "y", "y"}}
 	s.deps.Prompter = p
 	r := s.run("setup", "--key-stdin", "pi")

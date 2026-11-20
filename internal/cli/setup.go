@@ -440,7 +440,7 @@ func (s *setupSession) runBeats() (approved []approvedWrite, exitCode int, done 
 			if err != nil {
 				return nil, s.run.cancelAfterKey(s.deps, s.table, err), true
 			}
-			s.p.ui.railDone("Direct invocation", summary)
+			s.p.ui.railDone("Default provider", summary)
 			step = beatReview
 
 		case beatReview:

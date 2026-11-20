@@ -365,13 +365,13 @@ func TestSetupWithExplicitSelectionReplacesModelInProfileAndDefaultConfig(t *tes
 	write(t, filepath.Join(in.UserHome, ".codex/config.toml"), "model = \"o3\"\n")
 	in.Selection = harness.ModelSelection{Preset: models.PresetOpenWeight}
 	cfg, profile := setUp(t, in)
-	if profile["model"] != "glm-5" || cfg["model"] != "o3" {
+	if profile["model"] != "deepseek-v3.2" || cfg["model"] != "o3" {
 		t.Fatalf("non-default: profile=%v cfg=%v", profile["model"], cfg["model"])
 	}
 	in.Default = true
-	in.Selection = harness.ModelSelection{Model: "deepseek-v3.2"}
+	in.Selection = harness.ModelSelection{Model: "glm-5"}
 	cfg, profile = setUp(t, in)
-	if profile["model"] != "deepseek-v3.2" || cfg["model"] != "deepseek-v3.2" ||
+	if profile["model"] != "glm-5" || cfg["model"] != "glm-5" ||
 		cfg["model_provider"] != "aiven" {
 		t.Fatalf("default custom: profile=%v cfg=%v", profile["model"], cfg)
 	}

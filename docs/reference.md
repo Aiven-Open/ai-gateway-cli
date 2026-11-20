@@ -55,8 +55,8 @@ layers), interactive `setup` runs three reversible steps before review:
 1. **Harnesses** (bare `setup` only): pre-selected installed tools with
    live status badges and missing-tools footer.
 2. **Models & inline conflict resolution:** offers curated presets
-   (`Anthropic`, `OpenAI`, `Open-weight`, filtered to granted models) and a
-   searchable `Custom model…` picker. For two or more tools, a single menu
+   (`Anthropic`, `OpenAI`, `Gemini`, `Open-weight`, filtered to granted
+   models) and a searchable `Custom model…` picker. For two or more tools, a single menu
    handles `Recommended defaults`, presets, `Customize per tool…`, and
    inline resolution of ungranted Claude Code or Codex models (offering
    `Switch <tool> -> <alias> & use Recommended defaults` when
@@ -65,26 +65,28 @@ layers), interactive `setup` runs three reversible steps before review:
    alias matches). Single-tool runs and `Customize per tool…` prompt per
    tool, keeping existing granted models as `Keep current (<alias>)` and
    defaulting ungranted models to `Keep unchanged (refuse setup)`.
-3. **Direct `<tool>` invocation:** plain-English menu defaulting to
-   launcher-only (`aiven-ai-gateway launch <tool>`), with options to make
-   Aiven the direct default for all selected tools or per tool (naming each
-   native file).
+3. **Default provider:** asks *"Use Aiven AI Gateway as the default?"*,
+   defaulting to `Yes` for all selected tools, with options to keep
+   launcher-only (`aiven-ai-gateway launch`) or choose per tool (naming
+   each config file).
 
-In Claude Code, picking a preset sets `model` (replacing any non-blank
+In Claude Code, recommended defaults stay on Claude models whenever
+Anthropic models are granted (without injecting a cross-vendor custom
+option). Picking a preset sets `model` (replacing any non-blank
 `env.ANTHROPIC_MODEL`) and the preset's tier slots
-(`ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL` and
-`ANTHROPIC_CUSTOM_MODEL_OPTION`), while picking a single custom model aligns
+(`ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL`), while picking a
+single custom model aligns
 all four tier slots to that model and recomputes context-window variables
 and `[1m]`. In Codex, the choice updates `aiven.config.toml` (and canonical
-`config.toml` when direct invocation is selected). In Pi, OpenCode and OMP,
-the full granted catalogue is written to the provider file, the chosen
-default alias is persisted per gateway in
+`config.toml` when Aiven is set as the default provider). In Pi, OpenCode
+and OMP, the full granted catalogue is written to the provider file, the
+chosen default alias is persisted per gateway in
 `~/.config/aiven/ai-gateway-models.json` (`0600`) for `aiven-ai-gateway
-launch <tool>`, and the native default is updated when direct invocation is
-selected.
+launch <tool>`, and the native default is updated when Aiven is set as the
+default provider.
 
 With `--yes` or without a terminal, `setup` skips interactive model and
-direct-invocation menus: fresh configurations use natural defaults
+default-provider menus: fresh configurations use natural defaults
 (falling back through the Open-weight preference order when no Anthropic or
 OpenAI model is granted), existing granted models stay unchanged, and
 ungranted Codex or Claude Code models (across dedicated, user and project

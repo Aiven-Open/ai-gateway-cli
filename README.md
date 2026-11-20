@@ -100,20 +100,19 @@ configuration files:
 | OpenCode | Aiven provider in `~/.config/opencode/opencode.json`, or `opencode.jsonc` when it exists; `$XDG_CONFIG_HOME/opencode` when set | `opencode -m aiven/<alias>` |
 | OMP | Aiven provider in `~/.omp/agent/models.yml` (or existing `models.yaml`) | `omp --model aiven/<alias>` |
 
-Choosing direct invocation during `setup` also updates Claude's
+Setting Aiven as the default provider during `setup` also updates Claude's
 `~/.claude/settings.json`, Codex's top-level model/provider, Pi's
 `~/.pi/agent/settings.json`, OpenCode's `model`, or OMP's
 `modelRoles.default` in `~/.omp/agent/config.yml` (or existing
-`config.yaml`). Leaving direct invocation off keeps native defaults
-untouched; for Pi, OpenCode and OMP, `setup` persists your chosen default
+`config.yaml`). Choosing launch-only keeps native defaults untouched; for Pi, OpenCode and OMP, `setup` persists your chosen default
 model per gateway in `~/.config/aiven/ai-gateway-models.json` (`0600`) so
 `aiven-ai-gateway launch <tool>` uses it automatically (explicit
 `-- --model`/`-m` flags still override, and ungranted persisted aliases fall
 back cleanly to the catalogue default).
 
 Interactive `setup` offers curated presets (`Anthropic`, `OpenAI`,
-`Open-weight`, filtered to models your key grants) and a searchable
-`Custom model…` picker. When an existing Claude Code (including
+`Gemini`, `Open-weight`, filtered to models your key grants) and a
+searchable `Custom model…` picker. When an existing Claude Code (including
 `~/.claude/settings.json` and project `.claude/settings*.json` layers) or
 Codex configuration selects an ungranted model, `setup` badges the conflict
 and offers the matching gateway alias (when known via provider-ID

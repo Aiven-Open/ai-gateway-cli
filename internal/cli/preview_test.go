@@ -105,7 +105,7 @@ func TestConfigureToolNamesTheBackupItKeeps(t *testing.T) {
 		t.Fatalf("outcome %+v, stderr %q", out, stderr)
 	}
 	for _, want := range []string{"Update " + path + "\n", "previous version kept as " + backup + "\n", "+++ " + path + note + "\n",
-		"Direct invocation: left as it is\n", "[3 models: claude-sonnet-5-5, glm-5, … +1 more]"} {
+		"Default provider: left as it is\n", "[3 models: claude-sonnet-5-5, glm-5, … +1 more]"} {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("stderr lacks %q: %q", want, stderr)
 		}
@@ -585,7 +585,7 @@ func TestConfigureToolReportsAPartialWrite(t *testing.T) {
 		stderr,
 		"partially configured; completed "+modelsPath+" (new file); remaining operation failed: replace "+settings,
 	) ||
-		!strings.Contains(stderr, "Direct invocation: Aiven becomes the default for Pi") {
+		!strings.Contains(stderr, "Default provider: Aiven becomes the default for Pi") {
 		t.Errorf("stderr %q", stderr)
 	}
 	if got := readTestFile(t, settings); got != before {

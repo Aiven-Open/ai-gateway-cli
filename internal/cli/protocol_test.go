@@ -577,17 +577,17 @@ func TestSetupClaudeLayeredEffectiveModelProbingAndOverrides(t *testing.T) {
 			name:         "blank ANTHROPIC_MODEL in higher layer clears earlier ungranted pin",
 			userSettings: `{"env":{"ANTHROPIC_MODEL":"claude-retired"}}`,
 			local:        `{"env":{"ANTHROPIC_MODEL":""}}`,
-			wantProbed:   "glm",
+			wantProbed:   "claude-opus-5-5",
 		},
 		{
 			name:         "empty user settings",
 			userSettings: `{}`,
-			wantProbed:   "glm",
+			wantProbed:   "claude-opus-5-5",
 		},
 		{
 			name:         "permissions-only user settings",
 			userSettings: `{"permissions":{"allow":["Bash(ls)"]}}`,
-			wantProbed:   "glm",
+			wantProbed:   "claude-opus-5-5",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

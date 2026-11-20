@@ -198,7 +198,6 @@ func wire(in Input, path string) (harness.File, error) {
 		"ANTHROPIC_DEFAULT_SONNET_MODEL": ids["SONNET"],
 		"ANTHROPIC_DEFAULT_HAIKU_MODEL":  ids["HAIKU"],
 		"ANTHROPIC_DEFAULT_FABLE_MODEL":  ids["FABLE"],
-		"ANTHROPIC_CUSTOM_MODEL_OPTION":  ids["CUSTOM"],
 		"ANTHROPIC_AUTH_TOKEN":           "",
 		"ANTHROPIC_API_KEY":              "",
 		"CLAUDE_CODE_USE_BEDROCK":        "",
@@ -208,6 +207,9 @@ func wire(in Input, path string) (harness.File, error) {
 		"ANTHROPIC_CUSTOM_HEADERS":       "",
 	} {
 		env[k] = v
+	}
+	if ids["CUSTOM"] != "" {
+		env["ANTHROPIC_CUSTOM_MODEL_OPTION"] = ids["CUSTOM"]
 	}
 	for _, chosen := range []struct {
 		in  map[string]any
@@ -253,50 +255,36 @@ func Selected(data []byte) (string, error) {
 	return cmp.Or(running(s, s.main, nil), s.main), nil
 }
 
-// defaultSlots prefers production ids, then historical aliases; an empty tier takes the main model.
+// defaultSlots keeps Claude Code on Claude models whenever Anthropic models are granted, falling back through
+// curated presets (OpenAI, Gemini, Open-weight latest DeepSeek) otherwise. It never injects an unsolicited
+// cross-vendor ANTHROPIC_CUSTOM_MODEL_OPTION.
 func defaultSlots(t []models.Model) slots {
-	s := slots{
-		main: models.FirstGranted(
-			t,
-			"claude-sonnet-5-5",
-			"deepseek-flash",
-			"glm-fast",
-			"glm",
-			"claude-opus",
-		),
-		opus: models.FirstGranted(t, "claude-opus-5-5", "claude-opus", "claude-fable", "claude-sonnet"),
-		sonnet: models.FirstGranted(
-			t,
-			"claude-sonnet-5-5",
-			"glm-fast",
-			"glm",
-			"qwen",
-			"deepseek",
-			"claude-sonnet",
-		),
-		// Haiku 5.5 may be listed as `claude-haiku-5-5` or `claude-haiku-5.5`; the dashed id comes first.
-		haiku: models.FirstGranted(
-			t,
-			"claude-haiku-5-5",
-			"claude-haiku-5.5",
-			"claude-haiku-4-5",
-			"gemini-flash",
-			"gpt-luna",
-			"claude-haiku",
-			"glm-fast",
-		),
-		// A gateway need not serve Fable, so the slot takes Opus first rather than the dearest GPT.
-		fable:  models.FirstGranted(t, "claude-opus-5-5", "gpt-astra", "gpt-terra", "claude-fable"),
-		custom: models.FirstGranted(t, "gpt-6.1-sol", "gpt-6-sol", "gpt-sol", "gpt-terra", "gpt-luna"),
+	if p, ok := models.FindPreset(t, models.PresetAnthropic); ok {
+		return slots{
+			main:   p.Main,
+			opus:   p.Opus,
+			sonnet: p.Sonnet,
+			haiku:  p.Haiku,
+			fable:  p.Fable,
+		}
 	}
-	if s.custom == "" {
-		s.custom = models.FirstNotIn(t, s.opus, s.sonnet, s.haiku, s.fable)
+	for _, id := range []models.PresetID{
+		models.PresetOpenAI,
+		models.PresetGemini,
+		models.PresetOpenWeight,
+	} {
+		if p, ok := models.FindPreset(t, id); ok {
+			return slots{
+				main:   p.Main,
+				opus:   p.Opus,
+				sonnet: p.Sonnet,
+				haiku:  p.Haiku,
+				fable:  p.Fable,
+			}
+		}
 	}
-	s.main = cmp.Or(s.main, models.SonnetOrFirst(t))
-	s.opus = cmp.Or(s.opus, s.main)
-	s.sonnet = cmp.Or(s.sonnet, s.main)
-	s.haiku = cmp.Or(s.haiku, s.main)
-	return s
+	main := models.SonnetOrFirst(t)
+	return slots{main: main, opus: main, sonnet: main, haiku: main, fable: main}
 }
 
 func resolveSlots(t []models.Model, sel harness.ModelSelection) (slots, bool, error) {
@@ -311,7 +299,6 @@ func resolveSlots(t []models.Model, sel harness.ModelSelection) (slots, bool, er
 			sonnet: chosen,
 			haiku:  chosen,
 			fable:  chosen,
-			custom: defaultSlots(t).custom,
 		}, true, nil
 	}
 	p, ok := models.FindPreset(t, sel.Preset)
@@ -324,7 +311,6 @@ func resolveSlots(t []models.Model, sel harness.ModelSelection) (slots, bool, er
 		sonnet: p.Sonnet,
 		haiku:  p.Haiku,
 		fable:  p.Fable,
-		custom: p.Custom,
 	}, true, nil
 }
 
