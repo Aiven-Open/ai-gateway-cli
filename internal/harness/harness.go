@@ -14,6 +14,34 @@ import (
 	"github.com/aiven-open/ai-gateway-cli/internal/models"
 )
 
+// ModelSelection overrides automatic model defaults during setup. Its zero value
+// keeps existing configured models and uses automatic defaults for fresh setups.
+type ModelSelection struct {
+	Preset models.PresetID
+	Model  string
+}
+
+// IsZero reports whether no explicit preset or model was chosen.
+func (s ModelSelection) IsZero() bool { return s.Preset == "" && s.Model == "" }
+
+// ResolveMain returns the chosen main alias against table, or "" when zero or table is empty.
+func (s ModelSelection) ResolveMain(table []models.Model) (string, error) {
+	if s.Model != "" {
+		return s.Model, nil
+	}
+	if s.Preset != "" {
+		if len(table) == 0 {
+			return "", nil
+		}
+		p, ok := models.FindPreset(table, s.Preset)
+		if !ok {
+			return "", fmt.Errorf("preset %q has no granted models", s.Preset)
+		}
+		return p.Main, nil
+	}
+	return "", nil
+}
+
 // Input is what the table-driven harnesses (codex, pi, opencode) need; the table is non-empty.
 type Input struct {
 	Table   []models.Model
@@ -26,6 +54,8 @@ type Input struct {
 	Args []string
 	// Default makes the gateway the native default only during explicitly selected setup.
 	Default bool
+	// Selection overrides the model or preset chosen during setup; zero value preserves automatic defaults.
+	Selection ModelSelection
 }
 
 // File is generated harness configuration. It never carries the gateway key.

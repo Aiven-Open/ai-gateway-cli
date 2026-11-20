@@ -835,3 +835,87 @@ func mustJSON(t *testing.T, v any) []byte {
 	}
 	return data
 }
+
+func TestSetupWithPresetReplacesModelAndSlotsAndRecomputesWindow(t *testing.T) {
+	t.Parallel()
+	in := input(t)
+	in.Table = []models.Model{
+		{Alias: "claude-sonnet-5-5", Context: ptr(1_000_000)},
+		{Alias: "glm-5", Context: ptr(1_000_000)},
+		{Alias: "glm-4.7-flash", Context: ptr(200_000)},
+	}
+	write(t, filepath.Join(in.UserHome, claude.SettingsFile), `{
+		"permissions": {"allow": ["Bash(ls)"]},
+		"model": "claude-retired",
+		"env": {"FOO": "bar", "ANTHROPIC_MODEL": "claude-retired[1m]"}
+	}`)
+	in.Selection = harness.ModelSelection{Preset: models.PresetOpenWeight}
+	plan, err := claude.Setup(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := decode(t, plan.Files[0].Data)
+	env, _ := got["env"].(map[string]any)
+	if got["model"] != "glm-5[1m]" || env["ANTHROPIC_MODEL"] != "glm-5[1m]" ||
+		env["ANTHROPIC_DEFAULT_OPUS_MODEL"] != "glm-5[1m]" ||
+		env["ANTHROPIC_DEFAULT_SONNET_MODEL"] != "glm-5[1m]" ||
+		env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] != "glm-4.7-flash" ||
+		env["ANTHROPIC_DEFAULT_FABLE_MODEL"] != "glm-5[1m]" ||
+		env["ANTHROPIC_CUSTOM_MODEL_OPTION"] != "glm-5[1m]" ||
+		env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] != "" ||
+		env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] != "" ||
+		env["FOO"] != "bar" {
+		t.Fatalf("settings = %v", got)
+	}
+	if !reflect.DeepEqual(got["permissions"], map[string]any{"allow": []any{"Bash(ls)"}}) {
+		t.Errorf("lost permissions: %v", got["permissions"])
+	}
+}
+
+func TestSetupWithCustomModelAlignsAllSlotsAndRecomputesWindow(t *testing.T) {
+	t.Parallel()
+	in := input(t)
+	in.Table = []models.Model{
+		{Alias: "claude-sonnet-5-5", Context: ptr(1_000_000)},
+		{Alias: "deepseek-v3.2", Context: ptr(163_840)},
+		{Alias: "gpt-6.1-sol"},
+	}
+	write(
+		t,
+		filepath.Join(in.UserHome, claude.SettingsFile),
+		`{"model":"claude-sonnet-5-5[1m]","env":{"KEEP":"1"}}`,
+	)
+	in.Selection = harness.ModelSelection{Model: "deepseek-v3.2"}
+	plan, err := claude.Setup(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := decode(t, plan.Files[0].Data)
+	env, _ := got["env"].(map[string]any)
+	if got["model"] != "deepseek-v3.2" ||
+		env["ANTHROPIC_MODEL"] != nil ||
+		env["ANTHROPIC_DEFAULT_OPUS_MODEL"] != "deepseek-v3.2" ||
+		env["ANTHROPIC_DEFAULT_SONNET_MODEL"] != "deepseek-v3.2" ||
+		env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] != "deepseek-v3.2" ||
+		env["ANTHROPIC_DEFAULT_FABLE_MODEL"] != "deepseek-v3.2" ||
+		env["ANTHROPIC_CUSTOM_MODEL_OPTION"] != "gpt-6.1-sol" ||
+		env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] != "163840" ||
+		env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] != "" ||
+		env["KEEP"] != "1" {
+		t.Fatalf("settings = %v", got)
+	}
+
+	// Recognised Claude id below 1M uses CLAUDE_CODE_AUTO_COMPACT_WINDOW.
+	in.Table = append(in.Table, models.Model{Alias: "claude-opus-4-8", Context: ptr(500_000)})
+	in.Selection = harness.ModelSelection{Model: "claude-opus-4-8"}
+	plan, err = claude.Setup(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = decode(t, plan.Files[0].Data)
+	env, _ = got["env"].(map[string]any)
+	if got["model"] != "claude-opus-4-8" || env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] != "500000" ||
+		env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] != "" {
+		t.Fatalf("recognised custom model settings = %v", got)
+	}
+}

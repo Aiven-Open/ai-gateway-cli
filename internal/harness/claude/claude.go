@@ -7,6 +7,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"path/filepath"
 	"regexp"
@@ -46,6 +47,8 @@ type Input struct {
 	WorkDir string
 	// Args are forwarded to claude after `--settings`.
 	Args []string
+	// Selection overrides the model or preset chosen during setup; zero value preserves automatic defaults.
+	Selection harness.ModelSelection
 }
 
 // slots are the aliases chosen for each Claude model slot, before the `[1m]` suffix.
@@ -170,12 +173,20 @@ func wire(in Input, path string) (harness.File, error) {
 	if err != nil {
 		return harness.File{}, err
 	}
-	s := defaultSlots(in.Table)
+	s, explicit, err := resolveSlots(in.Table, in.Selection)
+	if err != nil {
+		return harness.File{}, err
+	}
 	main, ids := wiring(in.Table, s)
 	cfg["apiKeyHelper"] = APIKeyHelper(in.BaseURL)
-	// A model the user chose in this file stays, and so does an ANTHROPIC_MODEL, which Claude Code runs over it. Setup
-	// never sets ANTHROPIC_MODEL, since it would outrank the user's choice. A blank one chooses nothing.
-	if model, ok := cfg["model"].(string); cfg["model"] == nil || ok && bare(model) == "" {
+	if explicit {
+		cfg["model"] = main
+		if v, ok := env["ANTHROPIC_MODEL"].(string); ok && bare(v) != "" {
+			env["ANTHROPIC_MODEL"] = main
+		}
+	} else if model, ok := cfg["model"].(string); cfg["model"] == nil || ok && bare(model) == "" {
+		// A model the user chose in this file stays, and so does an ANTHROPIC_MODEL, which Claude Code runs over it. Setup
+		// never sets ANTHROPIC_MODEL, since it would outrank the user's choice. A blank one chooses nothing.
 		cfg["model"] = main
 	}
 	for k, v := range map[string]string{
@@ -278,11 +289,40 @@ func defaultSlots(t []models.Model) slots {
 	if s.custom == "" {
 		s.custom = models.FirstNotIn(t, s.opus, s.sonnet, s.haiku, s.fable)
 	}
-	s.main = cmp.Or(s.main, models.FirstAlias(t))
+	s.main = cmp.Or(s.main, models.SonnetOrFirst(t))
 	s.opus = cmp.Or(s.opus, s.main)
 	s.sonnet = cmp.Or(s.sonnet, s.main)
 	s.haiku = cmp.Or(s.haiku, s.main)
 	return s
+}
+
+func resolveSlots(t []models.Model, sel harness.ModelSelection) (slots, bool, error) {
+	if sel.IsZero() || len(t) == 0 {
+		return defaultSlots(t), false, nil
+	}
+	if sel.Model != "" {
+		chosen := bare(sel.Model)
+		return slots{
+			main:   chosen,
+			opus:   chosen,
+			sonnet: chosen,
+			haiku:  chosen,
+			fable:  chosen,
+			custom: defaultSlots(t).custom,
+		}, true, nil
+	}
+	p, ok := models.FindPreset(t, sel.Preset)
+	if !ok {
+		return slots{}, false, fmt.Errorf("preset %q has no granted models", sel.Preset)
+	}
+	return slots{
+		main:   p.Main,
+		opus:   p.Opus,
+		sonnet: p.Sonnet,
+		haiku:  p.Haiku,
+		fable:  p.Fable,
+		custom: p.Custom,
+	}, true, nil
 }
 
 // overlayJSON outranks native settings only for launcher-owned fields; it never holds the key.

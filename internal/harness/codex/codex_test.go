@@ -357,3 +357,22 @@ func TestReadyRefusesAMissingHome(t *testing.T) {
 		t.Errorf("Ready without a home: %v", err)
 	}
 }
+
+func TestSetupWithExplicitSelectionReplacesModelInProfileAndDefaultConfig(t *testing.T) {
+	t.Parallel()
+	in := input(t, "gpt-6.1-sol", "glm-5", "deepseek-v3.2")
+	write(t, filepath.Join(in.UserHome, ".codex/aiven.config.toml"), "model = \"gpt-retired\"\n")
+	write(t, filepath.Join(in.UserHome, ".codex/config.toml"), "model = \"o3\"\n")
+	in.Selection = harness.ModelSelection{Preset: models.PresetOpenWeight}
+	cfg, profile := setUp(t, in)
+	if profile["model"] != "glm-5" || cfg["model"] != "o3" {
+		t.Fatalf("non-default: profile=%v cfg=%v", profile["model"], cfg["model"])
+	}
+	in.Default = true
+	in.Selection = harness.ModelSelection{Model: "deepseek-v3.2"}
+	cfg, profile = setUp(t, in)
+	if profile["model"] != "deepseek-v3.2" || cfg["model"] != "deepseek-v3.2" ||
+		cfg["model_provider"] != "aiven" {
+		t.Fatalf("default custom: profile=%v cfg=%v", profile["model"], cfg)
+	}
+}

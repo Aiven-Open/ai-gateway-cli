@@ -68,8 +68,11 @@ func Setup(in harness.Input) (harness.Plan, error) {
 	if _, ok := cfg["$schema"]; !ok {
 		cfg["$schema"] = "https://opencode.ai/config.json"
 	}
+	if _, err := in.Selection.ResolveMain(in.Table); err != nil {
+		return harness.Plan{}, err
+	}
 	if in.Default {
-		cfg["model"] = Model(in.Table)
+		cfg["model"] = ModelFor(in.Table, in.Selection)
 	}
 	data, err := harness.Edit(path, src, cfg)
 	if err != nil {
@@ -112,8 +115,16 @@ var reference = regexp.MustCompile(`^\{(?:env:[A-Za-z_][A-Za-z0-9_]*|file:[^{}\s
 // Reference reports whether value is an OpenCode substitution, which names the variable or file holding a key.
 func Reference(_, value string) bool { return reference.MatchString(value) }
 
+// ModelFor returns the -m value for sel against table, falling back to SonnetOrFirst.
+func ModelFor(table []models.Model, sel harness.ModelSelection) string {
+	if chosen, err := sel.ResolveMain(table); err == nil && chosen != "" {
+		return "aiven/" + chosen
+	}
+	return "aiven/" + models.SonnetOrFirst(table)
+}
+
 // Model is the -m value that picks the gateway's default alias.
-func Model(table []models.Model) string { return "aiven/" + models.SonnetOrFirst(table) }
+func Model(table []models.Model) string { return ModelFor(table, harness.ModelSelection{}) }
 
 // Launch selects the configured provider/model when there are no native args, passes native args unchanged, and
 // leaves the native configuration tree untouched.

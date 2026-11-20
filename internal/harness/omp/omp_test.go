@@ -345,3 +345,25 @@ func TestReadyAndLaunchRefuseAMissingHome(t *testing.T) {
 		t.Errorf("Launch without a home: %v", err)
 	}
 }
+
+func TestSetupAndModelForUseExplicitSelection(t *testing.T) {
+	t.Parallel()
+	in := input(t)
+	in.Table = append(in.Table, models.Model{Alias: "glm-5"})
+	sel := harness.ModelSelection{Preset: models.PresetOpenWeight}
+	if got := omp.ModelFor(in.Table, sel); got != "aiven/glm-5" {
+		t.Fatalf("ModelFor(preset) = %q, want aiven/glm-5", got)
+	}
+	in.Default = true
+	in.Selection = harness.ModelSelection{Model: "gpt-sol"}
+	if got := omp.ModelFor(in.Table, in.Selection); got != "aiven/gpt-sol" {
+		t.Fatalf("ModelFor(custom) = %q, want aiven/gpt-sol", got)
+	}
+	plan := setUp(t, in)
+	if got := decode(
+		t,
+		plan.Files[1],
+	); got["modelRoles"].(map[string]any)["default"] != "aiven/gpt-sol" {
+		t.Fatalf("config.yml = %v", got)
+	}
+}

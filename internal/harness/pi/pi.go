@@ -4,6 +4,7 @@
 package pi
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -109,9 +110,16 @@ func Setup(in harness.Input) (harness.Plan, error) {
 	if err != nil {
 		return harness.Plan{}, err
 	}
+	chosen, err := in.Selection.ResolveMain(in.Table)
+	if err != nil {
+		return harness.Plan{}, err
+	}
 	files := []harness.File{{Path: path, Data: data, Backup: true, Models: true}}
 	if in.Default {
-		settings["defaultProvider"], settings["defaultModel"] = "aiven", models.SonnetOrFirst(in.Table)
+		settings["defaultProvider"], settings["defaultModel"] = "aiven", cmp.Or(
+			chosen,
+			models.SonnetOrFirst(in.Table),
+		)
 		stripped := harness.Strip(settingsSrc, harness.Strict)
 		if data, err = harness.Edit(settingsPath, stripped, settings); err != nil {
 			return harness.Plan{}, err
@@ -121,8 +129,16 @@ func Setup(in harness.Input) (harness.Plan, error) {
 	return harness.Plan{Files: files}, nil
 }
 
+// ModelFor returns the --model value for sel against table, falling back to SonnetOrFirst.
+func ModelFor(table []models.Model, sel harness.ModelSelection) string {
+	if chosen, err := sel.ResolveMain(table); err == nil && chosen != "" {
+		return "aiven/" + chosen
+	}
+	return "aiven/" + models.SonnetOrFirst(table)
+}
+
 // Model is the --model value that picks the gateway's default alias.
-func Model(table []models.Model) string { return "aiven/" + models.SonnetOrFirst(table) }
+func Model(table []models.Model) string { return ModelFor(table, harness.ModelSelection{}) }
 
 // Launch selects the gateway default model in an already configured provider when there are no native args, and
 // passes native args unchanged.
