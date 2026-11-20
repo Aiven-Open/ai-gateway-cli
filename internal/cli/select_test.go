@@ -4,19 +4,19 @@ package cli
 
 import (
 	"errors"
+	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/aiven-open/ai-gateway-cli/internal/models"
 )
 
 func toolChoice(multi bool) choice {
 	return choice{title: "Tools", multi: multi, options: []option{
-		{
-			label:  "Pi",
-			detail: "pi",
-		},
+		{label: "Pi", detail: "pi"},
 		{label: "OpenCode", detail: "opencode"},
 		{label: "Codex", detail: "codex"},
 	}}
@@ -24,30 +24,37 @@ func toolChoice(multi bool) choice {
 
 func TestSelectKeysNeverTurnCancellationOrEndOfInputIntoAChoice(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
-		multi  bool
-		keys   []string
-		picked []int
-		err    error
+		name          string
+		multi         bool
+		filterDefault bool
+		keys          []string
+		picked        []int
+		err           error
 	}{
 		{name: "enter picks the first", keys: []string{"\r"}, picked: []int{0}},
 		{name: "arrows move", keys: []string{"\x1b[B", "\x1b[B", "\x1b[A", "\r"}, picked: []int{1}},
 		{name: "application-mode arrows", keys: []string{"\x1bOB\r"}, picked: []int{1}},
 		{name: "cursor stops at the end", keys: []string{"\x1b[B\x1b[B\x1b[B\x1b[B\r"}, picked: []int{2}},
-		{name: "filter then enter", keys: []string{"dex", "\r"}, picked: []int{2}},
-		{name: "filter ignores case", keys: []string{"OPEN\r"}, picked: []int{1}},
-		{name: "backspace widens the filter", keys: []string{"cx", "\x7f", "\x7f", "\x7f", "\x1b[B\r"}, picked: []int{1}},
-		{name: "enter on no match waits", keys: []string{"zz\r", "\x7f\x7f\r"}, picked: []int{0}},
+		{name: "j and k move when not filtering", keys: []string{"jjk\r"}, picked: []int{1}},
+		{name: "slash enters filter mode", keys: []string{"/dex\r"}, picked: []int{2}},
+		{name: "filterDefault filters immediately", filterDefault: true, keys: []string{"dex", "\r"}, picked: []int{2}},
+		{name: "filter ignores case", filterDefault: true, keys: []string{"OPEN\r"}, picked: []int{1}},
+		{name: "backspace widens the filter", filterDefault: true, keys: []string{"cx", "\x7f", "\x7f", "\x7f", "\x1b[B\r"}, picked: []int{1}},
+		{name: "enter on no match waits", filterDefault: true, keys: []string{"zz\r", "\x7f\x7f\r"}, picked: []int{0}},
 		{name: "ctrl-c cancels", keys: []string{"\x1b[B", "\x03"}, err: errCancelled},
 		{name: "ctrl-d ends input", keys: []string{"\x04"}, err: errInputEnded},
 		{name: "multi: enter with nothing marked picks none", multi: true, keys: []string{"\r"}},
 		{name: "multi: space marks", multi: true, keys: []string{" \x1b[B\x1b[B \r"}, picked: []int{0, 2}},
 		{name: "multi: space unmarks", multi: true, keys: []string{"  \x1b[B \r"}, picked: []int{1}},
-		{name: "multi: marks survive filtering", multi: true, keys: []string{" ", "dex", " ", "\x7f\x7f\x7f\r"}, picked: []int{0, 2}},
+		{name: "multi: a toggles all then none", multi: true, keys: []string{"a\r"}, picked: []int{0, 1, 2}},
+		{name: "multi: a twice clears all", multi: true, keys: []string{"aa\r"}},
+		{name: "multi: marks survive filtering", multi: true, filterDefault: true, keys: []string{" ", "dex", " ", "\x7f\x7f\x7f\r"}, picked: []int{0, 2}},
 		{name: "multi: ctrl-c after marking cancels", multi: true, keys: []string{" ", "\x03"}, err: errCancelled},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s := newSelectState(toolChoice(tc.multi))
+			c := toolChoice(tc.multi)
+			c.filterDefault = tc.filterDefault
+			s := newSelectState(c)
 			var picked []int
 			var finished bool
 			var err error
@@ -68,6 +75,72 @@ func TestSelectKeysNeverTurnCancellationOrEndOfInputIntoAChoice(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+func TestSelectOptionPickedShiftTabAndDoubleEsc(t *testing.T) {
+	t.Parallel()
+
+	// option.picked initializes multi-select state cleanly.
+	c := choice{
+		title:     "Harnesses",
+		multi:     true,
+		allowBack: true,
+		options: []option{
+			{label: "Pi", picked: true},
+			{label: "Codex", picked: false},
+			{label: "Claude", picked: true},
+		},
+	}
+	s := newSelectState(c)
+	picked, finished, err := s.keys([]byte("\r"))
+	if !finished || err != nil || !slices.Equal(picked, []int{0, 2}) {
+		t.Fatalf("pre-picked Enter = %v, %v, %v; want [0 2]", picked, finished, err)
+	}
+
+	// Shift+Tab (\x1b[Z) returns errBack when allowBack is true.
+	s = newSelectState(c)
+	if _, finished, err := s.keys([]byte("\x1b[Z")); !finished || !errors.Is(err, errBack) {
+		t.Fatalf("Shift+Tab with allowBack = finished:%v err:%v, want errBack", finished, err)
+	}
+
+	// Shift+Tab is ignored when allowBack is false.
+	noBack := c
+	noBack.allowBack = false
+	s = newSelectState(noBack)
+	if _, finished, err := s.keys([]byte("\x1b[Z")); finished || err != nil {
+		t.Fatalf("Shift+Tab without allowBack = finished:%v err:%v, want open", finished, err)
+	}
+
+	// Double-Esc (\x1b\x1b) respects allowBack (errBack when true, errCancelled when false).
+	s = newSelectState(c)
+	if _, finished, err := s.keys([]byte("\x1b\x1b")); !finished || !errors.Is(err, errBack) {
+		t.Fatalf("double-Esc with allowBack = finished:%v err:%v, want errBack", finished, err)
+	}
+	s = newSelectState(noBack)
+	if _, finished, err := s.keys([]byte("\x1b\x1b")); !finished || !errors.Is(err, errCancelled) {
+		t.Fatalf("double-Esc without allowBack = finished:%v err:%v, want errCancelled", finished, err)
+	}
+
+	// Two-stage standalone Esc clears non-empty filter first, then returns cancelError.
+	fc := choice{
+		title:         "Models",
+		filterDefault: true,
+		allowBack:     true,
+		options:       []option{{label: "glm-5"}, {label: "gpt-sol"}},
+	}
+	s = newSelectState(fc)
+	if _, finished, err := s.keys([]byte("glm")); finished || err != nil || s.filter != "glm" {
+		t.Fatalf("filter = %q, finished=%v err=%v", s.filter, finished, err)
+	}
+	if !s.handleStandaloneEscape() || s.filter != "" {
+		t.Fatalf("first standalone Esc should clear filter; filter=%q", s.filter)
+	}
+	if s.handleStandaloneEscape() {
+		t.Fatal("second standalone Esc with empty filter should return false")
+	}
+	if !errors.Is(s.cancelError(), errBack) {
+		t.Fatalf("cancelError = %v, want errBack", s.cancelError())
 	}
 }
 
@@ -92,7 +165,9 @@ func TestSelectKeysDoNotApproveIncompleteOrMalformedInput(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			s := newSelectState(toolChoice(false))
+			c := toolChoice(false)
+			c.filterDefault = true
+			s := newSelectState(c)
 			var picked []int
 			var finished bool
 			var err error
@@ -132,6 +207,7 @@ func TestSelectKeysDecodeFragmentsAcrossReads(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			c := toolChoice(false)
+			c.filterDefault = true
 			c.options = append(c.options, option{label: "名前"})
 			s := newSelectState(c)
 			for i, key := range tc.keys {
@@ -168,6 +244,7 @@ func TestSelectKeysAreIndependentOfChunkBoundaries(t *testing.T) {
 			t.Parallel()
 			for mask := 0; mask < 1<<(len(tc.input)-1); mask++ {
 				c := toolChoice(tc.multi)
+				c.filterDefault = true
 				c.options = append(c.options, option{label: "名前"}, option{label: "😀"})
 				s := newSelectState(c)
 				start := 0
@@ -192,28 +269,119 @@ func TestSelectKeysAreIndependentOfChunkBoundaries(t *testing.T) {
 }
 
 func TestSelectRenderFitsTheWidthAndShowsMarks(t *testing.T) {
+	ansi := regexp.MustCompile("\x1b\\[[0-9;]*m")
 	s := newSelectState(toolChoice(true))
 	if _, finished, err := s.keys([]byte(" \x1b[B")); finished || err != nil {
 		t.Fatalf("selection ended: finished=%v err=%v", finished, err)
 	}
-	lines := s.render(24)
-	if len(lines) != 6 || !strings.Contains(lines[2], "  [x] Pi") ||
-		!strings.HasPrefix(lines[3], "> [ ] OpenCode") {
+	lines := s.render(24, 0)
+	if len(lines) != 5 || !strings.Contains(lines[1], "  [x] Pi") ||
+		!strings.HasPrefix(lines[2], "\x1b[1;36m❯ \x1b[0m[ ] \x1b[1mOpenCode\x1b[0m") {
 		t.Fatalf("lines %q", lines)
 	}
 	for _, l := range lines {
-		if plain := strings.NewReplacer("\x1b[1m", "", "\x1b[2m", "", "\x1b[0m", "").
-			Replace(l); cells(
-			plain,
-		) > 23 {
-			t.Errorf("%q is %d cells, wider than 23", plain, cells(plain))
+		if plain := ansi.ReplaceAllString(l, ""); cells(plain) > 22 {
+			t.Errorf("%q is %d cells, wider than 22 (width-2 margin)", plain, cells(plain))
 		}
 	}
-	if _, finished, err := s.keys([]byte("zz")); finished || err != nil {
+	if _, finished, err := s.keys([]byte("/zz")); finished || err != nil {
 		t.Fatalf("filter ended: finished=%v err=%v", finished, err)
 	}
-	if lines := s.render(80); !strings.Contains(strings.Join(lines, "\n"), "No match") {
+	if lines := s.render(80, 0); !strings.Contains(strings.Join(lines, "\n"), "No match") {
 		t.Errorf("no-match lines %q", lines)
+	}
+}
+
+func TestSelectRenderViewportClamping(t *testing.T) {
+	t.Parallel()
+	var opts []option
+	for i := range 45 {
+		opts = append(opts, option{label: fmt.Sprintf("model-%02d", i), detail: "provider"})
+	}
+	s := newSelectState(choice{
+		title:         "Select a model",
+		options:       opts,
+		filterDefault: true,
+		allowBack:     true,
+		rail:          true,
+	})
+	// 14-row terminal -> must render <= 13 lines at every cursor position.
+	for _, moves := range []int{0, 12, 25, 44} {
+		s.cursor = moves
+		lines := s.render(80, 14)
+		if len(lines) > 13 {
+			t.Fatalf("cursor=%d rendered %d lines, exceeds height-1 (13)", moves, len(lines))
+		}
+		joined := strings.Join(lines, "\n")
+		wantActive := fmt.Sprintf("model-%02d", moves)
+		if !strings.Contains(joined, wantActive) {
+			t.Errorf("cursor=%d active row %q missing from viewport:\n%s", moves, wantActive, joined)
+		}
+		if moves == 0 && !strings.Contains(joined, "↓ ") {
+			t.Errorf("top viewport missing down indicator:\n%s", joined)
+		}
+		if moves == 25 && (!strings.Contains(joined, "↑ ") || !strings.Contains(joined, "↓ ")) {
+			t.Errorf("middle viewport missing both up and down indicators:\n%s", joined)
+		}
+		if moves == 44 && !strings.Contains(joined, "↑ ") {
+			t.Errorf("bottom viewport missing up indicator:\n%s", joined)
+		}
+	}
+	// Tiny panes (heights 2..5 and widths 1..4) always keep the active option visible without overflow.
+	ansi := regexp.MustCompile("\x1b\\[[0-9;]*m")
+	for _, h := range []int{2, 3, 4, 5} {
+		for _, cursor := range []int{0, 20, 44} {
+			s.cursor = cursor
+			lines := s.render(40, h)
+			if len(lines) > max(1, h-1) {
+				t.Errorf(
+					"height=%d cursor=%d rendered %d lines, want <= %d",
+					h,
+					cursor,
+					len(lines),
+					max(1, h-1),
+				)
+			}
+			wantActive := fmt.Sprintf("model-%02d", cursor)
+			if !strings.Contains(strings.Join(lines, "\n"), wantActive) {
+				t.Errorf("height=%d cursor=%d hid active option %q:\n%q", h, cursor, wantActive, lines)
+			}
+		}
+	}
+	for _, w := range []int{1, 2, 3, 4} {
+		s.cursor = 0
+		lines := s.render(w, 6)
+		if len(lines) == 0 {
+			t.Fatalf("width=%d rendered 0 lines", w)
+		}
+		for _, l := range lines {
+			plain := ansi.ReplaceAllString(l, "")
+			if !utf8.ValidString(plain) {
+				t.Errorf("width=%d produced invalid UTF-8: %q", w, plain)
+			}
+			if cells(plain) > w {
+				t.Errorf("width=%d line %q is %d cells, exceeds %d", w, plain, cells(plain), w)
+			}
+		}
+	}
+}
+
+func TestFitWithPreservesValidUTF8AtTinyWidths(t *testing.T) {
+	t.Parallel()
+	for _, w := range []int{0, 1, 2, 3} {
+		got := fitWith("long", w, "…")
+		if !utf8.ValidString(got) {
+			t.Errorf("fitWith(long, %d, …) = %q is invalid UTF-8", w, got)
+		}
+		if w > 0 && cells(got) > w {
+			t.Errorf("fitWith(long, %d, …) = %q (%d cells) exceeds %d", w, got, cells(got), w)
+		}
+	}
+	if got := fitWith("long", 1, "…"); got != "…" {
+		t.Errorf("fitWith(long, 1, …) = %q, want …", got)
+	}
+	if got := fitWith("long", 1, "..."); got != "" {
+		t.Errorf("fitWith(long, 1, ...) = %q, want empty", got)
 	}
 }
 

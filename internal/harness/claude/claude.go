@@ -7,6 +7,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"path/filepath"
 	"regexp"
@@ -46,6 +47,8 @@ type Input struct {
 	WorkDir string
 	// Args are forwarded to claude after `--settings`.
 	Args []string
+	// Selection overrides the model or preset chosen during setup; zero value preserves automatic defaults.
+	Selection harness.ModelSelection
 }
 
 // slots are the aliases chosen for each Claude model slot, before the `[1m]` suffix.
@@ -142,7 +145,7 @@ func Setup(in Input) (harness.Plan, error) {
 		return harness.Plan{}, err
 	}
 	if in.WorkDir != "" {
-		if _, err := withPins(slots{}, nil, in.UserHome, in.WorkDir); err != nil {
+		if _, err := withPins(nil, slots{}, nil, in.UserHome, in.WorkDir); err != nil {
 			return harness.Plan{}, err
 		}
 	}
@@ -170,12 +173,23 @@ func wire(in Input, path string) (harness.File, error) {
 	if err != nil {
 		return harness.File{}, err
 	}
-	s := defaultSlots(in.Table)
+	s, explicit, err := resolveSlots(in.Table, in.Selection)
+	if err != nil {
+		return harness.File{}, err
+	}
 	main, ids := wiring(in.Table, s)
 	cfg["apiKeyHelper"] = APIKeyHelper(in.BaseURL)
-	// A model the user chose in this file stays, and so does an ANTHROPIC_MODEL, which Claude Code runs over it. Setup
-	// never sets ANTHROPIC_MODEL, since it would outrank the user's choice. A blank one chooses nothing.
-	if model, ok := cfg["model"].(string); cfg["model"] == nil || ok && bare(model) == "" {
+	if explicit {
+		cfg["model"] = main
+		if v, ok := env["ANTHROPIC_MODEL"].(string); ok && bare(v) != "" {
+			env["ANTHROPIC_MODEL"] = main
+		} else if !in.Default && userLayerUngranted(in.Table, in.UserHome) {
+			// Clear an ungranted user-level ANTHROPIC_MODEL so --settings aiven.settings.json and launch win.
+			env["ANTHROPIC_MODEL"] = ""
+		}
+	} else if model, ok := cfg["model"].(string); cfg["model"] == nil || ok && bare(model) == "" {
+		// A model the user chose in this file stays, and so does an ANTHROPIC_MODEL, which Claude Code runs over it. Setup
+		// never sets ANTHROPIC_MODEL, since it would outrank the user's choice. A blank one chooses nothing.
 		cfg["model"] = main
 	}
 	for k, v := range map[string]string{
@@ -184,7 +198,6 @@ func wire(in Input, path string) (harness.File, error) {
 		"ANTHROPIC_DEFAULT_SONNET_MODEL": ids["SONNET"],
 		"ANTHROPIC_DEFAULT_HAIKU_MODEL":  ids["HAIKU"],
 		"ANTHROPIC_DEFAULT_FABLE_MODEL":  ids["FABLE"],
-		"ANTHROPIC_CUSTOM_MODEL_OPTION":  ids["CUSTOM"],
 		"ANTHROPIC_AUTH_TOKEN":           "",
 		"ANTHROPIC_API_KEY":              "",
 		"CLAUDE_CODE_USE_BEDROCK":        "",
@@ -194,6 +207,9 @@ func wire(in Input, path string) (harness.File, error) {
 		"ANTHROPIC_CUSTOM_HEADERS":       "",
 	} {
 		env[k] = v
+	}
+	if ids["CUSTOM"] != "" {
+		env["ANTHROPIC_CUSTOM_MODEL_OPTION"] = ids["CUSTOM"]
 	}
 	for _, chosen := range []struct {
 		in  map[string]any
@@ -239,50 +255,63 @@ func Selected(data []byte) (string, error) {
 	return cmp.Or(running(s, s.main, nil), s.main), nil
 }
 
-// defaultSlots prefers production ids, then historical aliases; an empty tier takes the main model.
+// defaultSlots keeps Claude Code on Claude models whenever Anthropic models are granted, falling back through
+// curated presets (OpenAI, Gemini, Open-weight latest DeepSeek) otherwise. It never injects an unsolicited
+// cross-vendor ANTHROPIC_CUSTOM_MODEL_OPTION.
 func defaultSlots(t []models.Model) slots {
-	s := slots{
-		main: models.FirstGranted(
-			t,
-			"claude-sonnet-5-5",
-			"deepseek-flash",
-			"glm-fast",
-			"glm",
-			"claude-opus",
-		),
-		opus: models.FirstGranted(t, "claude-opus-5-5", "claude-opus", "claude-fable", "claude-sonnet"),
-		sonnet: models.FirstGranted(
-			t,
-			"claude-sonnet-5-5",
-			"glm-fast",
-			"glm",
-			"qwen",
-			"deepseek",
-			"claude-sonnet",
-		),
-		// Haiku 5.5 may be listed as `claude-haiku-5-5` or `claude-haiku-5.5`; the dashed id comes first.
-		haiku: models.FirstGranted(
-			t,
-			"claude-haiku-5-5",
-			"claude-haiku-5.5",
-			"claude-haiku-4-5",
-			"gemini-flash",
-			"gpt-luna",
-			"claude-haiku",
-			"glm-fast",
-		),
-		// A gateway need not serve Fable, so the slot takes Opus first rather than the dearest GPT.
-		fable:  models.FirstGranted(t, "claude-opus-5-5", "gpt-astra", "gpt-terra", "claude-fable"),
-		custom: models.FirstGranted(t, "gpt-6.1-sol", "gpt-6-sol", "gpt-sol", "gpt-terra", "gpt-luna"),
+	if p, ok := models.FindPreset(t, models.PresetAnthropic); ok {
+		return slots{
+			main:   p.Main,
+			opus:   p.Opus,
+			sonnet: p.Sonnet,
+			haiku:  p.Haiku,
+			fable:  p.Fable,
+		}
 	}
-	if s.custom == "" {
-		s.custom = models.FirstNotIn(t, s.opus, s.sonnet, s.haiku, s.fable)
+	for _, id := range []models.PresetID{
+		models.PresetOpenAI,
+		models.PresetGemini,
+		models.PresetOpenWeight,
+	} {
+		if p, ok := models.FindPreset(t, id); ok {
+			return slots{
+				main:   p.Main,
+				opus:   p.Opus,
+				sonnet: p.Sonnet,
+				haiku:  p.Haiku,
+				fable:  p.Fable,
+			}
+		}
 	}
-	s.main = cmp.Or(s.main, models.FirstAlias(t))
-	s.opus = cmp.Or(s.opus, s.main)
-	s.sonnet = cmp.Or(s.sonnet, s.main)
-	s.haiku = cmp.Or(s.haiku, s.main)
-	return s
+	main := models.SonnetOrFirst(t)
+	return slots{main: main, opus: main, sonnet: main, haiku: main, fable: main}
+}
+
+func resolveSlots(t []models.Model, sel harness.ModelSelection) (slots, bool, error) {
+	if sel.IsZero() || len(t) == 0 {
+		return defaultSlots(t), false, nil
+	}
+	if sel.Model != "" {
+		chosen := bare(sel.Model)
+		return slots{
+			main:   chosen,
+			opus:   chosen,
+			sonnet: chosen,
+			haiku:  chosen,
+			fable:  chosen,
+		}, true, nil
+	}
+	p, ok := models.FindPreset(t, sel.Preset)
+	if !ok {
+		return slots{}, false, fmt.Errorf("preset %q has no granted models", sel.Preset)
+	}
+	return slots{
+		main:   p.Main,
+		opus:   p.Opus,
+		sonnet: p.Sonnet,
+		haiku:  p.Haiku,
+		fable:  p.Fable,
+	}, true, nil
 }
 
 // overlayJSON outranks native settings only for launcher-owned fields; it never holds the key.
@@ -356,7 +385,7 @@ func Launch(in Input) (harness.Plan, error) {
 	if err != nil {
 		return harness.Plan{}, err
 	}
-	s, err := withPins(defaultSlots(in.Table), cfg, in.UserHome, in.WorkDir)
+	s, err := withPins(in.Table, defaultSlots(in.Table), cfg, in.UserHome, in.WorkDir)
 	if err != nil {
 		return harness.Plan{}, err
 	}

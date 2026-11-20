@@ -18,6 +18,8 @@ import (
 // pipe while prompts and progress still reach a terminal on stderr.
 type Terminal struct {
 	StdinTTY, StdoutTTY, StderrTTY bool
+	// NoVT is true on legacy consoles (such as older Windows ConHost) that cannot enable virtual terminal processing.
+	NoVT bool
 	// StdoutWidth and StderrWidth return the stream's current width in cells, or 0 when unknown.
 	StdoutWidth, StderrWidth func() int
 }
@@ -38,42 +40,43 @@ func plainRequested(environ []string) bool {
 type ui struct {
 	w     io.Writer
 	color bool
+	th    theme
 	// width is the terminal's width in cells, or 0 when the stream is not a terminal: layout never follows COLUMNS
 	// or a guess there, so redirected output is the same everywhere.
 	width int
 }
 
 func newUI(w io.Writer, tty bool, width func() int, plain bool) ui {
-	u := ui{w: w, color: tty && !plain}
+	return newUIWithEnv(w, tty, width, plain, nil)
+}
+
+func newUIWithEnv(w io.Writer, tty bool, width func() int, plain bool, environ []string) ui {
+	color := tty && !plain
+	u := ui{
+		w:     w,
+		color: color,
+		th:    newTheme(color, utf8Locale(environ)),
+	}
 	if tty && width != nil {
 		u.width = width()
 	}
 	return u
 }
 
-const (
-	bold   = "1"
-	dim    = "2"
-	red    = "31"
-	green  = "32"
-	yellow = "33"
-	cyan   = "36"
-)
-
-func (u ui) paint(code, s string) string {
-	if !u.color || s == "" {
-		return s
-	}
-	return "\x1b[" + code + "m" + s + "\x1b[0m"
-}
+func (u ui) paint(code, s string) string { return u.th.paint(code, s) }
 
 func (u ui) printf(format string, args ...any) { _, _ = fmt.Fprintf(u.w, format, args...) }
 
 // heading starts a section after a blank line.
-func (u ui) heading(s string) { u.printf("\n%s\n", u.paint(bold, safe(s))) }
+func (u ui) heading(s string) { u.printf("\n%s\n", u.th.bold(safe(s))) }
 
 // line prints one indented line of plain text.
 func (u ui) line(indent int, s string) { u.printf("%s%s\n", strings.Repeat(" ", indent), safe(s)) }
+
+// note prints one indented line of dimmed text.
+func (u ui) note(indent int, s string) {
+	u.printf("%s%s\n", strings.Repeat(" ", indent), u.th.dim(safe(s)))
+}
 
 // status prints a status word, coloured by kind, then its detail.
 func (u ui) status(indent int, kind, word, detail string) {
@@ -83,13 +86,152 @@ func (u ui) status(indent int, kind, word, detail string) {
 	u.printf("%s%s%s\n", strings.Repeat(" ", indent), u.paint(kind, word), detail)
 }
 
+// railStart opens the vertical rail with a bold header.
+func (u ui) railStart(title string) {
+	if !u.color {
+		u.line(0, title)
+		return
+	}
+	u.printf("%s  %s\n", u.th.dim(u.th.g.railStart), u.th.bold(safe(title)))
+}
+
+// railPrefix returns the vertical rail gutter prefix for spinner and body lines.
+func (u ui) railPrefix() string {
+	if !u.color {
+		return "  "
+	}
+	return u.th.dim(u.th.g.railBar) + "  "
+}
+
+// railNote prints one dimmed body line inside the vertical rail.
+func (u ui) railNote(text string) {
+	if !u.color {
+		u.line(2, text)
+		return
+	}
+	u.printf("%s  %s\n", u.th.dim(u.th.g.railBar), u.th.dim(safe(text)))
+}
+
+// railDone prints a collapsed completed beat on the vertical rail.
+func (u ui) railDone(label, summary string) {
+	if !u.color {
+		if summary == "" {
+			u.line(0, label)
+		} else {
+			u.line(0, label+": "+summary)
+		}
+		return
+	}
+	if summary == "" {
+		u.printf("%s  %s\n", u.th.dim(u.th.g.done), u.th.bold(safe(label)))
+		return
+	}
+	u.printf(
+		"%s  %s %s %s\n",
+		u.th.dim(u.th.g.done),
+		u.th.bold(safe(label)),
+		u.th.dim(u.th.g.dot),
+		safe(summary),
+	)
+}
+
+// railStatus prints a coloured status glyph and message inside the vertical rail.
+func (u ui) railStatus(kind, glyph, text string) {
+	if !u.color {
+		word := "OK"
+		switch kind {
+		case red:
+			word = "FAILED"
+		case yellow:
+			word = "WARN"
+		}
+		u.line(2, word+" "+text)
+		return
+	}
+	u.printf("%s  %s  %s\n", u.th.dim(u.th.g.railBar), u.paint(kind, glyph), safe(text))
+}
+
+func (u ui) railOK(text string)   { u.railStatus(green, u.th.g.ok, text) }
+func (u ui) railWarn(text string) { u.railStatus(yellow, u.th.g.warn, text) }
+func (u ui) railFail(text string) { u.railStatus(red, u.th.g.fail, text) }
+
+// railEnd closes the vertical rail cleanly before copy-pasteable tables, diffs or commands.
+func (u ui) railEnd(text string) {
+	if !u.color {
+		if text != "" {
+			u.heading(text)
+		}
+		return
+	}
+	if text == "" {
+		u.printf("%s\n", u.th.dim(u.th.g.railEnd))
+		return
+	}
+	u.printf("%s  %s\n", u.th.dim(u.th.g.railEnd), u.th.bold(safe(text)))
+}
+
+// table prints an aligned multi-column table with optional dimmed column headers.
+func (u ui) table(indent int, headers []string, rows [][]string) {
+	if len(rows) == 0 && len(headers) == 0 {
+		return
+	}
+	cols := len(headers)
+	for _, r := range rows {
+		cols = max(cols, len(r))
+	}
+	widths := make([]int, cols)
+	for i, h := range headers {
+		widths[i] = max(widths[i], cells(safe(h)))
+	}
+	for _, r := range rows {
+		for i, c := range r {
+			widths[i] = max(widths[i], cells(safe(c)))
+		}
+	}
+	prefix := strings.Repeat(" ", indent)
+	if len(headers) > 0 {
+		var b strings.Builder
+		b.WriteString(prefix)
+		for i := range cols {
+			h := ""
+			if i < len(headers) {
+				h = safe(headers[i])
+			}
+			if i < cols-1 {
+				b.WriteString(u.th.dim(pad(h, widths[i])))
+				b.WriteString("  ")
+			} else {
+				b.WriteString(u.th.dim(h))
+			}
+		}
+		u.printf("%s\n", b.String())
+	}
+	for _, r := range rows {
+		var b strings.Builder
+		b.WriteString(prefix)
+		for i := range cols {
+			val := ""
+			if i < len(r) {
+				val = safe(r[i])
+			}
+			if i < cols-1 {
+				b.WriteString(pad(val, widths[i]))
+				b.WriteString("  ")
+			} else {
+				b.WriteString(val)
+			}
+		}
+		u.printf("%s\n", b.String())
+	}
+}
+
 // command either preserves the executable text exactly or refuses to display it. Sanitizing a quoted token
 // would silently change its argument; tabs are also unrepresentable when copied from a terminal.
 func (u ui) command(indent int, s string) bool {
 	if strings.ContainsRune(s, '\t') || safe(s) != s {
 		return false
 	}
-	u.printf("%s%s\n", strings.Repeat(" ", indent), u.paint(cyan, s))
+	u.printf("%s%s\n", strings.Repeat(" ", indent), u.th.cyan(s))
 	return true
 }
 
@@ -140,9 +282,18 @@ func safe(s string) string {
 func cells(s string) int { return uniseg.StringWidth(s) }
 
 // fit cuts s to at most width cells on a grapheme boundary, marking a cut with an ellipsis.
-func fit(s string, width int) string {
+func fit(s string, width int) string { return fitWith(s, width, "…") }
+
+func fitWith(s string, width int, ellipsis string) string {
 	if width <= 0 || cells(s) <= width {
 		return s
+	}
+	ew := cells(ellipsis)
+	if width < ew {
+		return ""
+	}
+	if width == ew {
+		return ellipsis
 	}
 	var b strings.Builder
 	used, state := 0, -1
@@ -150,13 +301,13 @@ func fit(s string, width int) string {
 		var cluster string
 		var w int
 		cluster, rest, w, state = uniseg.FirstGraphemeClusterInString(rest, state)
-		if used+w > width-1 {
+		if used+w > width-ew {
 			break
 		}
 		b.WriteString(cluster)
 		used += w
 	}
-	return b.String() + "…"
+	return b.String() + ellipsis
 }
 
 func pad(s string, width int) string {
@@ -173,7 +324,7 @@ func renderModels(u ui, table []models.Model) {
 		if i > 0 {
 			u.printf("\n")
 		}
-		u.printf("%s\n", u.paint(bold, safe(g.Name)))
+		u.printf("%s\n", u.th.bold(safe(g.Name)))
 		// The readable name leads; the exact id harness flags take follows it, once when the two are the same.
 		nameWidth := 0
 		for _, m := range g.Models {
@@ -186,7 +337,7 @@ func renderModels(u ui, table []models.Model) {
 			plain[j], entries[j] = id, id
 			if name != id {
 				plain[j] = pad(name, nameWidth) + "  " + id
-				entries[j] = pad(name, nameWidth) + "  " + u.paint(dim, id)
+				entries[j] = pad(name, nameWidth) + "  " + u.th.dim(id)
 			}
 			cellWidth = max(cellWidth, cells(plain[j]))
 		}

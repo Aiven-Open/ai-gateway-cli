@@ -9,10 +9,39 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/aiven-open/ai-gateway-cli/internal/fsutil"
 	"github.com/aiven-open/ai-gateway-cli/internal/models"
 )
+
+// ModelSelection overrides automatic model defaults during setup. Its zero value
+// keeps existing configured models and uses automatic defaults for fresh setups.
+type ModelSelection struct {
+	Preset models.PresetID
+	Model  string
+}
+
+// IsZero reports whether no explicit preset or model was chosen.
+func (s ModelSelection) IsZero() bool { return s.Preset == "" && s.Model == "" }
+
+// ResolveMain returns the chosen main alias against table, or "" when zero or table is empty.
+func (s ModelSelection) ResolveMain(table []models.Model) (string, error) {
+	if s.Model != "" {
+		return s.Model, nil
+	}
+	if s.Preset != "" {
+		if len(table) == 0 {
+			return "", nil
+		}
+		p, ok := models.FindPreset(table, s.Preset)
+		if !ok {
+			return "", fmt.Errorf("preset %q has no granted models", s.Preset)
+		}
+		return p.Main, nil
+	}
+	return "", nil
+}
 
 // Input is what the table-driven harnesses (codex, pi, opencode) need; the table is non-empty.
 type Input struct {
@@ -26,6 +55,8 @@ type Input struct {
 	Args []string
 	// Default makes the gateway the native default only during explicitly selected setup.
 	Default bool
+	// Selection overrides the model or preset chosen during setup; zero value preserves automatic defaults.
+	Selection ModelSelection
 }
 
 // File is generated harness configuration. It never carries the gateway key.
@@ -56,13 +87,91 @@ type Plan struct {
 	Env   []string
 }
 
-// ModelArgs chooses model with flag when there are no native args. Native args pass unchanged: where a model flag
-// may go among them depends on the harness's subcommands and the options that take values, which only it parses.
+func hasExplicitModelOrMeta(args []string) bool {
+	for _, a := range args {
+		if a == "--" {
+			return false
+		}
+		switch a {
+		case "--model", "-m", "--provider", "-h", "--help", "-v", "--version":
+			return true
+		}
+		if strings.HasPrefix(a, "--model=") || strings.HasPrefix(a, "-m=") ||
+			strings.HasPrefix(a, "--provider=") {
+			return true
+		}
+	}
+	return false
+}
+
+// ModelArgs prepends flag and model when args do not already specify a model, provider, help/version flag,
+// or non-session management subcommand.
 func ModelArgs(args []string, model, flag string) []string {
-	if len(args) > 0 {
+	if len(args) == 0 {
+		return []string{flag, model}
+	}
+	if args[0] == "--" || hasExplicitModelOrMeta(args) {
 		return args
 	}
-	return []string{flag, model}
+	switch args[0] {
+	case "update", "install", "remove", "list", "config", "plugin", "commit":
+		return args
+	}
+	out := make([]string, 0, len(args)+2)
+	out = append(out, flag, model)
+	return append(out, args...)
+}
+
+// opencodeTakesValue reports OpenCode CLI flags whose next argument is a value rather than a subcommand.
+func opencodeTakesValue(flag string) bool {
+	switch flag {
+	case "--prompt", "--log-level", "--port", "--hostname", "--session", "-s",
+		"--agent", "--title", "--format", "--file", "-f", "--attach", "--variant", "--dir":
+		return true
+	}
+	return false
+}
+
+// OpencodeModelArgs injects -m model for OpenCode interactive launches (including a positional project path or
+// options such as --prompt) and `run`, unless a model, provider, help/version flag or management subcommand is given.
+func OpencodeModelArgs(args []string, model string) []string {
+	if len(args) == 0 {
+		return []string{"-m", model}
+	}
+	if args[0] == "--" || hasExplicitModelOrMeta(args) {
+		return args
+	}
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			break
+		}
+		if strings.HasPrefix(a, "-") {
+			if opencodeTakesValue(a) && i+1 < len(args) {
+				i++
+			}
+			continue
+		}
+		if a == "run" {
+			if hasExplicitModelOrMeta(args[i+1:]) {
+				return args
+			}
+			out := make([]string, 0, len(args)+2)
+			out = append(out, args[:i+1]...)
+			out = append(out, "-m", model)
+			return append(out, args[i+1:]...)
+		}
+		switch a {
+		case "auth", "models", "serve", "acp", "agent", "attach", "completion", "db", "debug",
+			"export", "generate", "github", "help", "import", "mcp", "pr", "session", "stats",
+			"uninstall", "upgrade", "web":
+			return args
+		}
+		break
+	}
+	out := make([]string, 0, len(args)+2)
+	out = append(out, "-m", model)
+	return append(out, args...)
 }
 
 // ReadObject parses the JSON/JSONC object at path, keeping numbers verbatim; a missing file is an empty object.

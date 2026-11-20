@@ -14,8 +14,43 @@ import (
 
 // Each word must reach a real shell as one literal argument, whatever it holds.
 func TestShellQuoteIsOneLiteralWordInEveryShell(t *testing.T) {
+	// Percent signs must be quoted so cmd.exe does not expand %VAR%.
+	if got := shellQuote("100%"); got != "'100%'" {
+		t.Errorf("shellQuote(100%%) = %q, want '100%%'", got)
+	}
+	if got := shellQuote("%USERPROFILE%"); got != "'%USERPROFILE%'" {
+		t.Errorf("shellQuote(%%USERPROFILE%%) = %q, want '%%USERPROFILE%%'", got)
+	}
+	if got := shellQuoteForOS("aiven/%PATH%", "windows"); got != "'aiven/%PATH%'" {
+		t.Errorf("shellQuoteForOS(windows percent) = %q, want PowerShell single-quoted", got)
+	}
+	if got := shellQuoteForOS("aiven/$env:USERPROFILE", "windows"); got != "'aiven/$env:USERPROFILE'" {
+		t.Errorf("shellQuoteForOS(windows dollar) = %q, want PowerShell single-quoted", got)
+	}
+	if got := shellQuote("aiven/claude-sonnet-5-5"); got != "aiven/claude-sonnet-5-5" {
+		t.Errorf("a plain id is quoted: %q", got)
+	}
+	// Windows Claude settings path must resolve the literal userHome without %USERPROFILE% or Unix ~/.
+	if got := claudeDirectCommand("windows", `C:\Users\Alice Smith`); strings.Contains(got, "~/") ||
+		strings.Contains(got, "%USERPROFILE%") ||
+		got != `claude --settings "C:\Users\Alice Smith\.claude\aiven.settings.json"` {
+		t.Errorf("claudeDirectCommand(windows spaces) = %q", got)
+	}
+	if got := claudeDirectCommand(
+		"windows",
+		`C:\Users\alice`,
+	); got != `claude --settings C:\Users\alice\.claude\aiven.settings.json` {
+		t.Errorf("claudeDirectCommand(windows plain) = %q", got)
+	}
+	if got := claudeDirectCommand(
+		"darwin",
+		"/Users/alice",
+	); got != "claude --settings ~/.claude/aiven.settings.json" {
+		t.Errorf("claudeDirectCommand(darwin) = %q", got)
+	}
+
 	if runtime.GOOS == "windows" {
-		t.Skip("POSIX shell quoting test")
+		t.Skip("POSIX/fish shell quoting execution test")
 	}
 	words := []string{
 		"aiven/claude-sonnet-5-5",
@@ -31,11 +66,13 @@ func TestShellQuoteIsOneLiteralWordInEveryShell(t *testing.T) {
 		"=ls",
 		"a\\b",
 		"!!",
+		"100%",
+		"%PATH%",
 		"x\ny",
 		"--flag=value",
 		"名前",
 	}
-	for _, sh := range []string{"/bin/sh", "bash", "zsh"} {
+	for _, sh := range []string{"/bin/sh", "bash", "zsh", "fish"} {
 		path, err := exec.LookPath(sh)
 		if err != nil {
 			t.Logf("%s not installed", sh)
@@ -64,8 +101,5 @@ func TestShellQuoteIsOneLiteralWordInEveryShell(t *testing.T) {
 				t.Error("a quoted word ran a statement")
 			}
 		})
-	}
-	if got := shellQuote("aiven/claude-sonnet-5-5"); got != "aiven/claude-sonnet-5-5" {
-		t.Errorf("a plain id is quoted: %q", got)
 	}
 }

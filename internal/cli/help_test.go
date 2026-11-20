@@ -15,12 +15,12 @@ const plainHelp = `usage: aiven-ai-gateway <command> [args]
 
 Commands
   setup [harness] [--key-stdin] [-y|--yes] [--plain]
-      Check a key, save it, then preview and approve each tool's configuration.
+      Check a key, choose models, preview and approve changes, then save and write.
       List models; send one minimal request per configured protocol and model.
       These basic checks may incur usage; they do not test native tool requests.
-      Never starts a session. Without a harness, a terminal offers a list of tools.
-      At each preview: Enter or y applies, n declines that tool, v shows the full
-      redacted diff and asks again. Enter and --yes keep native defaults unchanged.
+      Never starts a session. Without a harness, a terminal offers installed tools.
+      Interactive steps support Esc / Shift+Tab to go back before saving.
+      Interactive setup sets Aiven as default; --yes leaves tool defaults unchanged.
   launch [harness] [--plain] [-- native args]
       Start one configured tool. Setup is required first; launch writes no
       configuration. Without a harness, a terminal offers one installed tool.

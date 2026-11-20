@@ -266,7 +266,8 @@ func TestLaunchAddsTheDefaultModelOnlyWithoutNativeArgs(t *testing.T) {
 	setUp(t, in)
 	for _, tc := range []struct{ args, want []string }{
 		{nil, []string{"pi", "--model", "aiven/claude-sonnet"}},
-		{[]string{"-p", "hi"}, []string{"pi", "-p", "hi"}},
+		{[]string{"-p", "hi"}, []string{"pi", "--model", "aiven/claude-sonnet", "-p", "hi"}},
+		{[]string{"--continue"}, []string{"pi", "--model", "aiven/claude-sonnet", "--continue"}},
 		{[]string{"--model", "aiven/glm"}, []string{"pi", "--model", "aiven/glm"}},
 		{[]string{"--provider", "openai"}, []string{"pi", "--provider", "openai"}},
 		{[]string{"install", "x"}, []string{"pi", "install", "x"}},
@@ -399,5 +400,44 @@ func TestWindowsShellFindsTheBashPiRunsTheHelperIn(t *testing.T) {
 				t.Errorf("error %q does not say how to fix it", err)
 			}
 		})
+	}
+}
+
+func TestSetupAndModelForUseExplicitSelection(t *testing.T) {
+	t.Parallel()
+	in := input(t)
+	in.Table = append(in.Table, models.Model{Alias: "glm-5"})
+	sel := harness.ModelSelection{Preset: models.PresetOpenWeight}
+	if got := pi.ModelFor(in.Table, sel); got != "aiven/glm-5" {
+		t.Fatalf("ModelFor(preset) = %q, want aiven/glm-5", got)
+	}
+	in.Default = true
+	in.Selection = harness.ModelSelection{Model: "gpt-sol"}
+	if got := pi.ModelFor(in.Table, in.Selection); got != "aiven/gpt-sol" {
+		t.Fatalf("ModelFor(custom) = %q, want aiven/gpt-sol", got)
+	}
+	plan := setUp(t, in)
+	if got := decode(
+		t,
+		plan.Files[1],
+	); got["defaultModel"] != "gpt-sol" ||
+		got["defaultProvider"] != "aiven" {
+		t.Fatalf("settings.json = %v", got)
+	}
+	// Launch honors granted Selection, falls back cleanly when ungranted, and lets native args override.
+	lp, err := pi.Launch(in)
+	if err != nil || !slices.Equal(lp.Argv, []string{"pi", "--model", "aiven/gpt-sol"}) {
+		t.Fatalf("Launch(selected) = %v, %v", lp.Argv, err)
+	}
+	in.Selection = harness.ModelSelection{Model: "retired-model"}
+	lp, err = pi.Launch(in)
+	if err != nil || !slices.Equal(lp.Argv, []string{"pi", "--model", "aiven/claude-sonnet"}) {
+		t.Fatalf("Launch(ungranted fallback) = %v, %v", lp.Argv, err)
+	}
+	in.Selection = harness.ModelSelection{Model: "gpt-sol"}
+	in.Args = []string{"--model", "aiven/glm"}
+	lp, err = pi.Launch(in)
+	if err != nil || !slices.Equal(lp.Argv, []string{"pi", "--model", "aiven/glm"}) {
+		t.Fatalf("Launch(native args) = %v, %v", lp.Argv, err)
 	}
 }

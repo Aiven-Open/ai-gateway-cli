@@ -157,8 +157,8 @@ function files(directory) {
   return readdirSync(directory, { recursive: true }).map((file) => join(directory, file))
     .filter((file) => statSync(file).isFile());
 }
-// The files each setup writes and the arguments each launch puts before the native ones; a model flag goes in only
-// when there are none.
+// The files each setup writes and the arguments each launch puts before the native ones; Pi, OpenCode and OMP inject
+// the gateway default model unless the forwarded native arguments already specify a model, provider or subcommand.
 const expected = {
   claude: {
     files: [".claude/aiven.settings.json"],
@@ -169,9 +169,9 @@ const expected = {
     },
   },
   codex: { files: [".codex/aiven.config.toml", ".codex/config.toml"], argv: (a) => a.join(" ") === "-p aiven" },
-  pi: { files: [".pi/agent/models.json"], argv: (a) => a.length === 0 },
-  opencode: { files: [".config/opencode/opencode.json"], argv: (a) => a.length === 0 },
-  omp: { files: [".omp/agent/models.yml"], argv: (a) => a.length === 0 },
+  pi: { files: [".pi/agent/models.json"], argv: (a) => a.join(" ") === "--model aiven/claude-sonnet" },
+  opencode: { files: [".config/opencode/opencode.json"], argv: (a) => a.join(" ") === "-m aiven/claude-sonnet" },
+  omp: { files: [".omp/agent/models.yml"], argv: (a) => a.join(" ") === "--model aiven/claude-sonnet" },
 };
 const launches = {};
 for (const name of names) {

@@ -68,8 +68,11 @@ func Setup(in harness.Input) (harness.Plan, error) {
 	if _, ok := cfg["$schema"]; !ok {
 		cfg["$schema"] = "https://opencode.ai/config.json"
 	}
+	if _, err := in.Selection.ResolveMain(in.Table); err != nil {
+		return harness.Plan{}, err
+	}
 	if in.Default {
-		cfg["model"] = Model(in.Table)
+		cfg["model"] = ModelFor(in.Table, in.Selection)
 	}
 	data, err := harness.Edit(path, src, cfg)
 	if err != nil {
@@ -112,13 +115,29 @@ var reference = regexp.MustCompile(`^\{(?:env:[A-Za-z_][A-Za-z0-9_]*|file:[^{}\s
 // Reference reports whether value is an OpenCode substitution, which names the variable or file holding a key.
 func Reference(_, value string) bool { return reference.MatchString(value) }
 
-// Model is the -m value that picks the gateway's default alias.
-func Model(table []models.Model) string { return "aiven/" + models.SonnetOrFirst(table) }
+// aliasFor returns the granted model alias for sel against table, falling back to SonnetOrFirst.
+func aliasFor(table []models.Model, sel harness.ModelSelection) string {
+	if chosen, err := sel.ResolveMain(table); err == nil && chosen != "" {
+		if _, granted := models.Find(table, chosen); granted {
+			return chosen
+		}
+	}
+	return models.SonnetOrFirst(table)
+}
 
-// Launch selects the configured provider/model when there are no native args, passes native args unchanged, and
-// leaves the native configuration tree untouched.
+// ModelFor returns the -m value for sel against table, falling back to SonnetOrFirst.
+func ModelFor(table []models.Model, sel harness.ModelSelection) string {
+	return "aiven/" + aliasFor(table, sel)
+}
+
+// Model is the -m value that picks the gateway's default alias.
+func Model(table []models.Model) string { return ModelFor(table, harness.ModelSelection{}) }
+
+// Launch selects the configured (or persisted setup) provider/model when there are no native args, passes native args
+// unchanged, and leaves the native configuration tree untouched.
 func Launch(in harness.Input) (harness.Plan, error) {
-	args := harness.ModelArgs(in.Args, Model(in.Table), "-m")
+	alias := aliasFor(in.Table, in.Selection)
+	args := harness.OpencodeModelArgs(in.Args, "aiven/"+alias)
 	if len(args) != len(in.Args) {
 		if in.UserHome == "" {
 			return harness.Plan{}, config.ErrNoHome
@@ -134,7 +153,7 @@ func Launch(in harness.Input) (harness.Plan, error) {
 		providers, _ := cfg["provider"].(map[string]any)
 		p, _ := providers["aiven"].(map[string]any)
 		list, _ := p["models"].(map[string]any)
-		if list[models.SonnetOrFirst(in.Table)] == nil {
+		if list[alias] == nil {
 			return harness.Plan{}, errors.New(
 				"selected default is absent from the configured catalogue; refresh with setup",
 			)

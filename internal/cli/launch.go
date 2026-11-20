@@ -167,6 +167,16 @@ func launchTable(
 	if code != 0 {
 		return code
 	}
+	var sel harness.ModelSelection
+	if bin == "pi" || bin == "opencode" || bin == "omp" {
+		alias, err := config.LoadModelPref(env.UserHome, env.BaseURL, bin)
+		if err != nil {
+			return fail(deps, err.Error())
+		}
+		if alias != "" {
+			sel = harness.ModelSelection{Model: alias}
+		}
+	}
 	plan, err := prepare(
 		harness.Input{
 			Table:      table,
@@ -174,6 +184,7 @@ func launchTable(
 			UserHome:   env.UserHome,
 			ConfigHome: env.ConfigHome,
 			Args:       args,
+			Selection:  sel,
 		},
 	)
 	if err != nil {

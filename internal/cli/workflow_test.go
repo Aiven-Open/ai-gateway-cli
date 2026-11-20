@@ -50,7 +50,7 @@ func TestFullPreviewRedactsBothSidesAndAllModels(t *testing.T) {
 	path := filepath.Join(s.fakeHome, toolFiles["pi"])
 	secret := "SYNTHETIC_PRIVATE multi word password"
 	writeFile(t, path, `{"providers":{"other":{"apiKey":"`+secret+`"}}}`)
-	s.deps.Prompter = &scriptedPrompter{answers: []string{"", "v", ""}}
+	s.deps.Prompter = &scriptedPrompter{answers: []string{"", "", "v", ""}}
 	r := s.run("setup", "pi", "--key-stdin")
 	if r.code != 0 || strings.Contains(r.stdout+r.stderr, secret) {
 		t.Fatalf("unsafe preview or failed setup: exit %d", r.code)
@@ -72,7 +72,7 @@ func TestSetupRefusesAnEditAfterPreviewWithoutBackupOrOverwrite(t *testing.T) {
 	writeFile(t, path, `{"providers":{"other":{"apiKey":"SYNTHETIC_PRIVATE original"}}}`)
 	edited := `{"providers":{"other":{"apiKey":"SYNTHETIC_PRIVATE concurrent"}}}`
 	s.deps.Prompter = &callbackPrompter{
-		answers: []string{"", ""},
+		answers: []string{"", "", ""},
 		onApply: func() { writeFile(t, path, edited) },
 	}
 	r := s.run("setup", "pi", "--key-stdin")
@@ -88,7 +88,7 @@ func TestSetupRefusesAnEditAfterPreviewWithoutBackupOrOverwrite(t *testing.T) {
 	path2 := filepath.Join(s2.fakeHome, toolFiles["pi"])
 	writeFile(t, path2, `{"providers":{"other":{"apiKey":"SYNTHETIC_PRIVATE initial"}}}`)
 	s2.deps.Prompter = &callbackPrompter{
-		answers:  []string{"", ""},
+		answers:  []string{"", "", ""},
 		secret:   keyValid,
 		onSecret: func() { writeFile(t, path2, edited) },
 	}
@@ -111,7 +111,7 @@ func TestSetupRefusesAnEditAfterPreviewWithoutBackupOrOverwrite(t *testing.T) {
 			t.Fatal(err)
 		}
 		s3.deps.Prompter = &callbackPrompter{
-			answers: []string{"", ""},
+			answers: []string{"", "", ""},
 			onApply: func() { _ = os.Chmod(path3, 0o600) },
 		}
 		r3 := s3.run("setup", "pi", "--key-stdin")
