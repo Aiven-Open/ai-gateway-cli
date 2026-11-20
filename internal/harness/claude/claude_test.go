@@ -827,6 +827,106 @@ func TestLaunchRefusesMissingWiringAndUnreadablePins(t *testing.T) {
 	}
 }
 
+func TestEffectiveResolvesLayeredModelAndSelectingPath(t *testing.T) {
+	for _, tc := range []struct {
+		name                          string
+		planned                       string
+		userSettings, proj, projLocal string
+		wantRel, wantAlias            string
+		wantInWorkDir                 bool
+	}{
+		{
+			name:         "empty and permissions-only user settings keep planned model",
+			planned:      `{"model":"glm[1m]"}`,
+			userSettings: `{"permissions":{"allow":["Bash(ls)"]}}`,
+			wantRel:      claude.SettingsFile,
+			wantAlias:    "glm",
+		},
+		{
+			name:         "user settings overrides dedicated model",
+			planned:      `{"model":"glm[1m]"}`,
+			userSettings: `{"model":"claude-retired"}`,
+			wantRel:      ".claude/settings.json",
+			wantAlias:    "claude-retired",
+		},
+		{
+			name:          "project shared and local override user model",
+			planned:       `{"model":"glm[1m]"}`,
+			userSettings:  `{"model":"claude-opus"}`,
+			proj:          `{"model":"gpt-sol"}`,
+			projLocal:     `{"model":"claude-retired[1m]"}`,
+			wantRel:       ".claude/settings.local.json",
+			wantAlias:     "claude-retired",
+			wantInWorkDir: true,
+		},
+		{
+			name:         "user ANTHROPIC_MODEL outranks project model",
+			planned:      `{"model":"glm[1m]"}`,
+			userSettings: `{"env":{"ANTHROPIC_MODEL":"claude-retired"}}`,
+			proj:         `{"model":"glm"}`,
+			wantRel:      ".claude/settings.json",
+			wantAlias:    "claude-retired",
+		},
+		{
+			name:          "blank ANTHROPIC_MODEL in local layer clears earlier pin",
+			planned:       `{"model":"glm[1m]"}`,
+			userSettings:  `{"env":{"ANTHROPIC_MODEL":"claude-retired"}}`,
+			proj:          `{"model":"claude-opus"}`,
+			projLocal:     `{"env":{"ANTHROPIC_MODEL":""}}`,
+			wantRel:       ".claude/settings.json",
+			wantAlias:     "claude-opus",
+			wantInWorkDir: true,
+		},
+		{
+			name:         "native alias resolves through its slot",
+			planned:      `{"model":"glm[1m]"}`,
+			userSettings: `{"model":"opus"}`,
+			wantRel:      ".claude/settings.json",
+			wantAlias:    "claude-opus",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			in := input(t)
+			aivenPath := filepath.Join(in.UserHome, claude.SettingsFile)
+			planned := map[string][]byte{aivenPath: []byte(tc.planned)}
+			if tc.userSettings != "" {
+				write(t, filepath.Join(in.UserHome, ".claude/settings.json"), tc.userSettings)
+			}
+			if tc.proj != "" {
+				write(t, filepath.Join(in.WorkDir, ".claude/settings.json"), tc.proj)
+			}
+			if tc.projLocal != "" {
+				write(t, filepath.Join(in.WorkDir, ".claude/settings.local.json"), tc.projLocal)
+			}
+			gotPath, gotAlias, err := claude.Effective(in.Table, in.UserHome, in.WorkDir, planned)
+			if err != nil {
+				t.Fatal(err)
+			}
+			base := in.UserHome
+			if tc.wantInWorkDir {
+				base = in.WorkDir
+			}
+			wantPath := filepath.Join(base, tc.wantRel)
+			if gotPath != wantPath || gotAlias != tc.wantAlias {
+				t.Errorf("Effective = (%q, %q), want (%q, %q)", gotPath, gotAlias, wantPath, tc.wantAlias)
+			}
+		})
+	}
+	t.Run("missing home fails", func(t *testing.T) {
+		if _, _, err := claude.Effective(granted(), "", "", nil); !errors.Is(err, config.ErrNoHome) {
+			t.Errorf("err = %v, want ErrNoHome", err)
+		}
+	})
+	t.Run("empty planned falls back to catalogue default", func(t *testing.T) {
+		in := input(t)
+		write(t, filepath.Join(in.UserHome, ".claude/settings.json"), `{}`)
+		_, alias, err := claude.Effective(in.Table, in.UserHome, "", nil)
+		if err != nil || alias != "glm" {
+			t.Errorf("Effective = %q, %v; want glm", alias, err)
+		}
+	})
+}
+
 func mustJSON(t *testing.T, v any) []byte {
 	t.Helper()
 	data, err := json.Marshal(v)

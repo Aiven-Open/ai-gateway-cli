@@ -115,21 +115,29 @@ var reference = regexp.MustCompile(`^\{(?:env:[A-Za-z_][A-Za-z0-9_]*|file:[^{}\s
 // Reference reports whether value is an OpenCode substitution, which names the variable or file holding a key.
 func Reference(_, value string) bool { return reference.MatchString(value) }
 
+// aliasFor returns the granted model alias for sel against table, falling back to SonnetOrFirst.
+func aliasFor(table []models.Model, sel harness.ModelSelection) string {
+	if chosen, err := sel.ResolveMain(table); err == nil && chosen != "" {
+		if _, granted := models.Find(table, chosen); granted {
+			return chosen
+		}
+	}
+	return models.SonnetOrFirst(table)
+}
+
 // ModelFor returns the -m value for sel against table, falling back to SonnetOrFirst.
 func ModelFor(table []models.Model, sel harness.ModelSelection) string {
-	if chosen, err := sel.ResolveMain(table); err == nil && chosen != "" {
-		return "aiven/" + chosen
-	}
-	return "aiven/" + models.SonnetOrFirst(table)
+	return "aiven/" + aliasFor(table, sel)
 }
 
 // Model is the -m value that picks the gateway's default alias.
 func Model(table []models.Model) string { return ModelFor(table, harness.ModelSelection{}) }
 
-// Launch selects the configured provider/model when there are no native args, passes native args unchanged, and
-// leaves the native configuration tree untouched.
+// Launch selects the configured (or persisted setup) provider/model when there are no native args, passes native args
+// unchanged, and leaves the native configuration tree untouched.
 func Launch(in harness.Input) (harness.Plan, error) {
-	args := harness.ModelArgs(in.Args, Model(in.Table), "-m")
+	alias := aliasFor(in.Table, in.Selection)
+	args := harness.ModelArgs(in.Args, "aiven/"+alias, "-m")
 	if len(args) != len(in.Args) {
 		if in.UserHome == "" {
 			return harness.Plan{}, config.ErrNoHome
@@ -145,7 +153,7 @@ func Launch(in harness.Input) (harness.Plan, error) {
 		providers, _ := cfg["provider"].(map[string]any)
 		p, _ := providers["aiven"].(map[string]any)
 		list, _ := p["models"].(map[string]any)
-		if list[models.SonnetOrFirst(in.Table)] == nil {
+		if list[alias] == nil {
 			return harness.Plan{}, errors.New(
 				"selected default is absent from the configured catalogue; refresh with setup",
 			)

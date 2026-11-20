@@ -480,6 +480,158 @@ func TestSetupChecksTheModelOfEveryClaudeSettingsFileItWrites(t *testing.T) {
 	}
 }
 
+// Even when setup leaves the user's settings.json untouched or project layers exist, Claude Code layers them on launch,
+// so setup refuses an ungranted effective model naming the layer that selected it and saves no key.
+func TestSetupRefusesUngrantedEffectiveClaudeLayer(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name          string
+		userSettings  string
+		projSettings  string
+		projLocal     string
+		wantFile      string
+		wantInWorkDir bool
+	}{
+		{
+			name:         "user settings with asDefault false",
+			userSettings: `{"model":"claude-retired"}`,
+			wantFile:     ".claude/settings.json",
+		},
+		{
+			name:          "project shared settings",
+			projSettings:  `{"model":"claude-retired"}`,
+			wantFile:      ".claude/settings.json",
+			wantInWorkDir: true,
+		},
+		{
+			name:          "project local settings",
+			projLocal:     `{"env":{"ANTHROPIC_MODEL":"claude-retired[1m]"}}`,
+			wantFile:      ".claude/settings.local.json",
+			wantInWorkDir: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := newGatewayDouble(t)
+			s := newSession(t, g).stdin(keyValid)
+			if tc.userSettings != "" {
+				s.writeUserSettings("settings.json", tc.userSettings)
+			}
+			if tc.projSettings != "" {
+				s.writeProjectSettings("settings.json", tc.projSettings)
+			}
+			if tc.projLocal != "" {
+				s.writeProjectSettings("settings.local.json", tc.projLocal)
+			}
+			r := s.run("setup", "claude", "--key-stdin", "--yes")
+			wantPath := filepath.Join(s.fakeHome, tc.wantFile)
+			if tc.wantInWorkDir {
+				wantPath = filepath.Join(s.env.WorkDir, tc.wantFile)
+			}
+			if r.code == 0 || !strings.Contains(r.stderr, wantPath) ||
+				!strings.Contains(r.stderr, "claude-retired") ||
+				!strings.Contains(r.stderr, "does not grant") {
+				t.Fatalf("exit %d, stderr %s", r.code, r.stderr)
+			}
+			for _, req := range g.journal() {
+				if req.Method != http.MethodGet {
+					t.Errorf("sent %s %s", req.Method, req.URL.Path)
+				}
+			}
+			if _, err := os.Stat(s.keyPath()); !os.IsNotExist(err) {
+				t.Errorf("key saved: %v", err)
+			}
+			if _, err := os.Stat(
+				filepath.Join(s.fakeHome, ".claude/aiven.settings.json"),
+			); !os.IsNotExist(
+				err,
+			) {
+				t.Errorf("aiven.settings.json written: %v", err)
+			}
+		})
+	}
+}
+
+// Setup probes the effective model across Claude's layers, allows blank ANTHROPIC_MODEL overrides to clear earlier
+// ungranted pins, and handles empty or model-less settings files without false errors.
+func TestSetupClaudeLayeredEffectiveModelProbingAndOverrides(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name                      string
+		userSettings, proj, local string
+		wantProbed                string
+	}{
+		{
+			name:         "user layer selects different granted model",
+			userSettings: `{"model":"claude-opus-5-5"}`,
+			wantProbed:   "claude-opus-5-5",
+		},
+		{
+			name:       "project layer selects different granted model",
+			proj:       `{"model":"claude-opus-5-5[1m]"}`,
+			wantProbed: "claude-opus-5-5",
+		},
+		{
+			name:         "blank ANTHROPIC_MODEL in higher layer clears earlier ungranted pin",
+			userSettings: `{"env":{"ANTHROPIC_MODEL":"claude-retired"}}`,
+			local:        `{"env":{"ANTHROPIC_MODEL":""}}`,
+			wantProbed:   "glm",
+		},
+		{
+			name:         "empty user settings",
+			userSettings: `{}`,
+			wantProbed:   "glm",
+		},
+		{
+			name:         "permissions-only user settings",
+			userSettings: `{"permissions":{"allow":["Bash(ls)"]}}`,
+			wantProbed:   "glm",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := newGatewayDouble(t)
+			var mu sync.Mutex
+			var probed []string
+			g.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodGet {
+					_, _ = w.Write([]byte(`{"data":[{"id":"glm"},{"id":"claude-opus-5-5"}]}`))
+					return
+				}
+				var body struct {
+					Model string `json:"model"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Error(err)
+				}
+				mu.Lock()
+				probed = append(probed, r.URL.Path+":"+body.Model)
+				mu.Unlock()
+				_, _ = w.Write([]byte(`{"type":"message","content":[]}`))
+			})
+			s := newSession(t, g).stdin(keyValid)
+			if tc.userSettings != "" {
+				s.writeUserSettings("settings.json", tc.userSettings)
+			}
+			if tc.proj != "" {
+				s.writeProjectSettings("settings.json", tc.proj)
+			}
+			if tc.local != "" {
+				s.writeProjectSettings("settings.local.json", tc.local)
+			}
+			if r := s.run("setup", "claude", "--key-stdin", "--yes"); r.code != 0 {
+				t.Fatalf("exit %d, stderr %s", r.code, r.stderr)
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			want := "/v1/messages:" + tc.wantProbed
+			if len(probed) != 1 || probed[0] != want {
+				t.Errorf("probed = %v, want [%s]", probed, want)
+			}
+		})
+	}
+}
+
 func TestAuthenticationFailureStopsTheRemainingChecks(t *testing.T) {
 	t.Parallel()
 	g := newGatewayDouble(t)

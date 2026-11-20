@@ -12,6 +12,7 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 
+	"github.com/aiven-open/ai-gateway-cli/internal/config"
 	"github.com/aiven-open/ai-gateway-cli/internal/gateway"
 	"github.com/aiven-open/ai-gateway-cli/internal/harness"
 	"github.com/aiven-open/ai-gateway-cli/internal/harness/claude"
@@ -40,7 +41,12 @@ func (c protocolCheck) same(d protocolCheck) bool {
 }
 
 // toolChecks derives the protocols from the configuration this run will write.
-func toolChecks(tool string, table []models.Model, plan harness.Plan) ([]protocolCheck, error) {
+func toolChecks(
+	env config.Env,
+	tool string,
+	table []models.Model,
+	plan harness.Plan,
+) ([]protocolCheck, error) {
 	switch tool {
 	case "pi", "omp":
 		byProtocol := map[models.Protocol]string{}
@@ -72,7 +78,7 @@ func toolChecks(tool string, table []models.Model, plan harness.Plan) ([]protoco
 		}
 		return []protocolCheck{{protocol: models.Responses, model: alias}}, nil
 	case "claude":
-		var checks []protocolCheck
+		planned := make(map[string][]byte, len(plan.Files))
 		for _, f := range plan.Files {
 			alias, err := claude.Selected(f.Data)
 			if err != nil {
@@ -81,12 +87,16 @@ func toolChecks(tool string, table []models.Model, plan harness.Plan) ([]protoco
 			if _, granted := models.Find(table, alias); !granted {
 				return nil, notGranted(f.Path, alias)
 			}
-			check := protocolCheck{protocol: models.Messages, model: alias}
-			if !slices.ContainsFunc(checks, check.same) {
-				checks = append(checks, check)
-			}
+			planned[f.Path] = f.Data
 		}
-		return checks, nil
+		path, alias, err := claude.Effective(table, env.UserHome, env.WorkDir, planned)
+		if err != nil {
+			return nil, fmt.Errorf("read effective Claude settings: %w", err)
+		}
+		if _, granted := models.Find(table, alias); !granted {
+			return nil, notGranted(path, alias)
+		}
+		return []protocolCheck{{protocol: models.Messages, model: alias}}, nil
 	case "opencode":
 		return []protocolCheck{
 			{protocol: models.ChatCompletions, model: models.SonnetOrFirst(table)},
@@ -98,13 +108,18 @@ func toolChecks(tool string, table []models.Model, plan harness.Plan) ([]protoco
 // blocked fails each pending tool whose configured model the key does not grant, leaves the other pending tools not
 // attempted, and reports whether there was one. The key is shared, so saving it for the others would leave the
 // refused tool sending it for a model it does not grant.
-func blocked(valid []*targetOutcome, plans map[string]harness.Plan, table []models.Model) bool {
+func blocked(
+	env config.Env,
+	valid []*targetOutcome,
+	plans map[string]harness.Plan,
+	table []models.Model,
+) bool {
 	refused := false
 	for _, out := range valid {
 		if out.status != statusPending {
 			continue
 		}
-		if _, err := toolChecks(out.tool, table, plans[out.tool]); errors.Is(err, errNotGranted) {
+		if _, err := toolChecks(env, out.tool, table, plans[out.tool]); errors.Is(err, errNotGranted) {
 			out.status, out.reason, refused = statusFailed, err.Error(), true
 		}
 	}
@@ -134,7 +149,7 @@ func checkProtocols(
 		if out.status != statusPending {
 			continue
 		}
-		required, err := toolChecks(out.tool, table, plans[out.tool])
+		required, err := toolChecks(run.env, out.tool, table, plans[out.tool])
 		if err != nil {
 			out.status, out.reason = statusFailed, err.Error()
 			continue

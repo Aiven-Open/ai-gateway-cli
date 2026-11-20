@@ -20,12 +20,19 @@ import (
 // or on Windows its embedded bash-like shell, and caches its output until a 401.
 func APIKey(baseURL string) string { return "!" + creds.CommandLine(baseURL, runtime.GOOS) }
 
+// aliasFor returns the granted model alias for sel against table, falling back to SonnetOrFirst.
+func aliasFor(table []models.Model, sel harness.ModelSelection) string {
+	if chosen, err := sel.ResolveMain(table); err == nil && chosen != "" {
+		if _, granted := models.Find(table, chosen); granted {
+			return chosen
+		}
+	}
+	return models.SonnetOrFirst(table)
+}
+
 // ModelFor returns the --model value for sel against table, falling back to SonnetOrFirst.
 func ModelFor(table []models.Model, sel harness.ModelSelection) string {
-	if chosen, err := sel.ResolveMain(table); err == nil && chosen != "" {
-		return "aiven/" + chosen
-	}
-	return "aiven/" + models.SonnetOrFirst(table)
+	return "aiven/" + aliasFor(table, sel)
 }
 
 // Model is the --model value that picks the gateway's default alias.
@@ -89,9 +96,11 @@ func Setup(in harness.Input) (harness.Plan, error) {
 	return harness.Plan{Files: files}, nil
 }
 
-// Launch selects the configured default model when there are no native args, and passes native args unchanged.
+// Launch selects the configured (or persisted setup) default model when there are no native args, and passes native
+// args unchanged.
 func Launch(in harness.Input) (harness.Plan, error) {
-	args := harness.ModelArgs(in.Args, Model(in.Table), "--model")
+	alias := aliasFor(in.Table, in.Selection)
+	args := harness.ModelArgs(in.Args, "aiven/"+alias, "--model")
 	if len(args) != len(in.Args) {
 		if in.UserHome == "" {
 			return harness.Plan{}, config.ErrNoHome
@@ -104,7 +113,7 @@ func Launch(in harness.Input) (harness.Plan, error) {
 		found := false
 		for _, entry := range list {
 			m, _ := entry.(map[string]any)
-			found = found || m["id"] == models.SonnetOrFirst(in.Table)
+			found = found || m["id"] == alias
 		}
 		if !found {
 			return harness.Plan{}, errors.New(

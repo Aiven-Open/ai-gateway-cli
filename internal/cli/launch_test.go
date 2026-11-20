@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -619,5 +620,64 @@ func TestOpencodeLaunchNeedsTheKeyFile(t *testing.T) {
 	}
 	if len(s.runner.calls) != 0 || len(g.journal()) != before {
 		t.Errorf("exec'd %v, %d gateway requests", s.runner.calls, len(g.journal())-before)
+	}
+}
+
+func TestLaunchUsesPersistedModelPrefsAndFallsBackWhenUngranted(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		tool, flag string
+	}{
+		{"pi", "--model"},
+		{"opencode", "-m"},
+		{"omp", "--model"},
+	} {
+		t.Run(tc.tool, func(t *testing.T) {
+			t.Parallel()
+			g := newGatewayDouble(t)
+			s := newSession(t, g).loggedIn(keyValid).configured(tc.tool)
+			if err := config.SaveModelPrefs(
+				s.fakeHome,
+				s.env.BaseURL,
+				map[string]string{tc.tool: "glm"},
+				nil,
+			); err != nil {
+				t.Fatal(err)
+			}
+			if r := s.run("launch", tc.tool); r.code != 0 {
+				t.Fatalf("launch persisted: exit %d, stderr %q", r.code, r.stderr)
+			}
+			if got := s.runner.calls[0].argv; !slices.Equal(got, []string{tc.tool, tc.flag, "aiven/glm"}) {
+				t.Fatalf("argv = %v, want [%s %s aiven/glm]", got, tc.tool, tc.flag)
+			}
+			// Explicit native model flag overrides persisted preference.
+			if r := s.run("launch", tc.tool, "--", tc.flag, "aiven/gpt-sol"); r.code != 0 {
+				t.Fatalf("launch native override: exit %d, stderr %q", r.code, r.stderr)
+			}
+			if got := s.runner.calls[1].argv; !slices.Equal(
+				got,
+				[]string{tc.tool, tc.flag, "aiven/gpt-sol"},
+			) {
+				t.Fatalf("argv override = %v", got)
+			}
+			// Ungranted persisted alias falls back cleanly to SonnetOrFirst.
+			if err := config.SaveModelPrefs(
+				s.fakeHome,
+				s.env.BaseURL,
+				map[string]string{tc.tool: "retired-alias"},
+				nil,
+			); err != nil {
+				t.Fatal(err)
+			}
+			if r := s.run("launch", tc.tool); r.code != 0 {
+				t.Fatalf("launch fallback: exit %d, stderr %q", r.code, r.stderr)
+			}
+			if got := s.runner.calls[2].argv; !slices.Equal(
+				got,
+				[]string{tc.tool, tc.flag, "aiven/claude-sonnet"},
+			) {
+				t.Fatalf("argv fallback = %v, want claude-sonnet", got)
+			}
+		})
 	}
 }

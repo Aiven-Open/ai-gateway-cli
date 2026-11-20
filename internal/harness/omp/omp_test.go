@@ -366,4 +366,19 @@ func TestSetupAndModelForUseExplicitSelection(t *testing.T) {
 	); got["modelRoles"].(map[string]any)["default"] != "aiven/gpt-sol" {
 		t.Fatalf("config.yml = %v", got)
 	}
+	lp, err := omp.Launch(in)
+	if err != nil || !slices.Equal(lp.Argv, []string{"omp", "--model", "aiven/gpt-sol"}) {
+		t.Fatalf("Launch(selected) = %v, %v", lp.Argv, err)
+	}
+	in.Selection = harness.ModelSelection{Model: "retired-model"}
+	lp, err = omp.Launch(in)
+	if err != nil || !slices.Equal(lp.Argv, []string{"omp", "--model", "aiven/claude-sonnet"}) {
+		t.Fatalf("Launch(ungranted fallback) = %v, %v", lp.Argv, err)
+	}
+	in.Selection = harness.ModelSelection{Model: "gpt-sol"}
+	in.Args = []string{"--model", "aiven/glm"}
+	lp, err = omp.Launch(in)
+	if err != nil || !slices.Equal(lp.Argv, []string{"omp", "--model", "aiven/glm"}) {
+		t.Fatalf("Launch(native args) = %v, %v", lp.Argv, err)
+	}
 }

@@ -415,4 +415,19 @@ func TestSetupAndModelForUseExplicitSelection(t *testing.T) {
 	if got := setUp(t, in); got["model"] != "aiven/gpt-sol" {
 		t.Fatalf("opencode.json model = %v", got["model"])
 	}
+	lp, err := opencode.Launch(in)
+	if err != nil || !slices.Equal(lp.Argv, []string{"opencode", "-m", "aiven/gpt-sol"}) {
+		t.Fatalf("Launch(selected) = %v, %v", lp.Argv, err)
+	}
+	in.Selection = harness.ModelSelection{Model: "retired-model"}
+	lp, err = opencode.Launch(in)
+	if err != nil || !slices.Equal(lp.Argv, []string{"opencode", "-m", "aiven/claude-sonnet"}) {
+		t.Fatalf("Launch(ungranted fallback) = %v, %v", lp.Argv, err)
+	}
+	in.Selection = harness.ModelSelection{Model: "gpt-sol"}
+	in.Args = []string{"-m", "aiven/glm"}
+	lp, err = opencode.Launch(in)
+	if err != nil || !slices.Equal(lp.Argv, []string{"opencode", "-m", "aiven/glm"}) {
+		t.Fatalf("Launch(native args) = %v, %v", lp.Argv, err)
+	}
 }

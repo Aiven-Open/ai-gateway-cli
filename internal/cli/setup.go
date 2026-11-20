@@ -241,7 +241,7 @@ func setup(ctx context.Context, args []string, env config.Env, deps Deps) int {
 		}
 		plans[out.tool] = plan
 	}
-	if blocked(valid, plans, table) {
+	if blocked(env, valid, plans, table) {
 		run.table = table
 		run.credential = "not saved by this run; existing key files unchanged; " +
 			"a selected tool's configured model is not granted by this key"

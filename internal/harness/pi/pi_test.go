@@ -423,4 +423,20 @@ func TestSetupAndModelForUseExplicitSelection(t *testing.T) {
 		got["defaultProvider"] != "aiven" {
 		t.Fatalf("settings.json = %v", got)
 	}
+	// Launch honors granted Selection, falls back cleanly when ungranted, and lets native args override.
+	lp, err := pi.Launch(in)
+	if err != nil || !slices.Equal(lp.Argv, []string{"pi", "--model", "aiven/gpt-sol"}) {
+		t.Fatalf("Launch(selected) = %v, %v", lp.Argv, err)
+	}
+	in.Selection = harness.ModelSelection{Model: "retired-model"}
+	lp, err = pi.Launch(in)
+	if err != nil || !slices.Equal(lp.Argv, []string{"pi", "--model", "aiven/claude-sonnet"}) {
+		t.Fatalf("Launch(ungranted fallback) = %v, %v", lp.Argv, err)
+	}
+	in.Selection = harness.ModelSelection{Model: "gpt-sol"}
+	in.Args = []string{"--model", "aiven/glm"}
+	lp, err = pi.Launch(in)
+	if err != nil || !slices.Equal(lp.Argv, []string{"pi", "--model", "aiven/glm"}) {
+		t.Fatalf("Launch(native args) = %v, %v", lp.Argv, err)
+	}
 }
