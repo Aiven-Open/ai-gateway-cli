@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aiven-open/ai-gateway-cli/internal/harness"
 	"github.com/aiven-open/ai-gateway-cli/internal/models"
 )
 
@@ -111,7 +112,7 @@ func TestCommandRenderingEquivalenceGrid(t *testing.T) {
 				for _, colored := range []bool{false, true} {
 					var out bytes.Buffer
 					u := newUI(&out, colored, nil, !colored)
-					u.command(0, directCommand(tool, []models.Model{{Alias: id}}, false))
+					u.command(0, directCommand(tool, []models.Model{{Alias: id}}, false, harness.ModelSelection{}))
 					if out.Len() != 0 {
 						t.Fatalf(
 							"%s/color=%v/control=%q advertised altered command %q",
@@ -139,7 +140,10 @@ func TestCommandRenderingEquivalenceGrid(t *testing.T) {
 					for _, colored := range []bool{false, true} {
 						var out bytes.Buffer
 						u := newUI(&out, colored, nil, !colored)
-						u.command(0, directCommand(tool, []models.Model{{Alias: id}}, false))
+						u.command(
+							0,
+							directCommand(tool, []models.Model{{Alias: id}}, false, harness.ModelSelection{}),
+						)
 						printed := style.ReplaceAllString(out.String(), "")
 						if printed == "" {
 							t.Fatalf("printable token %q had no command", id)

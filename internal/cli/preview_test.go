@@ -82,14 +82,14 @@ func configure(
 	yes, asDefault bool,
 ) (targetOutcome, string) {
 	t.Helper()
-	plan, err := prepareSnapshot(env, previewTable, "pi", asDefault)
+	plan, err := preparePlanForTest(env, previewTable, "pi", asDefault)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var stderr strings.Builder
 	deps.Stderr, deps.Now = &stderr, func() time.Time { return previewNow }
 	out := targetOutcome{tool: "pi", asDefault: asDefault}
-	configureTool(deps, newPresenter(env, deps, true), yes, &out, plan.Files, previewTable)
+	configureToolForTest(deps, newPresenter(env, deps, true), yes, &out, plan.Files, previewTable)
 	return out, stderr.String()
 }
 
@@ -105,7 +105,7 @@ func TestConfigureToolNamesTheBackupItKeeps(t *testing.T) {
 		t.Fatalf("outcome %+v, stderr %q", out, stderr)
 	}
 	for _, want := range []string{"Update " + path + "\n", "previous version kept as " + backup + "\n", "+++ " + path + note + "\n",
-		"Native default: left as it is\n", "[3 models: claude-sonnet-5-5, glm-5, … +1 more]"} {
+		"Direct invocation: left as it is\n", "[3 models: claude-sonnet-5-5, glm-5, … +1 more]"} {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("stderr lacks %q: %q", want, stderr)
 		}
@@ -164,14 +164,14 @@ func TestConfigureToolWritesXDGConfigHomeOutsideUserHome(t *testing.T) {
 	env := previewEnv(t)
 	env.UserHome += string(filepath.Separator)
 	env.ConfigHome = filepath.Join(t.TempDir(), "xdg")
-	plan, err := prepareSnapshot(env, previewTable, "opencode", false)
+	plan, err := preparePlanForTest(env, previewTable, "opencode", false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var stderr strings.Builder
 	deps := Deps{Stderr: &stderr, Now: func() time.Time { return previewNow }}
 	out := targetOutcome{tool: "opencode"}
-	configureTool(deps, newPresenter(env, deps, true), true, &out, plan.Files, previewTable)
+	configureToolForTest(deps, newPresenter(env, deps, true), true, &out, plan.Files, previewTable)
 	if out.status != statusConfigured {
 		t.Fatalf("outcome %+v, stderr %q", out, stderr.String())
 	}
@@ -189,7 +189,7 @@ func TestConfigureToolWritesXDGConfigHomeOutsideUserHome(t *testing.T) {
 		t.Fatal(err)
 	}
 	env.ConfigHome = link
-	if _, err := prepareSnapshot(
+	if _, err := preparePlanForTest(
 		env,
 		previewTable,
 		"opencode",
@@ -223,14 +223,14 @@ func TestConfigureToolSummarisesTheOMPModels(t *testing.T) {
 	env := previewEnv(t)
 	path := filepath.Join(env.UserHome, ".omp/agent/models.yml")
 	writeTestFile(t, path, "# local models\nproviders:\n  local:\n    baseUrl: http://localhost\n")
-	plan, err := prepareSnapshot(env, previewTable, "omp", false)
+	plan, err := preparePlanForTest(env, previewTable, "omp", false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var stderr strings.Builder
 	deps := Deps{Stderr: &stderr, Now: func() time.Time { return previewNow }}
 	out := targetOutcome{tool: "omp"}
-	configureTool(deps, newPresenter(env, deps, true), true, &out, plan.Files, previewTable)
+	configureToolForTest(deps, newPresenter(env, deps, true), true, &out, plan.Files, previewTable)
 	if out.status != statusConfigured ||
 		!strings.Contains(
 			stderr.String(),
@@ -302,7 +302,7 @@ func TestConfigureToolStopsWhenAFileChangesAfterInspection(t *testing.T) {
 	env := previewEnv(t)
 	path := filepath.Join(env.UserHome, ".pi/agent/models.json")
 	writeTestFile(t, path, `{"providers":{}}`)
-	plan, err := prepareSnapshot(env, previewTable, "pi", false)
+	plan, err := preparePlanForTest(env, previewTable, "pi", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,7 +313,7 @@ func TestConfigureToolStopsWhenAFileChangesAfterInspection(t *testing.T) {
 		Prompter: &lineAnswers{answers: []string{"y"}, hook: func() { writeTestFile(t, path, edited) }},
 	}
 	out := targetOutcome{tool: "pi"}
-	configureTool(deps, newPresenter(env, deps, true), false, &out, plan.Files, previewTable)
+	configureToolForTest(deps, newPresenter(env, deps, true), false, &out, plan.Files, previewTable)
 	if out.status != statusFailed || !strings.Contains(out.reason, path+" changed since inspection") ||
 		len(out.written) != 0 {
 		t.Fatalf("outcome %+v, stderr %q", out, stderr.String())
@@ -328,14 +328,14 @@ func TestConfigureToolStopsWhenAFileChangesAfterInspection(t *testing.T) {
 		if err := os.Chmod(path, 0o644); err != nil {
 			t.Fatal(err)
 		}
-		plan, err = prepareSnapshot(env, previewTable, "pi", false)
+		plan, err = preparePlanForTest(env, previewTable, "pi", false)
 		if err != nil {
 			t.Fatal(err)
 		}
 		stderr.Reset()
 		deps.Prompter = &lineAnswers{answers: []string{"y"}, hook: func() { _ = os.Chmod(path, 0o600) }}
 		out = targetOutcome{tool: "pi"}
-		configureTool(deps, newPresenter(env, deps, true), false, &out, plan.Files, previewTable)
+		configureToolForTest(deps, newPresenter(env, deps, true), false, &out, plan.Files, previewTable)
 		if out.status != statusFailed ||
 			!strings.Contains(out.reason, path+" changed since inspection") ||
 			len(out.written) != 0 {
@@ -364,7 +364,7 @@ func TestConfigureToolChecksEveryFileBeforeTouchingAny(t *testing.T) {
 				".pi/agent/settings.json",
 			)
 			writeTestFile(t, settings, `{"theme":"dark"}`)
-			plan, err := prepareSnapshot(env, previewTable, "pi", true)
+			plan, err := preparePlanForTest(env, previewTable, "pi", true)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -385,7 +385,7 @@ func TestConfigureToolChecksEveryFileBeforeTouchingAny(t *testing.T) {
 				want.status, want.written = statusPartial, []string{modelsPath + " (new file)"}
 			}
 			out := targetOutcome{tool: "pi", asDefault: true}
-			configureTool(deps, newPresenter(env, deps, true), false, &out, plan.Files, previewTable)
+			configureToolForTest(deps, newPresenter(env, deps, true), false, &out, plan.Files, previewTable)
 			if out.status != want.status ||
 				strings.Join(out.written, ",") != strings.Join(want.written, ",") ||
 				!strings.Contains(out.reason, settings+" changed since inspection") {
@@ -408,7 +408,7 @@ func TestWriteFilesKeepsAnEditMadeWhileTheBackupIsTaken(t *testing.T) {
 	env := previewEnv(t)
 	path := filepath.Join(env.UserHome, ".pi/agent/models.json")
 	writeTestFile(t, path, `{"providers":{}}`)
-	plan, err := prepareSnapshot(env, previewTable, "pi", false)
+	plan, err := preparePlanForTest(env, previewTable, "pi", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -431,7 +431,7 @@ func TestWriteFilesKeepsAnEditMadeWhileTheBackupIsTaken(t *testing.T) {
 		if err := os.Chmod(path, 0o644); err != nil {
 			t.Fatal(err)
 		}
-		plan, err = prepareSnapshot(env, previewTable, "pi", false)
+		plan, err = preparePlanForTest(env, previewTable, "pi", false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -458,7 +458,7 @@ func TestWriteFilesRefusesASymlinkSwappedBeforeBackup(t *testing.T) {
 	env := previewEnv(t)
 	path := filepath.Join(env.UserHome, ".pi/agent/models.json")
 	writeTestFile(t, path, `{"providers":{}}`)
-	plan, err := prepareSnapshot(env, previewTable, "pi", false)
+	plan, err := preparePlanForTest(env, previewTable, "pi", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -491,7 +491,7 @@ func TestWriteFilesStaysInTheInspectedDirectoryWhenItsPathIsReplaced(t *testing.
 	agent := filepath.Join(env.UserHome, ".pi/agent")
 	const before = `{"providers":{}}`
 	writeTestFile(t, filepath.Join(agent, "models.json"), before)
-	plan, err := prepareSnapshot(env, previewTable, "pi", false)
+	plan, err := preparePlanForTest(env, previewTable, "pi", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -534,7 +534,7 @@ func TestConfigureToolKeepsThePreviewedBackupNameWhenAnotherRunTakesIt(t *testin
 	const before = `{"providers":{}}`
 	writeTestFile(t, path, before)
 	taken := fsutil.BackupPath(path, previewNow)
-	plan, err := prepareSnapshot(env, previewTable, "pi", false)
+	plan, err := preparePlanForTest(env, previewTable, "pi", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -548,7 +548,7 @@ func TestConfigureToolKeepsThePreviewedBackupNameWhenAnotherRunTakesIt(t *testin
 		},
 	}
 	out := targetOutcome{tool: "pi"}
-	configureTool(deps, newPresenter(env, deps, true), false, &out, plan.Files, previewTable)
+	configureToolForTest(deps, newPresenter(env, deps, true), false, &out, plan.Files, previewTable)
 	if out.status != statusFailed ||
 		!strings.Contains(stderr.String(), "(previous version: "+taken+")") ||
 		!strings.Contains(out.reason, taken+" already exists; retry") {
@@ -585,7 +585,7 @@ func TestConfigureToolReportsAPartialWrite(t *testing.T) {
 		stderr,
 		"partially configured; completed "+modelsPath+" (new file); remaining operation failed: replace "+settings,
 	) ||
-		!strings.Contains(stderr, "Native default: Aiven becomes the default for Pi") {
+		!strings.Contains(stderr, "Direct invocation: Aiven becomes the default for Pi") {
 		t.Errorf("stderr %q", stderr)
 	}
 	if got := readTestFile(t, settings); got != before {
@@ -606,7 +606,7 @@ func TestConfigureToolNamesNoRecoveryCopyForANewFile(t *testing.T) {
 
 func TestPrepareSnapshotRefusesRedirectedParents(t *testing.T) {
 	env := previewEnv(t)
-	plan, err := prepareSnapshot(env, previewTable, "pi", false)
+	plan, err := preparePlanForTest(env, previewTable, "pi", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -629,7 +629,7 @@ func TestPrepareSnapshotRefusesRedirectedParents(t *testing.T) {
 	var stderr strings.Builder
 	deps := Deps{Stderr: &stderr}
 	out := targetOutcome{tool: "pi"}
-	configureTool(deps, newPresenter(env, deps, true), true, &out, plan.Files, previewTable)
+	configureToolForTest(deps, newPresenter(env, deps, true), true, &out, plan.Files, previewTable)
 	if out.status != statusFailed ||
 		!strings.Contains(out.reason, agent+" is not a regular directory") {
 		t.Errorf("outcome %+v, stderr %q", out, stderr.String())
@@ -637,7 +637,7 @@ func TestPrepareSnapshotRefusesRedirectedParents(t *testing.T) {
 	if entries, _ := os.ReadDir(elsewhere); len(entries) != 0 {
 		t.Errorf("wrote through the link: %v", entries)
 	}
-	if _, err := prepareSnapshot(
+	if _, err := preparePlanForTest(
 		env,
 		previewTable,
 		"pi",
@@ -667,7 +667,7 @@ func TestPrepareSnapshotRefusesRedirectedOMPHome(t *testing.T) {
 			if when == "before inspection" {
 				redirect()
 			}
-			plan, err := prepareSnapshot(env, previewTable, "omp", true)
+			plan, err := preparePlanForTest(env, previewTable, "omp", true)
 			if when == "before inspection" {
 				if err == nil || !strings.Contains(err.Error(), ompHome+" is not a regular directory") {
 					t.Fatalf("snapshot through redirected OMP home: %v", err)
@@ -681,7 +681,7 @@ func TestPrepareSnapshotRefusesRedirectedOMPHome(t *testing.T) {
 			var stderr strings.Builder
 			deps := Deps{Stderr: &stderr}
 			out := targetOutcome{tool: "omp", asDefault: true}
-			configureTool(deps, newPresenter(env, deps, true), true, &out, plan.Files, previewTable)
+			configureToolForTest(deps, newPresenter(env, deps, true), true, &out, plan.Files, previewTable)
 			if out.status != statusFailed ||
 				!strings.Contains(out.reason, ompHome+" is not a regular directory") {
 				t.Errorf("outcome %+v, stderr %q", out, stderr.String())
@@ -743,5 +743,33 @@ func TestYAMLPreviewRedactsCredentialsOnBothSides(t *testing.T) {
 	); strings.Contains(from+to, "SYNTHETIC") ||
 		!strings.Contains(from, "theme: dark") {
 		t.Errorf("aliased credential in a later document: %q / %q", from, to)
+	}
+}
+
+func preparePlanForTest(
+	env config.Env,
+	table []models.Model,
+	tool string,
+	asDefault bool,
+) (harness.Plan, error) {
+	snap, err := prepareSnapshot(env, tool)
+	if err != nil {
+		return harness.Plan{}, err
+	}
+	return applySnapshot(env, table, tool, asDefault, snap, harness.ModelSelection{})
+}
+
+func configureToolForTest(
+	deps Deps,
+	p presenter,
+	yes bool,
+	out *targetOutcome,
+	files []harness.File,
+	table []models.Model,
+) {
+	target := &setupTarget{out: out, plan: harness.Plan{Files: files}}
+	approved, _ := reviewAndApprove(deps, p, config.Env{}, yes, false, []*setupTarget{target}, table)
+	for _, item := range approved {
+		writeApproved(deps, item)
 	}
 }

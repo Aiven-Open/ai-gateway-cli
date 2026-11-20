@@ -53,7 +53,7 @@ func (allInstalled) Exec(string, []string, []string) error { return nil }
 
 var _ execx.Runner = allInstalled{}
 
-func inlineDeps(sel *scriptedSelector, stderr io.Writer) Deps {
+func inlineDeps(sel Prompter, stderr io.Writer) Deps {
 	return Deps{Stderr: stderr, Stdout: io.Discard, Prompter: sel, Runner: allInstalled{},
 		Term: Terminal{StdinTTY: true, StderrTTY: true, StderrWidth: func() int { return 80 }}}
 }
@@ -65,15 +65,15 @@ func TestInlineApprovalAppliesOnlyOnAnExplicitApply(t *testing.T) {
 		name    string
 		answers []selectAnswer
 		ok      bool
-		err     error
+		outcome reviewOutcome
 		diffs   int
 	}{
-		{name: "apply", answers: []selectAnswer{{picked: []int{0}}}, ok: true},
-		{name: "decline", answers: []selectAnswer{{picked: []int{1}}}},
-		{name: "full diff then apply", answers: []selectAnswer{{picked: []int{2}}, {picked: []int{0}}}, ok: true, diffs: 1},
-		{name: "esc", answers: []selectAnswer{{err: errCancelled}}, err: errCancelled},
-		{name: "full diff then ctrl-c", answers: []selectAnswer{{picked: []int{2}}, {err: errCancelled}}, err: errCancelled, diffs: 1},
-		{name: "end of input", err: errInputEnded},
+		{name: "apply", answers: []selectAnswer{{picked: []int{0}}}, ok: true, outcome: reviewApproved},
+		{name: "decline/cancel", answers: []selectAnswer{{picked: []int{2}}}, outcome: reviewApproved},
+		{name: "full diff then apply", answers: []selectAnswer{{picked: []int{1}}, {picked: []int{0}}}, ok: true, outcome: reviewApproved, diffs: 1},
+		{name: "esc", answers: []selectAnswer{{err: errCancelled}}, outcome: reviewCancelled},
+		{name: "full diff then ctrl-c", answers: []selectAnswer{{picked: []int{1}}, {err: errCancelled}}, outcome: reviewCancelled, diffs: 1},
+		{name: "end of input", outcome: reviewCancelled},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			sel := &scriptedSelector{answers: tc.answers}
@@ -83,17 +83,23 @@ func TestInlineApprovalAppliesOnlyOnAnExplicitApply(t *testing.T) {
 			if p.inline == nil {
 				t.Fatal("inline list not offered on a terminal")
 			}
-			ok, err := approveFiles(
-				deps,
-				p,
-				false,
-				files,
-				nil,
-				backupNames{time.Unix(0, 0), map[string]string{}},
-				"pi",
-			)
-			if ok != tc.ok || !errors.Is(err, tc.err) || sel.lines != 0 {
-				t.Errorf("ok %v, err %v, ReadLine calls %d; want %v, %v, 0", ok, err, sel.lines, tc.ok, tc.err)
+			item := pendingPreview{
+				target:  &setupTarget{out: &targetOutcome{tool: "pi"}},
+				files:   files,
+				write:   files,
+				preview: "preview",
+				names:   backupNames{time.Unix(0, 0), map[string]string{}},
+			}
+			approved, outcome := approveSingleInteractive(deps, p, item, nil, false)
+			if (len(approved) == 1) != tc.ok || outcome != tc.outcome || sel.lines != 0 {
+				t.Errorf(
+					"approved %d, outcome %v, ReadLine calls %d; want ok=%v, outcome=%v, 0",
+					len(approved),
+					outcome,
+					sel.lines,
+					tc.ok,
+					tc.outcome,
+				)
 			}
 			if got := strings.Count(stderr.String(), "+++ "+path); got != tc.diffs {
 				t.Errorf("%d full diffs, want %d: %q", got, tc.diffs, stderr.String())
@@ -172,12 +178,16 @@ func TestInlineToolPickerReportsCancellationApartFromNone(t *testing.T) {
 			sel := &scriptedSelector{answers: []selectAnswer{tc.answer}}
 			var stderr strings.Builder
 			deps := inlineDeps(sel, &stderr)
-			got, err := pickTools(deps, newPresenter(config.Env{}, deps, false))
+			var candidates []*setupTarget
+			for _, name := range toolNames {
+				candidates = append(candidates, &setupTarget{out: &targetOutcome{tool: name}, badge: "new"})
+			}
+			got, err := pickToolsBeat1(deps, newPresenter(config.Env{}, deps, false), candidates, nil, nil)
 			if strings.Join(got, ",") != strings.Join(tc.want, ",") || !errors.Is(err, tc.err) ||
 				!sel.asked[0].multi {
 				t.Errorf("got %v, %v; want %v, %v", got, err, tc.want, tc.err)
 			}
-			if len(tc.want) > 0 && !strings.Contains(stderr.String(), "Selected: Pi, Claude Code\n") {
+			if len(tc.want) > 0 && !strings.Contains(stderr.String(), "Pi, Claude Code") {
 				t.Errorf("no durable record of the choice: %q", stderr.String())
 			}
 		})

@@ -17,23 +17,57 @@ var toolNames = []string{"pi", "opencode", "codex", "claude", "omp"}
 const laterHint = "To configure a harness later, run: " +
 	"aiven-ai-gateway setup <pi|opencode|codex|claude|omp>"
 
-// pickTools asks which tools to configure, offering those found on PATH, or every tool when none is. Cancelling
-// returns errCancelled; choosing none returns no tools.
-func pickTools(deps Deps, p presenter) ([]string, error) {
-	var offered []string
+// discoverTools partitions toolNames into installed (found on PATH) and missing.
+func discoverTools(deps Deps) (installed, missing []string) {
 	for _, t := range toolNames {
 		if _, err := deps.Runner.LookPath(t); err == nil {
-			offered = append(offered, t)
+			installed = append(installed, t)
+		} else {
+			missing = append(missing, t)
 		}
 	}
-	found := "found on PATH"
-	if len(offered) == 0 {
-		offered, found = toolNames, "none found on PATH"
+	return installed, missing
+}
+
+// pickToolsBeat1 runs Beat 1 for bare setup: installed harnesses are pre-selected with live status badges,
+// plus a dimmed missing-tools footer when some harnesses are not on PATH.
+func pickToolsBeat1(
+	deps Deps,
+	p presenter,
+	candidates []*setupTarget,
+	missing []string,
+	prevPicked map[string]bool,
+) ([]string, error) {
+	offered := make([]string, 0, len(candidates))
+	for _, t := range candidates {
+		offered = append(offered, t.out.tool)
 	}
 	if p.inline != nil {
-		c := choice{title: "Configure tools to use the gateway (" + found + ")", multi: true}
-		for _, t := range offered {
-			c.options = append(c.options, option{label: toolLabel(t), detail: t})
+		subtitle := ""
+		if len(missing) > 0 {
+			subtitle = "not on PATH: " + strings.Join(missing, ", ")
+		}
+		c := choice{
+			title:    "Harnesses",
+			subtitle: subtitle,
+			multi:    true,
+			rail:     true,
+			theme:    &p.ui.th,
+		}
+		for _, t := range candidates {
+			picked := true
+			if prevPicked != nil {
+				picked = prevPicked[t.out.tool]
+			}
+			detail := t.badge
+			if detail == "" {
+				detail = t.out.tool
+			}
+			c.options = append(c.options, option{
+				label:  toolLabel(t.out.tool),
+				detail: detail,
+				picked: picked,
+			})
 		}
 		indexes, err := p.inline.Select(c)
 		if err != nil {
@@ -44,13 +78,20 @@ func pickTools(deps Deps, p presenter) ([]string, error) {
 			picked = append(picked, offered[i])
 		}
 		if len(picked) > 0 {
-			p.ui.line(0, "Selected: "+c.chosen(indexes))
+			p.ui.railDone("Harnesses", c.chosen(indexes))
 		}
 		return picked, nil
 	}
-	p.ui.line(0, "Configure tools to use the gateway ("+found+"):")
-	for i, t := range offered {
-		p.ui.line(2, fmt.Sprintf("%d) %s (%s)", i+1, toolLabel(t), t))
+	p.ui.line(0, "Configure tools to use the gateway (found on PATH):")
+	for i, t := range candidates {
+		entry := fmt.Sprintf("%d) %s (%s)", i+1, toolLabel(t.out.tool), t.out.tool)
+		if t.badge != "" {
+			entry += " — " + t.badge
+		}
+		p.ui.line(2, entry)
+	}
+	if len(missing) > 0 {
+		p.ui.note(2, "Not on PATH: "+strings.Join(missing, ", "))
 	}
 	for range 3 {
 		answer, err := deps.Prompter.ReadLine(
@@ -96,19 +137,14 @@ func parsePick(answer string, offered []string) ([]string, bool) {
 
 // pickLaunch asks for exactly one installed harness. An empty answer or a cancellation launches nothing.
 func pickLaunch(deps Deps, p presenter) (string, error) {
-	var installed []string
-	for _, tool := range toolNames {
-		if _, err := deps.Runner.LookPath(tool); err == nil {
-			installed = append(installed, tool)
-		}
-	}
+	installed, _ := discoverTools(deps)
 	if len(installed) == 0 {
 		return "", errors.New(
 			"no supported harness is installed; install one, then run aiven-ai-gateway setup <harness>",
 		)
 	}
 	if p.inline != nil {
-		c := choice{title: "Launch one installed harness"}
+		c := choice{title: "Launch one installed harness", theme: &p.ui.th}
 		for _, t := range installed {
 			c.options = append(c.options, option{label: toolLabel(t), detail: t})
 		}

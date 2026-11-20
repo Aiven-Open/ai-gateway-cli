@@ -73,7 +73,7 @@ func TestOmpNoAndYesFlagLeaveConfigBytesUnchanged(t *testing.T) {
 			if yesFlag {
 				args = append(args, "--yes")
 			} else {
-				s.deps.Prompter = &callbackPrompter{answers: []string{"", "y"}}
+				s.deps.Prompter = &callbackPrompter{answers: []string{"", "", "y"}}
 			}
 			if r := s.run(args...); r.code != 0 {
 				t.Fatalf("%d %s", r.code, r.stderr)
@@ -159,7 +159,7 @@ func TestOmpYAMLSuffixCommentsAnchorsAndScopePreserved(t *testing.T) {
 	configBefore := "# scope heading\nenabledModels: [other/*] # scope comment\ndisabledProviders: [aiven]\nmodelRoles:\n  default: other/model # default comment\n  architect: &role other/architect\n  task: *role\n"
 	writeFile(t, modelsPath, modelsBefore)
 	writeFile(t, configPath, configBefore)
-	s.deps.Prompter = &callbackPrompter{answers: []string{"y", "y"}}
+	s.deps.Prompter = &callbackPrompter{answers: []string{"", "y", "y"}}
 	r := s.run("setup", "omp", "--key-stdin")
 	if r.code != 0 || strings.Contains(r.stderr, "SYNTHETIC_secret") ||
 		!strings.Contains(r.stderr, "scope can override") {
@@ -196,11 +196,12 @@ func TestPiAndOmpDefaultQuestionsAreIndependent(t *testing.T) {
 			map[bool]string{false: "pi no omp yes", true: "pi yes omp no"}[piDefault],
 			func(t *testing.T) {
 				s := newSession(t, newGatewayDouble(t)).stdin(keyValid)
-				piAnswer, ompAnswer := "n", "y"
+				directChoice := "omp"
 				if piDefault {
-					piAnswer, ompAnswer = "y", "n"
+					directChoice = "pi"
 				}
-				p := &scriptedPrompter{answers: []string{"pi,omp", piAnswer, ompAnswer, "y", "y"}}
+				// Beat 1: pi,omp; Beat 2: Recommended defaults; Beat 3: 3 (Choose per tool), then directChoice; Review: Apply all.
+				p := &scriptedPrompter{answers: []string{"pi,omp", "", "3", directChoice, "1"}}
 				s.deps.Prompter = p
 				if r := s.run("setup", "--key-stdin"); r.code != 0 {
 					t.Fatalf("%d %s prompts=%q", r.code, r.stderr, p.prompts)
@@ -213,14 +214,6 @@ func TestPiAndOmpDefaultQuestionsAreIndependent(t *testing.T) {
 					}
 					if (err == nil) != want {
 						t.Fatalf("%s default write: %v want=%v", tool, err, want)
-					}
-				}
-				for _, tool := range []string{"Pi", "OMP"} {
-					if !slices.Contains(
-						p.prompts,
-						"Make Aiven the native default for "+tool+"? Enter keeps your current default. [y/N] ",
-					) {
-						t.Fatalf("missing independent %s question: %q", tool, p.prompts)
 					}
 				}
 			},

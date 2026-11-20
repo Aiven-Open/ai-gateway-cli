@@ -31,6 +31,9 @@ type answerPrompter struct {
 
 func (p *answerPrompter) ReadLine(prompt string) (string, error) {
 	p.prompts = append(p.prompts, prompt)
+	if strings.HasPrefix(prompt, "Choose model ") {
+		return "", nil
+	}
 	return p.answer, nil
 }
 
@@ -41,7 +44,8 @@ func (p *answerPrompter) ReadSecret(prompt string) (string, error) {
 
 func isPickPrompt(p string) bool {
 	return strings.HasPrefix(p, "Numbers or names") || strings.HasPrefix(p, "Apply this change") ||
-		strings.HasPrefix(p, "Make Aiven")
+		strings.HasPrefix(p, "Choose model ") || strings.HasPrefix(p, "Choose direct-invocation ") ||
+		strings.HasPrefix(p, "Choose apply ")
 }
 
 type connectCase struct {
@@ -86,7 +90,6 @@ func TestSetupConfirmsEnvironmentKeyBeforeAnyRequest(t *testing.T) {
 
 func TestSetupResolvesChecksAndSavesKey(t *testing.T) {
 	hidden := "Paste your Aiven AI Gateway API key (hidden): "
-	keep := "Keep the saved key (sk-…)? [Y/n] "
 	envConsent := "Use this key with <gateway>? [y/N] "
 	cases := []connectCase{
 		{
@@ -99,16 +102,16 @@ func TestSetupResolvesChecksAndSavesKey(t *testing.T) {
 		{
 			name:    "explicit setup",
 			cmd:     "setup",
-			args:    []string{"--key-stdin"},
+			args:    []string{"--key-stdin", "--yes"},
 			stdin:   keyValid,
 			wantKey: keyValid,
 		},
 		{
-			name:        "key file kept on enter",
-			fileKey:     keyValid,
-			prompter:    &answerPrompter{},
-			wantPrompts: []string{keep},
-			wantKey:     keyValid,
+			name:     "key file auto-reused without prompting",
+			fileKey:  keyValid,
+			prompter: &answerPrompter{},
+			wantKey:  keyValid,
+			reused:   true,
 		},
 		{
 			name:     "key file kept with yes",
@@ -128,17 +131,11 @@ func TestSetupResolvesChecksAndSavesKey(t *testing.T) {
 		},
 		{
 			name:    "key file kept without terminal",
+			args:    []string{"--yes"},
 			fileKey: keyValid,
 			stdin:   keyClaudeOnly,
 			wantKey: keyValid,
 			reused:  true,
-		},
-		{
-			name:        "key file replaced",
-			fileKey:     keyValid,
-			prompter:    &answerPrompter{answer: " N ", secret: keyClaudeOnly},
-			wantPrompts: []string{keep, hidden},
-			wantKey:     keyClaudeOnly,
 		},
 		{
 			name:     "stdin flag overrides key file",
@@ -149,25 +146,25 @@ func TestSetupResolvesChecksAndSavesKey(t *testing.T) {
 			wantKey:  keyClaudeOnly,
 		},
 		{
-			name:        "short key shows prefix only",
-			fileKey:     keyShort,
-			prompter:    &answerPrompter{},
-			wantPrompts: []string{"Keep the saved key (sk-…)? [Y/n] "},
-			wantKey:     keyShort,
+			name:     "short key shows prefix only",
+			fileKey:  keyShort,
+			prompter: &answerPrompter{},
+			wantKey:  keyShort,
+			reused:   true,
 		},
 		{
-			name:        "bare 12-char key fully hidden",
-			fileKey:     keyBare,
-			prompter:    &answerPrompter{},
-			wantPrompts: []string{"Keep the saved key (…)? [Y/n] "},
-			wantKey:     keyBare,
+			name:     "bare 12-char key fully hidden",
+			fileKey:  keyBare,
+			prompter: &answerPrompter{},
+			wantKey:  keyBare,
+			reused:   true,
 		},
 		{
-			name:        "long key shows last 4",
-			fileKey:     keyLong,
-			prompter:    &answerPrompter{},
-			wantPrompts: []string{"Keep the saved key (AVNS_…wxyz)? [Y/n] "},
-			wantKey:     keyLong,
+			name:     "long key shows last 4",
+			fileKey:  keyLong,
+			prompter: &answerPrompter{},
+			wantKey:  keyLong,
+			reused:   true,
 		},
 		{
 			name:        "environment key saved",
@@ -226,8 +223,8 @@ func TestSetupResolvesChecksAndSavesKey(t *testing.T) {
 			wantErr: "Messages basic check failed: gateway returned HTTP 403",
 		},
 		{
-			name:     "unrecognised keep answer",
-			fileKey:  keyValid,
+			name:     "unrecognised environment answer",
+			environ:  []string{"AIVEN_AI_GATEWAY_KEY=" + keyFlash},
 			prompter: &answerPrompter{answer: "maybe"},
 			wantErr:  "expected y or n",
 		},
@@ -347,7 +344,7 @@ func TestSetupResolvesChecksAndSavesKey(t *testing.T) {
 				readOrEmpty(t, creds.Path(s.fakeHome, config.DefaultBaseURL)) != tc.otherKey+"\n" {
 				t.Errorf("the other gateway's key file changed")
 			}
-			if tc.reused != strings.Contains(r.stderr, "Using your existing gateway key.") {
+			if tc.reused != strings.Contains(r.stderr, "Using saved key ") {
 				t.Errorf("stderr %q, want reused %v", r.stderr, tc.reused)
 			}
 			if tc.fileKey != "" && slices.Contains(tc.environ, "AIVEN_AI_GATEWAY_KEY="+tc.fileKey) {
@@ -469,7 +466,7 @@ func TestSetupConfiguresNamedTool(t *testing.T) {
 		if r.code != 0 || len(s.runner.calls) != 0 ||
 			!strings.Contains(r.stderr, "native default left as it was\n") ||
 			!strings.Contains(r.stderr, "Or start the native tool directly\n  "+tc.run) ||
-			!strings.Contains(r.stderr, "Start a session\n  aiven-ai-gateway launch "+tc.tool+"\n") {
+			!strings.Contains(r.stderr, "Start a session\n  aiven-ai-gateway launch "+tc.tool+"   # ") {
 			t.Fatalf("exit %d, stderr %q, calls %v", r.code, r.stderr, s.runner.calls)
 		}
 		for _, f := range tc.files {
@@ -566,6 +563,9 @@ func (p hookPrompter) ReadLine(prompt string) (string, error) {
 	if strings.HasPrefix(prompt, p.on) {
 		p.hook()
 	}
+	if strings.HasPrefix(prompt, "Choose model ") {
+		return "", nil
+	}
 	return "y", nil
 }
 
@@ -589,7 +589,9 @@ func TestSetupKeepsThePreviewedBackupNameWhenAnotherRunTakesIt(t *testing.T) {
 }
 
 func TestSetupPreviewsAToolChangeBeforeWritingIt(t *testing.T) {
-	ask, dflt := "Apply this change to codex? [Y/n/v] ", "Make Aiven the native default for Codex? Enter keeps your current default. [y/N] "
+	modelAsk := "Choose model option (Enter for 1): "
+	dflt := `Choose direct-invocation option (Enter for 1, or "back"): `
+	ask := "Apply this change to codex? [Y/n/v] "
 	for _, tc := range []struct {
 		name, want  string
 		args        []string
@@ -597,8 +599,8 @@ func TestSetupPreviewsAToolChangeBeforeWritingIt(t *testing.T) {
 		wantPrompts []string
 		written     bool
 	}{
-		{name: "applied on enter", prompter: &answerPrompter{}, wantPrompts: []string{dflt, ask}, written: true, want: "Codex       configured\n"},
-		{name: "declined", prompter: &answerPrompter{answer: "n"}, wantPrompts: []string{dflt, ask}, want: "Codex       declined; no files written\n"},
+		{name: "applied on enter", prompter: &answerPrompter{}, wantPrompts: []string{modelAsk, dflt, ask}, written: true, want: "Codex       configured\n"},
+		{name: "declined", prompter: &answerPrompter{answer: "n"}, wantPrompts: []string{modelAsk, dflt, ask}, want: "Codex       declined; no files written\n"},
 		{name: "no terminal", want: "Codex       not configured; without a terminal, rerun with --yes to apply\n"},
 		{name: "yes", args: []string{"--yes"}, prompter: &answerPrompter{answer: "n"}, written: true, want: "Codex       configured\n"},
 	} {
@@ -621,8 +623,9 @@ func TestSetupPreviewsAToolChangeBeforeWritingIt(t *testing.T) {
 			if _, err := os.Stat(profile); (err == nil) != tc.written {
 				t.Errorf("profile written = %v, want %v", err == nil, tc.written)
 			}
-			if _, err := os.Stat(s.keyPath()); err != nil {
-				t.Errorf("key not saved: %v", err)
+			// Guarded save: key is saved only when at least one configuration change was approved.
+			if _, err := os.Stat(s.keyPath()); (err == nil) != tc.written {
+				t.Errorf("key saved = %v, want %v", err == nil, tc.written)
 			}
 		})
 	}
@@ -669,7 +672,7 @@ func TestSetupSummarisesModelListsAndSkipsAConfiguredTool(t *testing.T) {
 	if r.code != 0 || !strings.Contains(r.stderr, "Already configured; no file needs a change.\n") ||
 		!strings.Contains(r.stderr, "Pi          unchanged\n") ||
 		!strings.Contains(r.stderr, "\n  pi --model aiven/claude-sonnet-5-5\n") ||
-		len(p.prompts) != 1 {
+		len(p.prompts) != 2 {
 		t.Fatalf("exit %d, stderr %q, prompts %q", r.code, r.stderr, p.prompts)
 	}
 }
@@ -771,7 +774,7 @@ func TestSetupMakesAivenTheDefaultOnlyWhenAsked(t *testing.T) {
 			s := newSession(t, newGatewayDouble(t))
 			path := filepath.Join(s.fakeHome, tc.file)
 			writeFile(t, path, tc.before)
-			ask := "Make Aiven the native default for " + productNames[tc.tool] + "? Enter keeps your current default. [y/N] "
+			ask := `Choose direct-invocation option (Enter for 1, or "back"): `
 			p := &answerPrompter{}
 			s.deps.Prompter = p
 			if r := s.stdin(keyValid).
@@ -825,7 +828,7 @@ func TestSetupMakesAivenTheDefaultOnlyWhenAsked(t *testing.T) {
 			}
 			p.prompts = nil
 			if r := s.stdin(keyValid).
-				run("setup", "--key-stdin", tc.tool); r.code != 0 || len(p.prompts) != 1 || !strings.Contains(r.stderr, "Already configured; no file needs a change.") ||
+				run("setup", "--key-stdin", tc.tool); r.code != 0 || len(p.prompts) != 2 || !strings.Contains(r.stderr, "Already configured; no file needs a change.") ||
 				strings.Contains(r.stderr, "Aiven is now the native default") ||
 				strings.Contains(r.stderr, "directly\n  "+tc.tool+"\n") {
 				t.Fatalf("again: exit %d, prompts %q, stderr %q", r.code, p.prompts, r.stderr)
@@ -910,11 +913,11 @@ func TestTopLevelKeyFlagIsRefusedWithoutEchoingIt(t *testing.T) {
 
 func TestUnrecognisedAnswerIsAskedAgain(t *testing.T) {
 	s := newSession(t, newGatewayDouble(t)).stdin(keyValid)
-	ask := "Make Aiven the native default for Pi? Enter keeps your current default. [y/N] "
-	p := &scriptedPrompter{answers: []string{"maybe", "maybe", "y", "y"}}
+	ask := `Choose direct-invocation option (Enter for 1, or "back"): `
+	p := &scriptedPrompter{answers: []string{"", "maybe", "maybe", "y", "y"}}
 	s.deps.Prompter = p
 	r := s.run("setup", "--key-stdin", "pi")
-	if r.code != 0 || len(p.prompts) < 3 || !slices.Equal(p.prompts[:3], []string{ask, ask, ask}) ||
+	if r.code != 0 || len(p.prompts) < 4 || !slices.Equal(p.prompts[1:4], []string{ask, ask, ask}) ||
 		!strings.Contains(r.stderr, "Aiven is now the native default\n") {
 		t.Fatalf("exit %d, prompts %q, stderr %q", r.code, p.prompts, r.stderr)
 	}

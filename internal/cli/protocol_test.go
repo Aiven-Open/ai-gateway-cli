@@ -12,7 +12,9 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/aiven-open/ai-gateway-cli/internal/cli"
 	"github.com/aiven-open/ai-gateway-cli/internal/harness"
@@ -188,7 +190,7 @@ func TestSetupChecksConfiguredProtocolsAndWritesOnlyReadyTools(t *testing.T) {
 			}
 			answers := []string{"all"}
 			if source == "environment" {
-				answers = append(answers, "y")
+				answers = []string{"y", "all"}
 			}
 			s.deps.Prompter = &scriptedPrompter{answers: answers}
 			for _, tool := range []string{"pi", "omp", "opencode"} {
@@ -635,8 +637,9 @@ func TestSetupClaudeLayeredEffectiveModelProbingAndOverrides(t *testing.T) {
 func TestAuthenticationFailureStopsTheRemainingChecks(t *testing.T) {
 	t.Parallel()
 	g := newGatewayDouble(t)
-	var mu sync.Mutex
-	var sent []string
+	var first atomic.Bool
+	unblock := make(chan struct{})
+	t.Cleanup(func() { close(unblock) })
 	g.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			_, _ = w.Write(
@@ -644,23 +647,95 @@ func TestAuthenticationFailureStopsTheRemainingChecks(t *testing.T) {
 			)
 			return
 		}
-		mu.Lock()
-		sent = append(sent, r.URL.Path)
-		mu.Unlock()
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte(`{"error":{"message":"Authentication Error"}}`))
+		if first.CompareAndSwap(false, true) {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":{"message":"Authentication Error"}}`))
+			return
+		}
+		// Hold concurrent probes open until client cancellation or test cleanup; client-side cancelProbes must stop them.
+		select {
+		case <-r.Context().Done():
+		case <-unblock:
+		}
 	})
 	s := newSession(t, g).stdin(keyValid)
 	r := s.run("setup", "pi", "--key-stdin", "--yes")
 	if r.code != 1 || !strings.Contains(r.stderr, "not attempted after authentication failure") {
 		t.Fatalf("code=%d stderr=%s", r.code, r.stderr)
 	}
-	mu.Lock()
-	defer mu.Unlock()
-	if len(sent) != 1 {
-		t.Errorf("requests after the authentication failure: %v", sent)
-	}
 	if _, err := os.Stat(s.keyPath()); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("key saved after an authentication failure: %v", err)
+	}
+}
+
+func TestConcurrentProbesDeterministicOrderAndPartialFailure(t *testing.T) {
+	t.Parallel()
+	g := newGatewayDouble(t)
+	var inFlight atomic.Int32
+	var maxInFlight atomic.Int32
+	barrier := make(chan struct{})
+	var once sync.Once
+	g.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			_, _ = w.Write(
+				[]byte(`{"data":[{"id":"claude-sonnet"},{"id":"gpt-6.1-sol"},{"id":"gpt-oss-120b"}]}`),
+			)
+			return
+		}
+		cur := inFlight.Add(1)
+		defer inFlight.Add(-1)
+		for {
+			prev := maxInFlight.Load()
+			if cur <= prev || maxInFlight.CompareAndSwap(prev, cur) {
+				break
+			}
+		}
+		if cur >= 2 {
+			once.Do(func() { close(barrier) })
+		}
+		select {
+		case <-barrier:
+		case <-time.After(time.Second):
+		}
+		switch r.URL.Path {
+		case "/v1/messages":
+			_, _ = w.Write([]byte(`{"type":"message","content":[]}`))
+		case "/v1/chat/completions":
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":{"message":"chat failed"}}`))
+		case "/v1/responses":
+			_, _ = w.Write([]byte(`{"object":"response","output":[]}`))
+		}
+	})
+	s := newSession(t, g).stdin(keyValid)
+	s.deps.Prompter = &scriptedPrompter{answers: []string{"claude,codex,opencode"}}
+	r := s.run("setup", "--key-stdin", "--yes")
+	if r.code != 1 {
+		t.Fatalf("expected partial failure exit 1, got %d:\n%s", r.code, r.stderr)
+	}
+	if maxInFlight.Load() < 2 {
+		t.Errorf("max concurrent probes = %d, want >= 2", maxInFlight.Load())
+	}
+	// Deterministic sorted protocol order: Messages (anthropic-messages) < Chat Completions (openai-completions) < Responses (openai-responses).
+	msgIdx := strings.Index(r.stderr, "OK Messages with claude-sonnet")
+	chatIdx := strings.Index(r.stderr, "FAILED Chat Completions with claude-sonnet")
+	respIdx := strings.Index(r.stderr, "OK Responses with gpt-6.1-sol")
+	if msgIdx < 0 || chatIdx < 0 || respIdx < 0 || msgIdx >= chatIdx || chatIdx >= respIdx {
+		t.Errorf("protocol output not in deterministic sorted order (msg=%d chat=%d resp=%d):\n%s",
+			msgIdx, chatIdx, respIdx, r.stderr)
+	}
+	// Healthy tools (claude, codex) were configured while failing tool (opencode) was not.
+	if _, err := os.Stat(filepath.Join(s.fakeHome, ".claude/aiven.settings.json")); err != nil {
+		t.Errorf("claude not configured despite passing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(s.fakeHome, ".codex/aiven.config.toml")); err != nil {
+		t.Errorf("codex not configured despite passing: %v", err)
+	}
+	if _, err := os.Stat(
+		filepath.Join(s.fakeHome, ".config/opencode/opencode.json"),
+	); !os.IsNotExist(
+		err,
+	) {
+		t.Errorf("opencode written despite failing probe: %v", err)
 	}
 }

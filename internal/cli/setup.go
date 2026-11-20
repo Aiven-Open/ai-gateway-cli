@@ -29,38 +29,46 @@ import (
 // A tool with a bin can also be made to use the gateway by default, after which bin alone starts it on Aiven.
 // moved lists variables that redirect the native configuration away from the supported destinations.
 var setupTools = map[string]struct {
-	prepare func(env config.Env, t []models.Model, asDefault bool) (harness.Plan, error)
-	run     func([]models.Model) string
+	prepare func(config.Env, []models.Model, bool, harness.ModelSelection) (harness.Plan, error)
+	run     func([]models.Model, harness.ModelSelection) string
 	bin     string
 	moved   []string
 }{
 	"pi": {
 		userConfig(pi.Setup),
-		func(t []models.Model) string { return "pi --model " + shellQuote(pi.Model(t)) },
+		func(t []models.Model, sel harness.ModelSelection) string {
+			return "pi --model " + shellQuote(pi.ModelFor(t, sel))
+		},
 		"pi",
 		[]string{"PI_CODING_AGENT_DIR"},
 	},
 	"opencode": {
 		userConfig(opencode.Setup),
-		func(t []models.Model) string { return "opencode -m " + shellQuote(opencode.Model(t)) },
+		func(t []models.Model, sel harness.ModelSelection) string {
+			return "opencode -m " + shellQuote(opencode.ModelFor(t, sel))
+		},
 		"opencode",
 		[]string{"OPENCODE_CONFIG", "OPENCODE_CONFIG_DIR"},
 	},
 	"codex": {
 		userConfig(codex.Setup),
-		func([]models.Model) string { return "codex -p aiven" },
+		func([]models.Model, harness.ModelSelection) string { return "codex -p aiven" },
 		"codex",
 		[]string{"CODEX_HOME"},
 	},
 	"claude": {
 		connectClaude,
-		func([]models.Model) string { return claudeDirectCommand(runtime.GOOS) },
+		func([]models.Model, harness.ModelSelection) string {
+			return claudeDirectCommand(runtime.GOOS)
+		},
 		"claude",
 		[]string{"CLAUDE_CONFIG_DIR"},
 	},
 	"omp": {
 		userConfig(omp.Setup),
-		func(t []models.Model) string { return "omp --model " + shellQuote(omp.Model(t)) },
+		func(t []models.Model, sel harness.ModelSelection) string {
+			return "omp --model " + shellQuote(omp.ModelFor(t, sel))
+		},
 		"omp",
 		[]string{"PI_CODING_AGENT_DIR", "OMP_PROFILE", "PI_PROFILE", "PI_CONFIG_DIR"},
 	},
@@ -89,8 +97,13 @@ func moved(env config.Env, tool string) error {
 
 func userConfig(
 	prepare func(harness.Input) (harness.Plan, error),
-) func(config.Env, []models.Model, bool) (harness.Plan, error) {
-	return func(env config.Env, t []models.Model, asDefault bool) (harness.Plan, error) {
+) func(config.Env, []models.Model, bool, harness.ModelSelection) (harness.Plan, error) {
+	return func(
+		env config.Env,
+		t []models.Model,
+		asDefault bool,
+		sel harness.ModelSelection,
+	) (harness.Plan, error) {
 		return prepare(
 			harness.Input{
 				Table:      t,
@@ -98,19 +111,26 @@ func userConfig(
 				UserHome:   env.UserHome,
 				ConfigHome: env.ConfigHome,
 				Default:    asDefault,
+				Selection:  sel,
 			},
 		)
 	}
 }
 
-func connectClaude(env config.Env, t []models.Model, asDefault bool) (harness.Plan, error) {
+func connectClaude(
+	env config.Env,
+	t []models.Model,
+	asDefault bool,
+	sel harness.ModelSelection,
+) (harness.Plan, error) {
 	return claude.Setup(
 		claude.Input{
-			Table:    t,
-			BaseURL:  env.BaseURL,
-			UserHome: env.UserHome,
-			WorkDir:  env.WorkDir,
-			Default:  asDefault,
+			Table:     t,
+			BaseURL:   env.BaseURL,
+			UserHome:  env.UserHome,
+			WorkDir:   env.WorkDir,
+			Default:   asDefault,
+			Selection: sel,
 		},
 	)
 }
@@ -148,6 +168,32 @@ func parseSetup(args []string) (setupOptions, error) {
 	return o, nil
 }
 
+type setupTarget struct {
+	out          *targetOutcome
+	snapshot     harness.Plan
+	plan         harness.Plan
+	existing     configuredModel
+	badge        string
+	preflightErr error
+	missing      bool
+}
+
+type setupSession struct {
+	ctx        context.Context
+	env        config.Env
+	deps       Deps
+	opts       setupOptions
+	p          presenter
+	run        *setupRun
+	gw         gateway.Client
+	key        string
+	table      []models.Model
+	missing    []string
+	candidates []*setupTarget
+	selected   []*setupTarget
+	probeCache map[probeKey]probeResult
+}
+
 func setup(ctx context.Context, args []string, env config.Env, deps Deps) int {
 	o, err := parseSetup(args)
 	if err != nil {
@@ -157,132 +203,473 @@ func setup(ctx context.Context, args []string, env config.Env, deps Deps) int {
 		return fail(deps, config.ErrNoHome.Error())
 	}
 	p := newPresenter(env, deps, o.plain)
-	picked := []string{o.tool}
-	if o.tool == "" {
-		if deps.Prompter == nil {
-			return fail(
-				deps,
-				"setup: a harness is required without a terminal; use login for credential-only input",
-			)
+	if o.tool == "" && deps.Prompter == nil {
+		return fail(
+			deps,
+			"setup: a harness is required without a terminal; use login for credential-only input",
+		)
+	}
+	s := &setupSession{
+		ctx:        ctx,
+		env:        env,
+		deps:       deps,
+		opts:       o,
+		p:          p,
+		run:        &setupRun{env: env, p: p, credential: "not saved by this run; no key was checked"},
+		gw:         deps.gateway(env.BaseURL),
+		probeCache: map[probeKey]probeResult{},
+	}
+	return s.execute()
+}
+
+func (s *setupSession) execute() int {
+	// Step 1: Local discovery first (zero network, 1 ms).
+	if s.opts.tool != "" {
+		t := s.preflightTool(s.opts.tool)
+		s.run.targets = []*targetOutcome{t.out}
+		if t.preflightErr != nil {
+			if t.missing {
+				t.out.status = statusMissing
+			} else {
+				t.out.status = statusFailed
+			}
+			t.out.reason = t.preflightErr.Error()
+			_ = fail(s.deps, t.out.tool+": "+t.preflightErr.Error())
+			return s.run.finish()
 		}
-		picked, err = pickTools(deps, p)
-		if errors.Is(err, errCancelled) {
-			p.ui.line(0, "Setup cancelled; nothing was changed.")
-			return 1
-		} else if err != nil {
-			return fail(deps, err.Error())
-		}
-		if len(picked) == 0 {
-			p.ui.line(0, laterHint)
+		s.candidates = []*setupTarget{t}
+		s.selected = []*setupTarget{t}
+	} else {
+		installed, missing := discoverTools(s.deps)
+		s.missing = missing
+		if len(installed) == 0 {
+			s.p.ui.line(0, "No supported coding harnesses found on PATH.")
+			s.p.ui.line(0, "Supported harnesses: "+strings.Join(toolNames, ", ")+".")
+			s.p.ui.line(0, "Install one, then run: aiven-ai-gateway setup")
+			s.p.ui.line(0, "Run 'aiven-ai-gateway login' to save your key now.")
 			return 0
 		}
+		for _, tool := range installed {
+			s.candidates = append(s.candidates, s.preflightTool(tool))
+		}
 	}
-	run := &setupRun{env: env, p: p, credential: "not saved by this run; no key was checked"}
-	// Establish the complete write set, including the optional default, before reading or saving a credential.
-	var valid []*targetOutcome
-	snapshots := map[string]harness.Plan{}
-	for _, target := range picked {
-		out := run.add(target)
-		err := moved(env, target)
-		if err == nil && target == "pi" && runtime.GOOS == "windows" {
-			_, err = pi.WindowsShell(
-				env.Environ,
-				func(path string) bool { _, err := os.Stat(path); return err == nil },
-				deps.Runner.LookPath,
-			)
+
+	// Step 2: Opening rail header + obtain & validate key + fetch /v1/models.
+	if s.p.ui.color {
+		s.p.ui.railStart("Aiven AI Gateway " + s.p.ui.th.g.dot + " " + safe(s.env.BaseURL))
+	} else {
+		s.p.ui.line(0, "Gateway: "+safe(s.env.BaseURL))
+	}
+	key, table, err := obtainKey(s.ctx, s.env, s.deps, s.p, s.opts)
+	if err != nil {
+		return s.run.sharedFailure(s.deps, "reading the key", err)
+	}
+	s.key = key
+	if table == nil {
+		if table, err = fetchCatalogue(s.ctx, s.gw, s.key, s.p); err != nil {
+			return s.run.sharedFailure(s.deps, "the model access check", err)
 		}
-		if _, lookup := deps.Runner.LookPath(target); err == nil && lookup != nil {
-			out.status = statusMissing
-			err = fmt.Errorf(
-				"%s is required but not installed; install it, then run aiven-ai-gateway setup %s",
-				target,
-				target,
-			)
-		}
-		if err == nil && setupTools[target].bin != "" && !o.yes && deps.Prompter != nil {
-			out.asDefault, err = confirm(deps.Prompter, fmt.Sprintf(
-				"Make Aiven the native default for %s? Enter keeps your current default. [y/N] ",
-				toolLabel(target),
-			), false)
-			// An unanswered question stops the whole run: later targets must not save a key on its behalf.
-			if errors.Is(err, errInputEnded) {
-				return run.cancel(deps, err)
-			}
-		}
-		var snapshot harness.Plan
-		if err == nil {
-			snapshot, err = prepareSnapshot(env, nil, target, out.asDefault)
-		}
-		if err != nil {
-			if out.status == statusPending {
-				out.status = statusFailed
-			}
-			out.reason = err.Error()
-			_ = fail(deps, target+": "+err.Error())
+	}
+	s.table = table
+	s.run.table = table
+
+	// Step 3: Populate read-only baselines and live Beat 1 badges for every candidate.
+	s.inspectCandidates()
+
+	// Step 4: Reversible 3-Beat + Review loop.
+	approved, exitCode, done := s.runBeats()
+	if done {
+		return exitCode
+	}
+
+	// Step 5: Guarded save & write (never save key or prefs when 0 configurations were approved).
+	return s.commitApproved(approved)
+}
+
+func (s *setupSession) preflightTool(tool string) *setupTarget {
+	t := &setupTarget{out: &targetOutcome{tool: tool}}
+	err := moved(s.env, tool)
+	if err == nil && tool == "pi" && runtime.GOOS == "windows" {
+		_, err = pi.WindowsShell(
+			s.env.Environ,
+			func(path string) bool { _, err := os.Stat(path); return err == nil },
+			s.deps.Runner.LookPath,
+		)
+	}
+	if _, lookup := s.deps.Runner.LookPath(tool); err == nil && lookup != nil {
+		t.missing = true
+		err = fmt.Errorf(
+			"%s is required but not installed; install it, then run aiven-ai-gateway setup %s",
+			tool,
+			tool,
+		)
+	}
+	if err == nil {
+		t.snapshot, err = prepareSnapshot(s.env, tool)
+	}
+	if err != nil {
+		t.preflightErr = err
+		t.badge = "! config error"
+	}
+	return t
+}
+
+func (s *setupSession) inspectCandidates() {
+	for _, t := range s.candidates {
+		if t.preflightErr != nil {
 			continue
 		}
-		snapshots[target] = snapshot
-		valid = append(valid, out)
-	}
-	if len(valid) == 0 {
-		return run.finish()
-	}
-	p.ui.line(0, "Gateway: "+safe(env.BaseURL))
-	key, table, err := obtainKey(ctx, env, deps, p, o)
-	if err != nil {
-		return run.sharedFailure(deps, "reading the key", err)
-	}
-	gw := deps.gateway(env.BaseURL)
-	// A kept saved key passed model listing; inference depends on the selected plans.
-	checked := table != nil
-	if !checked {
-		if table, err = fetchCatalogue(ctx, gw, key, p); err != nil {
-			return run.sharedFailure(deps, "the model access check", err)
-		}
-	}
-	plans := map[string]harness.Plan{}
-	for _, out := range valid {
-		plan, err := applySnapshot(env, table, out.tool, out.asDefault, snapshots[out.tool])
+		plan0, err := applySnapshot(
+			s.env,
+			s.table,
+			t.out.tool,
+			false,
+			t.snapshot,
+			harness.ModelSelection{},
+		)
 		if err != nil {
-			out.status, out.reason = statusFailed, err.Error()
+			t.preflightErr = err
+			t.badge = "! config error"
+			if slices.Contains(s.selected, t) {
+				t.out.status, t.out.reason = statusFailed, err.Error()
+				_ = fail(s.deps, t.out.tool+": "+err.Error())
+			}
 			continue
 		}
-		plans[out.tool] = plan
+		t.plan = plan0
+		t.existing = inspectConfiguredModel(t.out.tool, s.env, s.table, t.snapshot, plan0)
+		t.badge = toolBadge(t.out.tool, s.env, s.table, t.existing)
 	}
-	if blocked(env, valid, plans, table) {
-		run.table = table
-		run.credential = "not saved by this run; existing key files unchanged; " +
-			"a selected tool's configured model is not granted by this key"
-		return run.finish()
+}
+
+func (s *setupSession) runBeats() (approved []approvedWrite, exitCode int, done bool) {
+	const (
+		beatHarnesses = iota
+		beatModels
+		beatDirect
+		beatReview
+	)
+	interactive := !s.opts.yes && s.deps.Prompter != nil
+	hasBeat1 := s.opts.tool == ""
+	step := beatModels
+	if hasBeat1 {
+		step = beatHarnesses
+	} else if !interactive {
+		step = beatReview
 	}
-	valid = checkProtocols(ctx, gw, key, valid, plans, table, run)
-	run.table = table
-	if len(valid) == 0 {
-		run.credential = "not saved by this run; existing key files unchanged; " +
-			"no selected tool passed its basic protocol checks"
-		return run.finish()
-	}
-	if err := ctx.Err(); err != nil {
-		return run.sharedFailure(deps, "the basic protocol checks", err)
-	}
-	p.begin("Saving the key")
-	where, err := saveKey(env, deps, key)
-	if err != nil {
-		p.failed("the key was not saved")
-		return run.sharedFailure(deps, "saving the key", err)
-	}
-	p.passed("saved to " + where)
-	run.credential, run.table = "saved to "+where, table
-	for i, out := range valid {
-		configureTool(deps, p, o.yes, out, plans[out.tool].Files, table)
-		if out.status == statusCancelled {
-			for _, rest := range valid[i+1:] {
-				rest.status, rest.reason = statusPending, "not attempted after the cancellation"
+
+	var prevPicked map[string]bool
+	for {
+		switch step {
+		case beatHarnesses:
+			picked, err := pickToolsBeat1(s.deps, s.p, s.candidates, s.missing, prevPicked)
+			if errors.Is(err, errCancelled) || errors.Is(err, errInputEnded) {
+				s.p.ui.line(0, "Setup cancelled; nothing was changed.")
+				return nil, 1, true
 			}
-			break
+			if err != nil {
+				return nil, fail(s.deps, err.Error()), true
+			}
+			if len(picked) == 0 {
+				s.p.ui.line(0, laterHint)
+				return nil, 0, true
+			}
+			prevPicked = map[string]bool{}
+			s.selected = nil
+			s.run.targets = nil
+			byTool := map[string]*setupTarget{}
+			for _, t := range s.candidates {
+				byTool[t.out.tool] = t
+			}
+			for _, name := range picked {
+				prevPicked[name] = true
+				t := byTool[name]
+				if t == nil {
+					t = s.preflightTool(name)
+				}
+				// Reset per-selection state cleanly on re-entry.
+				t.out.status = statusPending
+				t.out.reason = ""
+				if t.preflightErr != nil {
+					if t.missing {
+						t.out.status = statusMissing
+					} else {
+						t.out.status = statusFailed
+					}
+					t.out.reason = t.preflightErr.Error()
+					_ = fail(s.deps, t.out.tool+": "+t.preflightErr.Error())
+				}
+				s.selected = append(s.selected, t)
+				s.run.targets = append(s.run.targets, t.out)
+			}
+			if len(s.eligible()) == 0 {
+				return nil, s.run.finish(), true
+			}
+			if !interactive {
+				step = beatReview
+			} else {
+				step = beatModels
+			}
+
+		case beatModels:
+			eligible := s.eligible()
+			if len(eligible) == 0 {
+				return nil, s.run.finish(), true
+			}
+			code, nextStep, stop := s.runBeatModels(eligible, hasBeat1)
+			if stop {
+				return nil, code, true
+			}
+			step = nextStep
+
+		case beatDirect:
+			eligible := s.eligible()
+			summary, err := selectDirectInvocation(s.deps, s.p, s.env, eligible)
+			if errors.Is(err, errBack) {
+				step = beatModels
+				continue
+			}
+			if errors.Is(err, errCancelled) || errors.Is(err, errInputEnded) {
+				return nil, s.run.cancelAfterKey(s.deps, s.table, err), true
+			}
+			if err != nil {
+				return nil, s.run.cancelAfterKey(s.deps, s.table, err), true
+			}
+			s.p.ui.railDone("Direct invocation", summary)
+			step = beatReview
+
+		case beatReview:
+			// Reset pending targets before re-planning (in case we looped back from Review).
+			var active []*setupTarget
+			for _, t := range s.selected {
+				if t.preflightErr != nil {
+					continue
+				}
+				t.out.status = statusPending
+				t.out.reason = ""
+				plan, err := applySnapshot(
+					s.env,
+					s.table,
+					t.out.tool,
+					t.out.asDefault,
+					t.snapshot,
+					t.out.selection,
+				)
+				if err != nil {
+					t.out.status, t.out.reason = statusFailed, err.Error()
+					continue
+				}
+				t.plan = plan
+				active = append(active, t)
+			}
+			if blocked(s.env, active, s.table) {
+				s.run.credential = "not saved by this run; existing key files unchanged; " +
+					"a selected tool's configured model is not granted by this key"
+				return nil, s.run.finish(), true
+			}
+			ready := checkProtocols(s.ctx, s.gw, s.key, active, s.table, s.run, s.probeCache)
+			if len(ready) == 0 {
+				s.run.credential = "not saved by this run; existing key files unchanged; " +
+					"no selected tool passed its basic protocol checks"
+				return nil, s.run.finish(), true
+			}
+			if err := s.ctx.Err(); err != nil {
+				return nil, s.run.sharedFailure(s.deps, "the basic protocol checks", err), true
+			}
+			// Close the vertical rail BEFORE Review table, unified diffs and closing launch commands.
+			if s.p.ui.color {
+				s.p.ui.railEnd("Review")
+			}
+			app, outcome := reviewAndApprove(
+				s.deps,
+				s.p,
+				s.env,
+				s.opts.yes,
+				interactive,
+				ready,
+				s.table,
+			)
+			switch outcome {
+			case reviewBack:
+				step = beatDirect
+				continue
+			case reviewCancelled:
+				s.run.credential = "not saved by this run; existing key files unchanged; setup was cancelled"
+				return nil, s.run.finish(), true
+			default:
+				return app, 0, false
+			}
 		}
 	}
-	return run.finish()
+}
+
+func (s *setupSession) eligible() []*setupTarget {
+	var out []*setupTarget
+	for _, t := range s.selected {
+		if t.preflightErr == nil {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+func (s *setupSession) runBeatModels(
+	eligible []*setupTarget,
+	hasBeat1 bool,
+) (exitCode, nextStep int, stop bool) {
+	const (
+		beatHarnesses = 0
+		beatModels    = 1
+		beatDirect    = 2
+	)
+	if len(eligible) >= 2 {
+		decision, err := selectMultiToolModels(s.deps, s.p, s.env, eligible, s.table, hasBeat1)
+		if errors.Is(err, errBack) && hasBeat1 {
+			return 0, beatHarnesses, false
+		}
+		if errors.Is(err, errNotGranted) {
+			return s.refuseUngranted(eligible, err), 0, true
+		}
+		if err != nil {
+			return s.run.cancelAfterKey(s.deps, s.table, err), 0, true
+		}
+		if !decision.customize {
+			for _, t := range eligible {
+				if sel, ok := decision.perTool[t.out.tool]; ok {
+					t.out.selection = sel
+				} else {
+					t.out.selection = decision.shared
+				}
+			}
+			s.p.ui.railDone("Models", decision.summaryLabel)
+			return 0, beatDirect, false
+		}
+	}
+
+	// Single tool OR Customize per tool… (supports stepping backward across tools and out to Beat 2 / Beat 1).
+	var chosenLabels []string
+	i := 0
+	for i < len(eligible) {
+		t := eligible[i]
+		allowBack := hasBeat1 || len(eligible) >= 2 || i > 0
+		sel, label, err := selectToolModel(
+			s.deps,
+			s.p,
+			s.env,
+			t.out.tool,
+			s.table,
+			t.existing,
+			i+1,
+			len(eligible),
+			allowBack,
+		)
+		if errors.Is(err, errBack) {
+			if i > 0 {
+				i--
+				if len(chosenLabels) > i {
+					chosenLabels = chosenLabels[:i]
+				}
+				continue
+			}
+			if len(eligible) >= 2 {
+				return 0, beatModels, false
+			}
+			if hasBeat1 {
+				return 0, beatHarnesses, false
+			}
+			return s.run.cancelAfterKey(s.deps, s.table, errCancelled), 0, true
+		}
+		if errors.Is(err, errNotGranted) {
+			return s.refuseUngranted(eligible, err), 0, true
+		}
+		if err != nil {
+			return s.run.cancelAfterKey(s.deps, s.table, err), 0, true
+		}
+		t.out.selection = sel
+		if len(chosenLabels) == i {
+			chosenLabels = append(chosenLabels, toolLabel(t.out.tool)+": "+label)
+		} else {
+			chosenLabels[i] = toolLabel(t.out.tool) + ": " + label
+		}
+		i++
+	}
+	summary := strings.Join(chosenLabels, ", ")
+	if len(eligible) == 1 && len(chosenLabels) == 1 {
+		summary = strings.TrimPrefix(chosenLabels[0], toolLabel(eligible[0].out.tool)+": ")
+	}
+	s.p.ui.railDone("Models", summary)
+	return 0, beatDirect, false
+}
+
+func (s *setupSession) refuseUngranted(eligible []*setupTarget, err error) int {
+	for _, t := range eligible {
+		if t.existing.present && !t.existing.granted {
+			t.out.status, t.out.reason = statusFailed, err.Error()
+		} else if t.out.status == statusPending {
+			t.out.reason = "the key was not saved, since another selected tool's model is not granted"
+		}
+	}
+	s.run.credential = "not saved by this run; existing key files unchanged; " +
+		"a selected tool's configured model is not granted by this key"
+	return s.run.finish()
+}
+
+func (s *setupSession) commitApproved(approved []approvedWrite) int {
+	// Populate resolvedModel for ready targets (including unchanged ones).
+	for _, t := range s.selected {
+		if t.preflightErr == nil {
+			t.out.resolvedModel = resolvedToolModel(t.out.tool, s.env, s.table, t.plan, t.out.selection)
+		}
+	}
+	if len(approved) == 0 {
+		hasUnchanged := false
+		for _, o := range s.run.targets {
+			if o.status == statusUnchanged {
+				hasUnchanged = true
+				break
+			}
+		}
+		if hasUnchanged {
+			s.run.credential = "unchanged; existing key files unchanged"
+		} else {
+			s.run.credential = "not saved by this run; existing key files unchanged; " +
+				"no configuration changes were approved"
+		}
+		return s.run.finish()
+	}
+
+	s.p.begin("Saving the key")
+	where, err := saveKey(s.env, s.deps, s.key)
+	if err != nil {
+		s.p.failed("the key was not saved")
+		for _, item := range approved {
+			item.target.out.status = statusPending
+			item.target.out.reason = "not attempted: saving the key failed"
+		}
+		return s.run.sharedFailure(s.deps, "saving the key", err)
+	}
+	s.p.passed("saved to " + where)
+	s.run.credential = "saved to " + where
+
+	prefUpdates := map[string]string{}
+	for _, item := range approved {
+		writeApproved(s.deps, item)
+		if item.target.out.status == statusConfigured && item.prefAlias != "" {
+			prefUpdates[item.target.out.tool] = item.prefAlias
+		}
+	}
+	if len(prefUpdates) > 0 {
+		if err := config.SaveModelPrefs(
+			s.env.UserHome,
+			s.env.BaseURL,
+			prefUpdates,
+			s.deps.writeFile,
+		); err != nil {
+			_ = fail(s.deps, "saving launcher model preferences: "+err.Error())
+			return 1
+		}
+	}
+	return s.run.finish()
 }
 
 // obtainKey reads explicit stdin, a working saved key, a confirmed environment key or hidden terminal input.
@@ -294,10 +681,9 @@ func obtainKey(
 	p presenter,
 	o setupOptions,
 ) (string, []models.Model, error) {
-	p.ui.heading("Key check")
-	p.ui.line(2, "Setup lists your models, then sends one minimal request per configured protocol")
-	p.ui.line(2, "and model, limited to one output token each. These requests may incur usage.")
-	p.ui.line(2, "A basic check does not show that the tool's own requests are accepted.")
+	if !p.ui.color {
+		p.ui.heading("Key check")
+	}
 	if o.fromStdin {
 		stdin := deps
 		stdin.Prompter = nil
@@ -309,20 +695,37 @@ func obtainKey(
 		return "", nil, err
 	}
 	if fileKey != "" {
-		p.ui.line(2, "Checking your saved key.")
+		if !p.ui.color {
+			p.ui.line(2, "Checking your saved key.")
+		}
 		table, err := checkCandidate(ctx, env, deps, p, fileKey)
 		if err != nil {
 			return "", nil, err
 		}
 		if table != nil {
-			return keepSavedKey(deps, p, o.yes, fileKey, table)
+			if p.ui.color {
+				p.ui.railOK(fmt.Sprintf(
+					"Key %s %s %d models (%s)",
+					maskKey(fileKey),
+					p.ui.th.g.dot,
+					len(table),
+					catalogueFamilies(table),
+				))
+			} else {
+				p.ui.line(
+					2,
+					fmt.Sprintf(
+						"Using saved key %s (run 'aiven-ai-gateway login' to replace).",
+						maskKey(fileKey),
+					),
+				)
+			}
+			return fileKey, table, nil
 		}
 	}
 	envKey := creds.FromEnv(env.Environ)
 	if envKey != "" && envKey != fileKey && deps.Prompter != nil {
-		p.ui.line(2, "Key source: "+creds.EnvVar)
-		p.ui.line(2, "Key: "+maskKey(envKey))
-		approved, err := confirm(deps.Prompter, "Use this key with "+safe(env.BaseURL)+"? [y/N] ", false)
+		approved, err := confirmEnvKey(deps, p, env, envKey)
 		if err != nil {
 			return "", nil, err
 		}
@@ -332,6 +735,15 @@ func obtainKey(
 				return "", nil, err
 			}
 			if table != nil {
+				if p.ui.color {
+					p.ui.railOK(fmt.Sprintf(
+						"Key %s %s %d models (%s)",
+						maskKey(envKey),
+						p.ui.th.g.dot,
+						len(table),
+						catalogueFamilies(table),
+					))
+				}
 				return envKey, table, nil
 			}
 		}
@@ -343,30 +755,44 @@ func obtainKey(
 	return key, nil, err
 }
 
-// keepSavedKey asks on a terminal whether to keep a working saved key. Without a terminal, or with --yes, it keeps the
-// key, since stdin then holds no replacement.
-func keepSavedKey(
-	deps Deps,
-	p presenter,
-	yes bool,
-	key string,
-	table []models.Model,
-) (string, []models.Model, error) {
-	if deps.Prompter == nil || yes {
-		p.ui.line(2, "Using your existing gateway key.")
-		return key, table, nil
+func confirmEnvKey(deps Deps, p presenter, env config.Env, envKey string) (bool, error) {
+	if p.inline != nil {
+		c := choice{
+			title:    "Use " + creds.EnvVar + " (" + maskKey(envKey) + ")?",
+			subtitle: "Gateway: " + safe(env.BaseURL),
+			options: []option{
+				{label: "Use " + creds.EnvVar, detail: maskKey(envKey) + " with " + safe(env.BaseURL)},
+				{label: "Enter a different key", detail: "paste key with hidden input"},
+			},
+			rail:  true,
+			theme: &p.ui.th,
+		}
+		picked, err := p.inline.Select(c)
+		if err != nil {
+			return false, err
+		}
+		return picked[0] == 0, nil
 	}
-	keep, err := confirm(
-		deps.Prompter,
-		fmt.Sprintf("Keep the saved key (%s)? [Y/n] ", maskKey(key)),
-		true,
-	)
-	if err != nil || keep {
-		return key, table, err
+	p.ui.line(2, "Key source: "+creds.EnvVar)
+	p.ui.line(2, "Key: "+maskKey(envKey))
+	return confirm(deps.Prompter, "Use this key with "+safe(env.BaseURL)+"? [y/N] ", false)
+}
+
+func catalogueFamilies(table []models.Model) string {
+	groups := models.Grouped(table)
+	var names []string
+	for _, g := range groups {
+		if g.Name != "" {
+			names = append(names, g.Name)
+		}
+		if len(names) == 3 {
+			break
+		}
 	}
-	p.ui.line(2, "The replacement is checked again before it is saved.")
-	key, err = readKey(deps, connectPrompt)
-	return key, nil, err
+	if len(groups) > 3 {
+		names = append(names, fmt.Sprintf("+%d more", len(groups)-3))
+	}
+	return strings.Join(names, ", ")
 }
 
 // confirm asks a yes-or-no question, where Enter means def, asking again on an unrecognised answer at most three
@@ -406,13 +832,26 @@ func maskKey(key string) string {
 	return prefix + "…" + key[len(key)-4:]
 }
 
-// fetchCatalogue lists the key's models, announcing the request before it is sent.
+// fetchCatalogue lists the key's models, using a live spinner on styled terminals and durable announcement in plain mode.
 func fetchCatalogue(
 	ctx context.Context,
 	gw gateway.Client,
 	key string,
 	p presenter,
 ) ([]models.Model, error) {
+	if p.ui.color {
+		var table []models.Model
+		err := p.ui.runWithProgress(p.ui.railPrefix(), "Retrieving available models…", func() error {
+			var e error
+			table, e = gw.Models(ctx, key)
+			return e
+		})
+		if err != nil {
+			p.ui.railFail(gatewayCategory(err))
+			return nil, err
+		}
+		return table, nil
+	}
 	p.begin("Retrieving available models")
 	table, err := gw.Models(ctx, key)
 	if err != nil {
