@@ -249,7 +249,7 @@ func TestConfigureToolSummarisesTheOMPModels(t *testing.T) {
 }
 
 func TestConfigureToolWritesOnlyOnConsent(t *testing.T) {
-	const ask = "Apply this change to pi? [Y/n/v] "
+	const ask = "Apply option for pi (Enter for 1): "
 	for _, tc := range []struct {
 		name     string
 		yes      bool

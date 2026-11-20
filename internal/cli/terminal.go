@@ -36,14 +36,12 @@ func DetectTerminal(in, out, errOut *os.File) Terminal {
 			return w
 		}
 	}
+	stdinTTY := term.IsTerminal(int(in.Fd()))
 	stdoutTTY := term.IsTerminal(int(out.Fd()))
 	stderrTTY := term.IsTerminal(int(errOut.Fd()))
-	noVT := stderrTTY && !probeConsoleVT(errOut)
-	if stdoutTTY {
-		_ = probeConsoleVT(out)
-	}
+	noVT := stderrTTY && !probeConsoleVT(in, errOut)
 	return Terminal{
-		StdinTTY:    term.IsTerminal(int(in.Fd())),
+		StdinTTY:    stdinTTY,
 		StdoutTTY:   stdoutTTY,
 		StderrTTY:   stderrTTY,
 		NoVT:        noVT,
@@ -239,6 +237,7 @@ func (p terminalPrompter) interruptible(fd int, state *term.State) (stop func())
 		select {
 		case <-sig:
 			restoreModes(fd, state)
+			restoreAllVT()
 			_, _ = fmt.Fprintln(p.stderr)
 			os.Exit(130)
 		case <-done:

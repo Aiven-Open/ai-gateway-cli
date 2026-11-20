@@ -107,4 +107,28 @@ func TestModelPrefsErrors(t *testing.T) {
 	if _, err := config.LoadModelPrefs(home); err == nil {
 		t.Error("LoadModelPrefs(invalid JSON) succeeded, want error")
 	}
+
+	// Symlinked parent directory (.config/aiven) must be refused on both load and save.
+	symHome := t.TempDir()
+	outside := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(symHome, ".config"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(symHome, ".config", "aiven")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := config.LoadModelPrefs(symHome); err == nil {
+		t.Error("LoadModelPrefs followed symlinked .config/aiven directory")
+	}
+	if err := config.SaveModelPrefs(
+		symHome,
+		config.DefaultBaseURL,
+		map[string]string{"pi": "glm-5"},
+		nil,
+	); err == nil {
+		t.Error("SaveModelPrefs wrote through symlinked .config/aiven directory")
+	}
+	if entries, _ := os.ReadDir(outside); len(entries) != 0 {
+		t.Errorf("SaveModelPrefs created files outside home: %v", entries)
+	}
 }

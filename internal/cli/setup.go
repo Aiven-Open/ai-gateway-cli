@@ -30,54 +30,59 @@ import (
 // moved lists variables that redirect the native configuration away from the supported destinations.
 var setupTools = map[string]struct {
 	prepare func(config.Env, []models.Model, bool, harness.ModelSelection) (harness.Plan, error)
-	run     func([]models.Model, harness.ModelSelection) string
+	run     func(config.Env, []models.Model, harness.ModelSelection) string
 	bin     string
 	moved   []string
 }{
 	"pi": {
 		userConfig(pi.Setup),
-		func(t []models.Model, sel harness.ModelSelection) string {
-			return "pi --model " + shellQuote(pi.ModelFor(t, sel))
+		func(_ config.Env, t []models.Model, sel harness.ModelSelection) string {
+			return "pi --model " + shellQuoteForOS(pi.ModelFor(t, sel), runtime.GOOS)
 		},
 		"pi",
 		[]string{"PI_CODING_AGENT_DIR"},
 	},
 	"opencode": {
 		userConfig(opencode.Setup),
-		func(t []models.Model, sel harness.ModelSelection) string {
-			return "opencode -m " + shellQuote(opencode.ModelFor(t, sel))
+		func(_ config.Env, t []models.Model, sel harness.ModelSelection) string {
+			return "opencode -m " + shellQuoteForOS(opencode.ModelFor(t, sel), runtime.GOOS)
 		},
 		"opencode",
 		[]string{"OPENCODE_CONFIG", "OPENCODE_CONFIG_DIR"},
 	},
 	"codex": {
 		userConfig(codex.Setup),
-		func([]models.Model, harness.ModelSelection) string { return "codex -p aiven" },
+		func(config.Env, []models.Model, harness.ModelSelection) string { return "codex -p aiven" },
 		"codex",
 		[]string{"CODEX_HOME"},
 	},
 	"claude": {
 		connectClaude,
-		func([]models.Model, harness.ModelSelection) string {
-			return claudeDirectCommand(runtime.GOOS)
+		func(env config.Env, _ []models.Model, _ harness.ModelSelection) string {
+			return claudeDirectCommand(runtime.GOOS, env.UserHome)
 		},
 		"claude",
 		[]string{"CLAUDE_CONFIG_DIR"},
 	},
 	"omp": {
 		userConfig(omp.Setup),
-		func(t []models.Model, sel harness.ModelSelection) string {
-			return "omp --model " + shellQuote(omp.ModelFor(t, sel))
+		func(_ config.Env, t []models.Model, sel harness.ModelSelection) string {
+			return "omp --model " + shellQuoteForOS(omp.ModelFor(t, sel), runtime.GOOS)
 		},
 		"omp",
 		[]string{"PI_CODING_AGENT_DIR", "OMP_PROFILE", "PI_PROFILE", "PI_CONFIG_DIR"},
 	},
 }
 
-// claudeDirectCommand formats Claude's direct --settings invocation for the target OS.
-func claudeDirectCommand(goos string) string {
+// claudeDirectCommand formats Claude's direct --settings invocation for the target OS. On Windows it uses the
+// resolved userHome path so both PowerShell and cmd.exe receive the literal file without relying on %USERPROFILE%.
+func claudeDirectCommand(goos, userHome string) string {
 	if goos == "windows" {
-		return `claude --settings %USERPROFILE%\.claude\aiven.settings.json`
+		path := strings.ReplaceAll(claude.SettingsFile, "/", `\`)
+		if userHome != "" {
+			path = strings.TrimRight(userHome, `\/`) + `\` + path
+		}
+		return "claude --settings " + shellQuoteForOS(path, "windows")
 	}
 	return "claude --settings ~/" + claude.SettingsFile
 }
@@ -522,6 +527,16 @@ func (s *setupSession) runBeatModels(
 		beatModels    = 1
 		beatDirect    = 2
 	)
+	// Project-level Claude overrides (.claude/settings*.json) are never written by setup, so refuse
+	// immediately instead of offering a repair that cannot fix them.
+	for _, t := range eligible {
+		if t.existing.present && !t.existing.granted && t.existing.unrepairable {
+			return s.refuseUngranted(
+				eligible,
+				notGranted(t.existing.file, t.existing.model, s.table),
+			), 0, true
+		}
+	}
 	if len(eligible) >= 2 {
 		decision, err := selectMultiToolModels(s.deps, s.p, s.env, eligible, s.table, hasBeat1)
 		if errors.Is(err, errBack) && hasBeat1 {
@@ -763,6 +778,7 @@ func confirmEnvKey(deps Deps, p presenter, env config.Env, envKey string) (bool,
 			options: []option{
 				{label: "Use " + creds.EnvVar, detail: maskKey(envKey) + " with " + safe(env.BaseURL)},
 				{label: "Enter a different key", detail: "paste key with hidden input"},
+				{label: "Cancel", detail: "exit without reading or saving a key"},
 			},
 			rail:  true,
 			theme: &p.ui.th,
@@ -771,11 +787,36 @@ func confirmEnvKey(deps Deps, p presenter, env config.Env, envKey string) (bool,
 		if err != nil {
 			return false, err
 		}
+		if picked[0] == 2 {
+			return false, errCancelled
+		}
 		return picked[0] == 0, nil
 	}
 	p.ui.line(2, "Key source: "+creds.EnvVar)
 	p.ui.line(2, "Key: "+maskKey(envKey))
-	return confirm(deps.Prompter, "Use this key with "+safe(env.BaseURL)+"? [y/N] ", false)
+	p.ui.line(2, "Use this key with "+safe(env.BaseURL)+"?")
+	p.ui.line(4, "1) Use "+creds.EnvVar)
+	p.ui.line(4, "2) Enter a different key (default)")
+	p.ui.line(4, "3) Cancel")
+	for range 3 {
+		answer, err := deps.Prompter.ReadLine("Choose key option (Enter for 2): ")
+		if errors.Is(err, io.EOF) || errors.Is(err, errInputEnded) {
+			return false, errInputEnded
+		}
+		if err != nil {
+			return false, err
+		}
+		switch strings.ToLower(strings.TrimSpace(answer)) {
+		case "1", "y", "yes":
+			return true, nil
+		case "", "2", "n", "no":
+			return false, nil
+		case "3", "c", "cancel":
+			return false, errCancelled
+		}
+		p.ui.line(2, "Choose a number from 1 to 3.")
+	}
+	return false, errors.New("no answer: expected key option number")
 }
 
 func catalogueFamilies(table []models.Model) string {
@@ -793,28 +834,6 @@ func catalogueFamilies(table []models.Model) string {
 		names = append(names, fmt.Sprintf("+%d more", len(groups)-3))
 	}
 	return strings.Join(names, ", ")
-}
-
-// confirm asks a yes-or-no question, where Enter means def, asking again on an unrecognised answer at most three
-// times. End of input is errInputEnded, never def.
-func confirm(p Prompter, prompt string, def bool) (bool, error) {
-	for range 3 {
-		answer, err := p.ReadLine(prompt)
-		if errors.Is(err, io.EOF) || errors.Is(err, errInputEnded) {
-			return false, errInputEnded
-		} else if err != nil {
-			return false, err
-		}
-		switch strings.ToLower(strings.TrimSpace(answer)) {
-		case "":
-			return def, nil
-		case "y", "yes":
-			return true, nil
-		case "n", "no":
-			return false, nil
-		}
-	}
-	return false, errors.New("no answer: expected y or n")
 }
 
 // maskKey shows a known key-type prefix, and the last 4 characters only when at least 12 others stay hidden.

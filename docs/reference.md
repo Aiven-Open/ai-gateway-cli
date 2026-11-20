@@ -111,9 +111,9 @@ approved Pi, OpenCode and OMP targets. When zero configuration changes are
 approved (cancelled, declined, or non-interactive without `--yes`), neither
 the key nor `ai-gateway-models.json` is written.
 
-Ready tools end with a compact launch table
-(`aiven-ai-gateway launch <tool>   # <model>`) and the direct native
-command. Tools that need attention or were declined get the
+Ready tools end with a compact launch table (`COMMAND` / `MODEL`, without
+shell comment markers so commands paste cleanly in `cmd.exe`, PowerShell,
+`bash`, `zsh` and `fish`) and the direct native command. Tools that need attention or were declined get the
 `aiven-ai-gateway setup <harness>` command to run again. The exit status is
 nonzero when any tool failed, was not installed, was partially written or
 the run was cancelled; a decline alone exits zero but is not reported as
@@ -146,8 +146,10 @@ function claude-aiven { aiven-ai-gateway launch claude -- @args }
 function pi-aiven { aiven-ai-gateway launch pi -- @args }
 ```
 
-When forwarding native arguments to Pi, OpenCode or OMP, include the tool's
-own model flag (`--model` or `-m`) if you want a specific model.
+When forwarding native arguments to Pi, OpenCode or OMP without a model,
+provider, help/version flag or management subcommand, `launch` still
+injects the persisted gateway default model (for OpenCode `run`, immediately
+after `run`). Pass an explicit `--model` or `-m` to override it.
 
 ### Credential Input and Prompts
 
@@ -157,7 +159,7 @@ working saved key is reused automatically without prompting; run
 `aiven-ai-gateway login` or pass `--key-stdin` to replace it. Without a
 usable saved key, interactive setup shows the masked `AIVEN_AI_GATEWAY_KEY`
 and asks whether to use it with the displayed gateway (via an inline menu on
-styled terminals or `[y/N]` in plain mode). Only an explicit approval sends
+styled terminals or a numbered menu in plain mode). Only an explicit approval sends
 it; otherwise setup reads a key with echo disabled before prompting. `--yes`
 does not answer this question.
 
@@ -305,15 +307,17 @@ persistent provider metadata or changing defaults. It sends no test request
 and prints no model list before starting the tool. Native clients still
 write their own session/history data.
 
-Arguments after `--` are passed as a literal native argument vector. With
-none, Pi and OMP get `--model aiven/<alias>` and OpenCode gets `-m
-aiven/<alias>`, using the alias persisted by `setup` in
-`~/.config/aiven/ai-gateway-models.json` for that gateway when still granted
-(otherwise falling back to the catalogue default). With any, these three
-tools get them unchanged and start on their own default model unless the
-arguments choose one, as in `launch pi -- --model aiven/claude-sonnet -p
-hi`: where a model flag may go depends on each tool's subcommands and
-options. OMP keeps all its native tools. Codex selects `-p aiven`; later
+Arguments after `--` are passed as a literal native argument vector. For Pi
+and OMP, `launch` prepends `--model aiven/<alias>` unless the arguments
+already specify a model, provider, help/version flag or management
+subcommand (`update`, `install`, `remove`, `list`, `config`, `plugin`,
+`commit`). For OpenCode, `launch` injects `-m aiven/<alias>` when starting
+interactively or immediately after `run` unless a model, provider or
+help/version flag is already present, leaving other subcommands (`models`,
+`auth`, `serve`, …) untouched. In all three tools, `<alias>` is the model
+persisted by `setup` in `~/.config/aiven/ai-gateway-models.json` for that
+gateway when still granted (otherwise falling back to the catalogue
+default). OMP keeps all its native tools. Codex selects `-p aiven`; later
 native profile/config/model options follow Codex's own precedence. Claude
 adds launcher-owned inline settings; a later `--model` follows native
 precedence. Use native configuration overrides deliberately: they can change

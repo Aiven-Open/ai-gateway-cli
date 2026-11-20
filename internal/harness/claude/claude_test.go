@@ -925,6 +925,104 @@ func TestEffectiveResolvesLayeredModelAndSelectingPath(t *testing.T) {
 			t.Errorf("Effective = %q, %v; want glm", alias, err)
 		}
 	})
+	t.Run("explicit dedicated choice overrides ungranted user ANTHROPIC_MODEL", func(t *testing.T) {
+		in := input(t)
+		in.Table = []models.Model{
+			{Alias: "glm-5", Context: ptr(1_000_000)},
+			{Alias: "glm-4.7-flash", Context: ptr(200_000)},
+		}
+		write(
+			t,
+			filepath.Join(in.UserHome, ".claude/settings.json"),
+			`{"env":{"ANTHROPIC_MODEL":"claude-retired"}}`,
+		)
+		in.Default = false
+		in.Selection = harness.ModelSelection{Preset: models.PresetOpenWeight}
+		plan, err := claude.Setup(in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		write(t, plan.Files[0].Path, string(plan.Files[0].Data))
+		dedicated := decode(t, plan.Files[0].Data)
+		env, _ := dedicated["env"].(map[string]any)
+		if dedicated["model"] != "glm-5[1m]" || env["ANTHROPIC_MODEL"] != "" {
+			t.Fatalf("dedicated settings = %v, want model=glm-5[1m] and blank ANTHROPIC_MODEL", dedicated)
+		}
+		planned := map[string][]byte{plan.Files[0].Path: plan.Files[0].Data}
+		_, alias, err := claude.Effective(in.Table, in.UserHome, in.WorkDir, planned)
+		if err != nil || alias != "glm-5" {
+			t.Fatalf("Effective = %q, %v; want glm-5", alias, err)
+		}
+		lp, err := claude.Launch(in)
+		if err != nil {
+			t.Fatalf("Launch: %v", err)
+		}
+		if !slices.Contains(lp.Env, "ANTHROPIC_MODEL=glm-5[1m]") {
+			t.Errorf("Launch env = %v, want ANTHROPIC_MODEL=glm-5[1m]", lp.Env)
+		}
+	})
+
+	t.Run(
+		"mixed granted user model plus ungranted user env lets explicit replacement win",
+		func(t *testing.T) {
+			in := input(t)
+			in.Table = []models.Model{
+				{Alias: "gpt-6.1-sol", Context: ptr(200_000)},
+				{Alias: "glm-5", Context: ptr(1_000_000)},
+				{Alias: "glm-4.7-flash", Context: ptr(200_000)},
+			}
+			write(
+				t,
+				filepath.Join(in.UserHome, ".claude/settings.json"),
+				`{"model":"gpt-6.1-sol","env":{"ANTHROPIC_MODEL":"claude-retired"}}`,
+			)
+			in.Default = false
+			in.Selection = harness.ModelSelection{Preset: models.PresetOpenWeight}
+			plan, err := claude.Setup(in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			write(t, plan.Files[0].Path, string(plan.Files[0].Data))
+			planned := map[string][]byte{plan.Files[0].Path: plan.Files[0].Data}
+			_, alias, err := claude.Effective(in.Table, in.UserHome, in.WorkDir, planned)
+			if err != nil || alias != "glm-5" {
+				t.Fatalf("Effective = %q, %v; want glm-5", alias, err)
+			}
+			lp, err := claude.Launch(in)
+			if err != nil {
+				t.Fatalf("Launch: %v", err)
+			}
+			if !slices.Contains(lp.Env, "ANTHROPIC_MODEL=glm-5[1m]") {
+				t.Errorf("Launch env = %v, want ANTHROPIC_MODEL=glm-5[1m]", lp.Env)
+			}
+		},
+	)
+
+	t.Run(
+		"ProjectUngranted detects hidden project ungranted model despite user env pin",
+		func(t *testing.T) {
+			in := input(t)
+			in.Table = []models.Model{{Alias: "glm-5", Context: ptr(1_000_000)}}
+			write(
+				t,
+				filepath.Join(in.UserHome, ".claude/settings.json"),
+				`{"env":{"ANTHROPIC_MODEL":"claude-retired"}}`,
+			)
+			projLocal := filepath.Join(in.WorkDir, ".claude/settings.local.json")
+			write(t, projLocal, `{"model":"project-retired"}`)
+			gotPath, gotAlias, gotSetting, ok := claude.ProjectUngranted(in.Table, in.WorkDir)
+			if !ok || gotPath != projLocal || gotAlias != "project-retired" || gotSetting != "model" {
+				t.Fatalf(
+					"ProjectUngranted = (%q, %q, %q, %v), want (%q, project-retired, model, true)",
+					gotPath,
+					gotAlias,
+					gotSetting,
+					ok,
+					projLocal,
+				)
+			}
+		},
+	)
 }
 
 func mustJSON(t *testing.T, v any) []byte {

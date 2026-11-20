@@ -7,30 +7,111 @@ package cli
 import (
 	"io"
 	"os"
+	"sync"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/term"
 )
 
-// probeConsoleVT enables ENABLE_VIRTUAL_TERMINAL_PROCESSING on f when it is a Windows console so ANSI-16 SGR codes
-// render cleanly, returning false on legacy ConHost consoles where VT processing is unavailable.
-func probeConsoleVT(f *os.File) bool {
-	if f == nil || !term.IsTerminal(int(f.Fd())) {
-		return true
+var (
+	vtMu       sync.Mutex
+	vtRestores []func()
+)
+
+// restoreAllVT restores every saved console mode registered by enableOutputVT/enableVT before a signal-driven exit.
+func restoreAllVT() {
+	vtMu.Lock()
+	list := vtRestores
+	vtRestores = nil
+	vtMu.Unlock()
+	for i := len(list) - 1; i >= 0; i-- {
+		list[i]()
 	}
-	h := windows.Handle(f.Fd())
-	var mode uint32
-	if err := windows.GetConsoleMode(h, &mode); err != nil {
-		return false
+}
+
+func registerVTRestore(fn func()) func() {
+	var once sync.Once
+	wrapped := func() { once.Do(fn) }
+	vtMu.Lock()
+	vtRestores = append(vtRestores, wrapped)
+	vtMu.Unlock()
+	return wrapped
+}
+
+// probeConsoleVT checks whether Windows virtual terminal input and output modes can be enabled on in and errOut
+// without permanently mutating console modes (or touching stdout). Returns false on legacy ConHost consoles so the
+// presenter falls back to plain mode automatically.
+func probeConsoleVT(in, errOut *os.File) bool {
+	if errOut != nil && term.IsTerminal(int(errOut.Fd())) {
+		h := windows.Handle(errOut.Fd())
+		var mode uint32
+		if err := windows.GetConsoleMode(h, &mode); err != nil {
+			return false
+		}
+		if mode&windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING == 0 {
+			if err := windows.SetConsoleMode(
+				h,
+				mode|windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING,
+			); err != nil {
+				return false
+			}
+			_ = windows.SetConsoleMode(h, mode)
+		}
 	}
-	if mode&windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING != 0 {
-		return true
+	if in != nil && term.IsTerminal(int(in.Fd())) {
+		h := windows.Handle(in.Fd())
+		var mode uint32
+		if err := windows.GetConsoleMode(h, &mode); err != nil {
+			return false
+		}
+		if mode&windows.ENABLE_VIRTUAL_TERMINAL_INPUT == 0 {
+			if err := windows.SetConsoleMode(
+				h,
+				mode|windows.ENABLE_VIRTUAL_TERMINAL_INPUT,
+			); err != nil {
+				return false
+			}
+			_ = windows.SetConsoleMode(h, mode)
+		}
 	}
-	return windows.SetConsoleMode(h, mode|windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING) == nil
+	return true
+}
+
+// enableOutputVT enables ENABLE_VIRTUAL_TERMINAL_PROCESSING on any TTY *os.File streams for the duration of a
+// command, returning a restore function that resets original console modes on exit.
+func enableOutputVT(streams ...io.Writer) func() {
+	type saved struct {
+		h    windows.Handle
+		mode uint32
+	}
+	var list []saved
+	for _, w := range streams {
+		f, ok := w.(*os.File)
+		if !ok || f == nil || !term.IsTerminal(int(f.Fd())) {
+			continue
+		}
+		h := windows.Handle(f.Fd())
+		var mode uint32
+		if err := windows.GetConsoleMode(h, &mode); err != nil {
+			continue
+		}
+		if mode&windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING != 0 {
+			continue
+		}
+		if err := windows.SetConsoleMode(h, mode|windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING); err != nil {
+			continue
+		}
+		list = append(list, saved{h: h, mode: mode})
+	}
+	return registerVTRestore(func() {
+		for i := len(list) - 1; i >= 0; i-- {
+			_ = windows.SetConsoleMode(list[i].h, list[i].mode)
+		}
+	})
 }
 
 // enableVT turns on virtual-terminal output on stderr and virtual-terminal input on stdin for inline selection on
-// Windows, returning a restore callback. If either fails (legacy ConHost), it restores prior modes and returns ok=false.
+// Windows, returning a restore callback. If either fails, it restores prior modes and returns ok=false.
 func enableVT(in *os.File, stderr io.Writer) (restore func(), ok bool) {
 	errFile, isFile := stderr.(*os.File)
 	if !isFile || in == nil {
@@ -60,8 +141,8 @@ func enableVT(in *os.File, stderr io.Writer) (restore func(), ok bool) {
 		_ = windows.SetConsoleMode(outHandle, outMode)
 		return func() {}, false
 	}
-	return func() {
+	return registerVTRestore(func() {
 		_ = windows.SetConsoleMode(inHandle, inMode)
 		_ = windows.SetConsoleMode(outHandle, outMode)
-	}, true
+	}), true
 }

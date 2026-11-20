@@ -22,11 +22,33 @@ func ModelPrefsPath(userHome string) string {
 	return filepath.Join(userHome, filepath.FromSlash(ModelPrefsFile))
 }
 
+// checkPrefsParents refuses any symlinked or non-directory component between userHome and ModelPrefsPath.
+func checkPrefsParents(userHome string) error {
+	cur := filepath.Clean(userHome)
+	for _, part := range []string{".config", "aiven"} {
+		cur = filepath.Join(cur, part)
+		info, err := os.Lstat(cur)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("inspect %s: %w", cur, err)
+		}
+		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%s is not a regular directory; fix or move it, then retry", cur)
+		}
+	}
+	return nil
+}
+
 // LoadModelPrefs reads the per-gateway, per-tool model preference map from userHome.
-// A missing file returns an empty map and a nil error.
+// A missing file returns an empty map and a nil error. Symlinked parent directories or files are refused.
 func LoadModelPrefs(userHome string) (map[string]map[string]string, error) {
 	if userHome == "" {
 		return nil, ErrNoHome
+	}
+	if err := checkPrefsParents(userHome); err != nil {
+		return nil, err
 	}
 	path := ModelPrefsPath(userHome)
 	data, err := fsutil.ReadFile(path)
@@ -59,7 +81,7 @@ func LoadModelPref(userHome, origin, tool string) (string, error) {
 }
 
 // SaveModelPrefs atomically merges updates (tool -> alias) for origin into userHome's
-// model preference file with mode 0600. An empty alias removes that tool's entry.
+// model preference file with mode 0600, refusing symlinked parent directories. An empty alias removes that tool.
 func SaveModelPrefs(
 	userHome, origin string,
 	updates map[string]string,
@@ -98,8 +120,16 @@ func SaveModelPrefs(
 	if err := enc.Encode(prefs); err != nil {
 		return err
 	}
-	if write == nil {
-		write = fsutil.WriteAtomic
+	if write != nil {
+		if err := checkPrefsParents(userHome); err != nil {
+			return err
+		}
+		return write(ModelPrefsPath(userHome), buf.Bytes(), 0o600)
 	}
-	return write(ModelPrefsPath(userHome), buf.Bytes(), 0o600)
+	dir, err := fsutil.OpenDir(userHome, filepath.Join(".config", "aiven"))
+	if err != nil {
+		return fmt.Errorf("write %s: %w", ModelPrefsPath(userHome), err)
+	}
+	defer func() { _ = dir.Close() }()
+	return dir.WriteAtomic("ai-gateway-models.json", buf.Bytes(), 0o600, nil)
 }

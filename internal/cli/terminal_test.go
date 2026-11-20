@@ -8,6 +8,8 @@ import (
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/aiven-open/ai-gateway-cli/internal/config"
 )
 
 // The terminal adapter needs a real terminal only for ReadSecret, so ReadLine is tested on a reader here.
@@ -37,8 +39,13 @@ func TestTerminalReadLineReportsEndOfInputAfterAPartialLine(t *testing.T) {
 				tc.eof,
 			)
 		}
-		if _, err := confirm(p, "? ", true); tc.eof && err == nil {
-			t.Errorf("confirm on %q after end of input: want error", tc.in)
+		if _, err := confirmEnvKey(
+			Deps{Prompter: p},
+			newPresenter(config.Env{}, Deps{Stderr: io.Discard}, true),
+			config.Env{BaseURL: "https://ai.aiven.io"},
+			"sk-test-env-key-12345678",
+		); tc.eof && err == nil {
+			t.Errorf("confirmEnvKey on %q after end of input: want error", tc.in)
 		}
 	}
 }

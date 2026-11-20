@@ -266,7 +266,8 @@ func TestLaunchAddsTheDefaultModelOnlyWithoutNativeArgs(t *testing.T) {
 	setUp(t, in)
 	for _, tc := range []struct{ args, want []string }{
 		{nil, []string{"pi", "--model", "aiven/claude-sonnet"}},
-		{[]string{"-p", "hi"}, []string{"pi", "-p", "hi"}},
+		{[]string{"-p", "hi"}, []string{"pi", "--model", "aiven/claude-sonnet", "-p", "hi"}},
+		{[]string{"--continue"}, []string{"pi", "--model", "aiven/claude-sonnet", "--continue"}},
 		{[]string{"--model", "aiven/glm"}, []string{"pi", "--model", "aiven/glm"}},
 		{[]string{"--provider", "openai"}, []string{"pi", "--provider", "openai"}},
 		{[]string{"install", "x"}, []string{"pi", "install", "x"}},

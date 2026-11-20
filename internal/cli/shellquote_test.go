@@ -21,15 +21,31 @@ func TestShellQuoteIsOneLiteralWordInEveryShell(t *testing.T) {
 	if got := shellQuote("%USERPROFILE%"); got != "'%USERPROFILE%'" {
 		t.Errorf("shellQuote(%%USERPROFILE%%) = %q, want '%%USERPROFILE%%'", got)
 	}
+	if got := shellQuoteForOS("aiven/%PATH%", "windows"); got != "'aiven/%PATH%'" {
+		t.Errorf("shellQuoteForOS(windows percent) = %q, want PowerShell single-quoted", got)
+	}
+	if got := shellQuoteForOS("aiven/$env:USERPROFILE", "windows"); got != "'aiven/$env:USERPROFILE'" {
+		t.Errorf("shellQuoteForOS(windows dollar) = %q, want PowerShell single-quoted", got)
+	}
 	if got := shellQuote("aiven/claude-sonnet-5-5"); got != "aiven/claude-sonnet-5-5" {
 		t.Errorf("a plain id is quoted: %q", got)
 	}
-	// Windows Claude settings path must not use Unix ~/.
-	if got := claudeDirectCommand("windows"); strings.Contains(got, "~/") ||
-		!strings.Contains(got, `%USERPROFILE%\.claude\aiven.settings.json`) {
-		t.Errorf("claudeDirectCommand(windows) = %q", got)
+	// Windows Claude settings path must resolve the literal userHome without %USERPROFILE% or Unix ~/.
+	if got := claudeDirectCommand("windows", `C:\Users\Alice Smith`); strings.Contains(got, "~/") ||
+		strings.Contains(got, "%USERPROFILE%") ||
+		got != `claude --settings "C:\Users\Alice Smith\.claude\aiven.settings.json"` {
+		t.Errorf("claudeDirectCommand(windows spaces) = %q", got)
 	}
-	if got := claudeDirectCommand("darwin"); got != "claude --settings ~/.claude/aiven.settings.json" {
+	if got := claudeDirectCommand(
+		"windows",
+		`C:\Users\alice`,
+	); got != `claude --settings C:\Users\alice\.claude\aiven.settings.json` {
+		t.Errorf("claudeDirectCommand(windows plain) = %q", got)
+	}
+	if got := claudeDirectCommand(
+		"darwin",
+		"/Users/alice",
+	); got != "claude --settings ~/.claude/aiven.settings.json" {
 		t.Errorf("claudeDirectCommand(darwin) = %q", got)
 	}
 

@@ -478,16 +478,24 @@ func approveSingleInteractive(
 	}
 
 	p.ui.printf("\n")
-	if allowBack {
-		p.ui.line(
-			2,
-			"Enter or y applies; n declines this tool; v shows the full redacted diff; b goes back.",
-		)
-	} else {
-		p.ui.line(2, "Enter or y applies; n declines this tool; v shows the full redacted diff")
-		p.ui.line(2, "and asks again.")
+	p.ui.line(2, "Apply these changes to "+toolLabel(tool)+":")
+	p.ui.line(4, "1) Apply (write the files shown)")
+	optNum := 2
+	fullOpt := 0
+	if item.preview != "" {
+		fullOpt = optNum
+		p.ui.line(4, fmt.Sprintf("%d) Show full redacted diff (then ask again)", fullOpt))
+		optNum++
 	}
-	prompt := fmt.Sprintf("Apply this change to %s? [Y/n/v] ", tool)
+	backOpt := 0
+	if allowBack {
+		backOpt = optNum
+		p.ui.line(4, fmt.Sprintf("%d) Back (change direct invocation or model)", backOpt))
+		optNum++
+	}
+	cancelOpt := optNum
+	p.ui.line(4, fmt.Sprintf("%d) Cancel (leave %s unchanged)", cancelOpt, toolLabel(tool)))
+	prompt := fmt.Sprintf("Apply option for %s (Enter for 1): ", tool)
 	for range 10 {
 		answer, err := deps.Prompter.ReadLine(prompt)
 		if err != nil {
@@ -495,32 +503,33 @@ func approveSingleInteractive(
 			_ = fail(deps, tool+": "+errInputEnded.Error())
 			return nil, reviewCancelled
 		}
-		switch strings.ToLower(strings.TrimSpace(answer)) {
-		case "", "y", "yes":
+		trimmed := strings.ToLower(strings.TrimSpace(answer))
+		switch {
+		case trimmed == "" || trimmed == "1" || trimmed == "y" || trimmed == "yes":
 			return []approvedWrite{{
 				target:    item.target,
 				write:     item.write,
 				names:     item.names,
 				prefAlias: item.prefAlias,
 			}}, reviewApproved
-		case "n", "no":
-			item.target.out.status, item.target.out.reason = statusDeclined, "no files written"
-			return nil, reviewApproved
-		case "b", "back":
-			if allowBack {
-				return nil, reviewBack
-			}
-		case "v", "view":
+		case fullOpt > 0 && (trimmed == strconv.Itoa(fullOpt) || trimmed == "v" || trimmed == "view"):
 			if err := showFull(); err != nil {
 				item.target.out.status, item.target.out.reason = statusFailed, err.Error()
 				_ = fail(deps, tool+": "+err.Error())
 				return nil, reviewApproved
 			}
+		case backOpt > 0 && (trimmed == strconv.Itoa(backOpt) || trimmed == "b" || trimmed == "back"):
+			return nil, reviewBack
+		case trimmed == strconv.Itoa(cancelOpt) || trimmed == "n" || trimmed == "no" ||
+			trimmed == "c" || trimmed == "cancel":
+			item.target.out.status, item.target.out.reason = statusDeclined, "no files written"
+			return nil, reviewApproved
 		default:
-			p.ui.line(2, "Enter y to apply, n to decline, or v to show the full diff.")
+			p.ui.line(2, fmt.Sprintf("Choose a number from 1 to %d.", cancelOpt))
 		}
 	}
-	item.target.out.status, item.target.out.reason = statusFailed, "no answer: expected y, n or v"
+	item.target.out.status = statusFailed
+	item.target.out.reason = "no answer: expected apply option number"
 	_ = fail(deps, tool+": "+item.target.out.reason)
 	return nil, reviewApproved
 }

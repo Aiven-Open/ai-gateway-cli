@@ -132,15 +132,43 @@ func TestSetupToLaunchPersistsChosenModelWithoutNativeDefault(t *testing.T) {
 				t.Fatalf("launch argv = %v, want [%s %s aiven/glm-5]", got, tc.tool, tc.flag)
 			}
 
+			// 1b. launch with non-model native args also injects aiven/glm-5 (R1)!
+			var extraArgs, wantExtraArgv []string
+			switch tc.tool {
+			case "pi":
+				extraArgs = []string{"--continue"}
+				wantExtraArgv = []string{"pi", "--model", "aiven/glm-5", "--continue"}
+			case "omp":
+				extraArgs = []string{"-p", "hi"}
+				wantExtraArgv = []string{"omp", "--model", "aiven/glm-5", "-p", "hi"}
+			case "opencode":
+				extraArgs = []string{"run", "--pure", "hi"}
+				wantExtraArgv = []string{"opencode", "run", "-m", "aiven/glm-5", "--pure", "hi"}
+			}
+			if lr := s.run(append([]string{"launch", tc.tool, "--"}, extraArgs...)...); lr.code != 0 {
+				t.Fatalf("launch extra args %s: exit %d, stderr:\n%s", tc.tool, lr.code, lr.stderr)
+			}
+			if got := s.runner.calls[1].argv; !slices.Equal(got, wantExtraArgv) {
+				t.Fatalf("extra args argv = %v, want %v", got, wantExtraArgv)
+			}
+
 			// 2. Explicit native --model/-m after -- still overrides.
 			if lr := s.run("launch", tc.tool, "--", tc.flag, "aiven/deepseek-v3.2"); lr.code != 0 {
 				t.Fatalf("launch override: exit %d, stderr:\n%s", lr.code, lr.stderr)
 			}
-			if got := s.runner.calls[1].argv; !slices.Equal(
+			if got := s.runner.calls[2].argv; !slices.Equal(
 				got,
 				[]string{tc.tool, tc.flag, "aiven/deepseek-v3.2"},
 			) {
 				t.Fatalf("override argv = %v", got)
+			}
+
+			// 2b. Meta flags (--help) and non-session subcommands (opencode models) pass through unchanged.
+			if lr := s.run("launch", tc.tool, "--", "--help"); lr.code != 0 {
+				t.Fatalf("launch --help: exit %d, stderr:\n%s", lr.code, lr.stderr)
+			}
+			if got := s.runner.calls[3].argv; !slices.Equal(got, []string{tc.tool, "--help"}) {
+				t.Fatalf("--help argv = %v", got)
 			}
 
 			// 3. When key no longer grants glm-5 (keyClaudeOnly grants claude-sonnet/opus/haiku), launch falls back cleanly.
@@ -152,7 +180,7 @@ func TestSetupToLaunchPersistsChosenModelWithoutNativeDefault(t *testing.T) {
 			if lr := s.run("launch", tc.tool); lr.code != 0 {
 				t.Fatalf("launch fallback: exit %d, stderr:\n%s", lr.code, lr.stderr)
 			}
-			if got := s.runner.calls[2].argv; !slices.Equal(
+			if got := s.runner.calls[4].argv; !slices.Equal(
 				got,
 				[]string{tc.tool, tc.flag, "aiven/claude-sonnet"},
 			) {
@@ -287,5 +315,95 @@ func TestSetupYesRefusesUngrantedModelAndSuggestsProviderAlias(t *testing.T) {
 	}
 	if _, err := os.Stat(s.keyPath()); !os.IsNotExist(err) {
 		t.Error("key saved despite ungranted model")
+	}
+}
+
+// R2: (a) User ~/.claude/settings.json with ANTHROPIC_MODEL=claude-retired + direct invocation OFF +
+// selecting Open-weight succeeds, probes glm-5, writes blank ANTHROPIC_MODEL in aiven.settings.json, and
+// launch claude runs glm-5; (b) project .claude/settings.local.json ungranted refuses without fake repair.
+func TestClaudeUntouchedUserAndProjectLayerRecoveryBoundaries(t *testing.T) {
+	t.Parallel()
+
+	t.Run(
+		"user ANTHROPIC_MODEL ungranted repaired in dedicated settings with direct OFF",
+		func(t *testing.T) {
+			t.Parallel()
+			g := newGatewayDouble(t)
+			probes := recordProbes(t, g)
+			s := newSession(t, g).stdin(keyOpenWeightLA)
+			s.writeUserSettings("settings.json", `{"env":{"ANTHROPIC_MODEL":"claude-retired"}}`)
+			// Beat 2: 1=Keep unchanged, 2=Open-weight (glm-5); Beat 3: 1=No (direct OFF); Review: 1=Apply.
+			s.deps.Prompter = &scriptedPrompter{answers: []string{"2", "1", "1"}}
+			r := s.run("setup", "claude", "--key-stdin", "--plain")
+			if r.code != 0 {
+				t.Fatalf("setup exit %d, stderr:\n%s", r.code, r.stderr)
+			}
+			if got := probes()["/v1/messages"]; !slices.Equal(got, []string{"glm-5"}) {
+				t.Fatalf("probes = %v, want [glm-5]", got)
+			}
+			cfg := readJSON(t, filepath.Join(s.fakeHome, claude.SettingsFile))
+			env := cfg["env"].(map[string]any)
+			if cfg["model"] != "glm-5[1m]" || env["ANTHROPIC_MODEL"] != "" {
+				t.Fatalf("aiven.settings.json = %v, want model=glm-5[1m] and blank ANTHROPIC_MODEL", cfg)
+			}
+			// Untouched ~/.claude/settings.json stays as user left it.
+			userCfg := readJSON(t, filepath.Join(s.fakeHome, ".claude", "settings.json"))
+			if userCfg["env"].(map[string]any)["ANTHROPIC_MODEL"] != "claude-retired" {
+				t.Fatalf("user settings.json was unexpectedly modified: %v", userCfg)
+			}
+			// launch claude must run glm-5[1m], not claude-retired.
+			if lr := s.run("launch", "claude"); lr.code != 0 {
+				t.Fatalf("launch claude exit %d: %s", lr.code, lr.stderr)
+			}
+			if got, _ := s.launched().envVar("ANTHROPIC_MODEL"); got != "glm-5[1m]" {
+				t.Errorf("launch ANTHROPIC_MODEL = %q, want glm-5[1m]", got)
+			}
+		},
+	)
+
+	t.Run("project settings.local.json ungranted refuses without fake repair", func(t *testing.T) {
+		t.Parallel()
+		g := newGatewayDouble(t)
+		s := newSession(t, g).stdin(keyOpenWeightLA)
+		s.writeProjectSettings("settings.local.json", `{"env":{"ANTHROPIC_MODEL":"claude-retired"}}`)
+		p := &scriptedPrompter{answers: []string{"2", "1", "1"}}
+		s.deps.Prompter = p
+		r := s.run("setup", "claude", "--key-stdin", "--plain")
+		projPath := filepath.Join(s.env.WorkDir, ".claude", "settings.local.json")
+		if r.code == 0 || !strings.Contains(r.stderr, projPath) ||
+			!strings.Contains(r.stderr, "does not grant") {
+			t.Fatalf("exit %d, stderr:\n%s", r.code, r.stderr)
+		}
+		if len(p.prompts) != 0 {
+			t.Errorf("offered Beat 2 repair prompts for unrepairable project override: %q", p.prompts)
+		}
+		if _, err := os.Stat(s.keyPath()); !os.IsNotExist(err) {
+			t.Error("key saved despite unrepairable project override")
+		}
+	})
+}
+
+// R4: Repeat setup (--yes --plain) probes the persisted launcher model (glm-5) rather than SonnetOrFirst.
+func TestRepeatSetupProbesPersistedLauncherModel(t *testing.T) {
+	t.Parallel()
+	g := newGatewayDouble(t)
+	s := newSession(t, g).stdin(keyProductionOwned)
+	// First setup: choose Open-weight (option 3 -> glm-5), direct OFF (1), Apply (1).
+	s.deps.Prompter = &scriptedPrompter{answers: []string{"3", "1", "1"}}
+	if r := s.run("setup", "opencode", "--key-stdin", "--plain"); r.code != 0 {
+		t.Fatalf("first setup exit %d: %s", r.code, r.stderr)
+	}
+	// Second setup: --yes --plain with no prompt must probe glm-5 (persisted), not claude-sonnet-5-5!
+	probes := recordProbes(t, g)
+	s.deps.Prompter = nil
+	r := s.run("setup", "opencode", "--yes", "--plain")
+	if r.code != 0 {
+		t.Fatalf("repeat setup exit %d: %s", r.code, r.stderr)
+	}
+	if got := probes()["/v1/chat/completions"]; !slices.Equal(got, []string{"glm-5"}) {
+		t.Fatalf("repeat setup probed %v, want [glm-5]", got)
+	}
+	if !strings.Contains(r.stderr, "opencode -m aiven/glm-5") {
+		t.Errorf("repeat setup output did not retain glm-5:\n%s", r.stderr)
 	}
 }

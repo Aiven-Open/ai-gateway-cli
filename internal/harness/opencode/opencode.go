@@ -137,7 +137,7 @@ func Model(table []models.Model) string { return ModelFor(table, harness.ModelSe
 // unchanged, and leaves the native configuration tree untouched.
 func Launch(in harness.Input) (harness.Plan, error) {
 	alias := aliasFor(in.Table, in.Selection)
-	args := harness.ModelArgs(in.Args, "aiven/"+alias, "-m")
+	args := harness.OpencodeModelArgs(in.Args, "aiven/"+alias)
 	if len(args) != len(in.Args) {
 		if in.UserHome == "" {
 			return harness.Plan{}, config.ErrNoHome

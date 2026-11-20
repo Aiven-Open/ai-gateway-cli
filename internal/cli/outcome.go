@@ -222,18 +222,25 @@ func (r *setupRun) finish() int {
 	}
 	if len(ready) > 0 {
 		u.heading("Start a session")
-		cmdWidth := 0
+		cmdWidth := len("COMMAND")
+		hasModels := false
 		for _, o := range ready {
 			cmdWidth = max(cmdWidth, len("aiven-ai-gateway launch "+o.tool))
+			if o.resolvedModel != "" && safe(o.resolvedModel) == o.resolvedModel {
+				hasModels = true
+			}
+		}
+		if hasModels {
+			u.printf("  %s  %s\n", u.th.dim(pad("COMMAND", cmdWidth)), u.th.dim("MODEL"))
 		}
 		for _, o := range ready {
 			cmd := "aiven-ai-gateway launch " + o.tool
-			if o.resolvedModel != "" && safe(o.resolvedModel) == o.resolvedModel {
+			if hasModels && o.resolvedModel != "" && safe(o.resolvedModel) == o.resolvedModel {
 				u.printf(
-					"  %s%s   %s\n",
+					"  %s%s  %s\n",
 					u.th.cyan(cmd),
 					strings.Repeat(" ", cmdWidth-len(cmd)),
-					u.th.dim("# "+o.resolvedModel),
+					u.th.dim(o.resolvedModel),
 				)
 			} else {
 				u.command(2, cmd)
@@ -241,9 +248,14 @@ func (r *setupRun) finish() int {
 		}
 		u.heading("Or start the native tool directly")
 		for _, o := range ready {
+			sel := o.selection
+			if sel.IsZero() && o.resolvedModel != "" &&
+				(o.tool == "pi" || o.tool == "opencode" || o.tool == "omp") {
+				sel = harness.ModelSelection{Model: o.resolvedModel}
+			}
 			if !u.command(
 				2,
-				directCommand(o.tool, r.table, o.asDefault && o.status == statusConfigured, o.selection),
+				directCommand(r.env, o.tool, r.table, o.asDefault && o.status == statusConfigured, sel),
 			) {
 				u.line(2, toolLabel(o.tool)+": direct command unavailable because an argument "+
 					"contains terminal controls.")
@@ -277,6 +289,7 @@ func (r *setupRun) finish() int {
 
 // directCommand is the native invocation that uses what setup wrote. With Aiven as the default the bare binary does.
 func directCommand(
+	env config.Env,
 	tool string,
 	table []models.Model,
 	asDefault bool,
@@ -286,15 +299,29 @@ func directCommand(
 	if asDefault && t.bin != "" {
 		return t.bin
 	}
-	return t.run(table, sel)
+	return t.run(env, table, sel)
 }
 
-// shellQuote makes s one literal word for bash, zsh, sh and fish, and avoids leaving '%' unquoted so cmd.exe does
-// not expand environment variables. Plainly safe words stay unquoted; anything else is single-quoted.
-func shellQuote(s string) string {
-	if s != "" &&
-		strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@+:,./-") == "" {
+// shellQuote makes s one literal word for bash, zsh, sh and fish, and avoids leaving '%' unquoted.
+func shellQuote(s string) string { return shellQuoteForOS(s, "unix") }
+
+// shellQuoteForOS quotes s for the target OS shell. Plainly safe words stay unquoted; on Windows plain paths with
+// spaces and no expansion characters use double quotes (valid in both PowerShell and cmd.exe), while values holding
+// expansion characters (%, $, backticks or quotes) use PowerShell single-quote escaping so neither %VAR% nor $VAR
+// expands. Unix/fish use POSIX single quotes.
+func shellQuoteForOS(s, goos string) string {
+	safeChars := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@+:,./-"
+	if goos == "windows" {
+		safeChars += "\\"
+	}
+	if s != "" && strings.Trim(s, safeChars) == "" {
 		return s
+	}
+	if goos == "windows" {
+		if s != "" && !strings.ContainsAny(s, "%$`\"'\r\n") {
+			return `"` + s + `"`
+		}
+		return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

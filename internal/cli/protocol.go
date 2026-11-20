@@ -73,6 +73,13 @@ func toolChecks(
 	if err != nil {
 		return nil, err
 	}
+	if chosen == "" && (tool == "pi" || tool == "opencode" || tool == "omp") {
+		if pref, err := config.LoadModelPref(env.UserHome, env.BaseURL, tool); err == nil && pref != "" {
+			if _, ok := models.Find(table, pref); ok {
+				chosen = pref
+			}
+		}
+	}
 	switch tool {
 	case "pi", "omp":
 		byProtocol := map[models.Protocol]string{}

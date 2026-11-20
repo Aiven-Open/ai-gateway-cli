@@ -25,11 +25,12 @@ import (
 )
 
 type configuredModel struct {
-	present bool
-	granted bool
-	file    string
-	setting string
-	model   string
+	present      bool
+	granted      bool
+	unrepairable bool
+	file         string
+	setting      string
+	model        string
 }
 
 func inspectConfiguredModel(
@@ -84,7 +85,22 @@ func inspectConfiguredModel(
 		for _, f := range snapshot.Files {
 			snapByPath[f.Path] = f
 		}
-		// Check effective layered model first (covers dedicated, ~/.claude/settings.json and project layers).
+		// Check read-only project layers first: an ungranted project model cannot be repaired by setup,
+		// even when an ungranted user-level ANTHROPIC_MODEL would otherwise mask it during Effective resolution.
+		if projPath, projAlias, projSetting, bad := claude.ProjectUngranted(
+			table,
+			env.WorkDir,
+		); bad {
+			return configuredModel{
+				present:      true,
+				granted:      false,
+				unrepairable: true,
+				file:         projPath,
+				setting:      projSetting,
+				model:        projAlias,
+			}
+		}
+		// Check effective layered model (covers dedicated, ~/.claude/settings.json and project layers).
 		if effPath, effAlias, err := claude.Effective(
 			table,
 			env.UserHome,
@@ -98,12 +114,19 @@ func inspectConfiguredModel(
 				if setting == "" {
 					setting = "model"
 				}
+				unrepairable := false
+				if env.WorkDir != "" {
+					projShared := filepath.Join(env.WorkDir, ".claude", "settings.json")
+					projLocal := filepath.Join(env.WorkDir, ".claude", "settings.local.json")
+					unrepairable = effPath == projShared || effPath == projLocal
+				}
 				return configuredModel{
-					present: true,
-					granted: false,
-					file:    effPath,
-					setting: setting,
-					model:   effAlias,
+					present:      true,
+					granted:      false,
+					unrepairable: unrepairable,
+					file:         effPath,
+					setting:      setting,
+					model:        effAlias,
 				}
 			}
 			if effPath != "" {

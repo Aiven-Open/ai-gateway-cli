@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/aiven-open/ai-gateway-cli/internal/models"
 )
@@ -326,12 +327,61 @@ func TestSelectRenderViewportClamping(t *testing.T) {
 			t.Errorf("bottom viewport missing up indicator:\n%s", joined)
 		}
 	}
-	// Tiny pane never panics and stays within height-1.
+	// Tiny panes (heights 2..5 and widths 1..4) always keep the active option visible without overflow.
+	ansi := regexp.MustCompile("\x1b\\[[0-9;]*m")
 	for _, h := range []int{2, 3, 4, 5} {
-		lines := s.render(40, h)
-		if len(lines) > max(1, h-1) {
-			t.Errorf("height=%d rendered %d lines, want <= %d", h, len(lines), max(1, h-1))
+		for _, cursor := range []int{0, 20, 44} {
+			s.cursor = cursor
+			lines := s.render(40, h)
+			if len(lines) > max(1, h-1) {
+				t.Errorf(
+					"height=%d cursor=%d rendered %d lines, want <= %d",
+					h,
+					cursor,
+					len(lines),
+					max(1, h-1),
+				)
+			}
+			wantActive := fmt.Sprintf("model-%02d", cursor)
+			if !strings.Contains(strings.Join(lines, "\n"), wantActive) {
+				t.Errorf("height=%d cursor=%d hid active option %q:\n%q", h, cursor, wantActive, lines)
+			}
 		}
+	}
+	for _, w := range []int{1, 2, 3, 4} {
+		s.cursor = 0
+		lines := s.render(w, 6)
+		if len(lines) == 0 {
+			t.Fatalf("width=%d rendered 0 lines", w)
+		}
+		for _, l := range lines {
+			plain := ansi.ReplaceAllString(l, "")
+			if !utf8.ValidString(plain) {
+				t.Errorf("width=%d produced invalid UTF-8: %q", w, plain)
+			}
+			if cells(plain) > w {
+				t.Errorf("width=%d line %q is %d cells, exceeds %d", w, plain, cells(plain), w)
+			}
+		}
+	}
+}
+
+func TestFitWithPreservesValidUTF8AtTinyWidths(t *testing.T) {
+	t.Parallel()
+	for _, w := range []int{0, 1, 2, 3} {
+		got := fitWith("long", w, "…")
+		if !utf8.ValidString(got) {
+			t.Errorf("fitWith(long, %d, …) = %q is invalid UTF-8", w, got)
+		}
+		if w > 0 && cells(got) > w {
+			t.Errorf("fitWith(long, %d, …) = %q (%d cells) exceeds %d", w, got, cells(got), w)
+		}
+	}
+	if got := fitWith("long", 1, "…"); got != "…" {
+		t.Errorf("fitWith(long, 1, …) = %q, want …", got)
+	}
+	if got := fitWith("long", 1, "..."); got != "" {
+		t.Errorf("fitWith(long, 1, ...) = %q, want empty", got)
 	}
 }
 

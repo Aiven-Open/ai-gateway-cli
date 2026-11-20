@@ -94,7 +94,7 @@ configuration files:
 
 | Harness | On-demand configuration | Direct native invocation |
 | --- | --- | --- |
-| Claude Code | `~/.claude/aiven.settings.json` | `claude --settings ~/.claude/aiven.settings.json` (`%USERPROFILE%\.claude\aiven.settings.json` on Windows) |
+| Claude Code | `~/.claude/aiven.settings.json` | `claude --settings ~/.claude/aiven.settings.json` (`claude --settings "%USERPROFILE%\.claude\aiven.settings.json"` on Windows) |
 | Codex | Aiven provider in `~/.codex/config.toml`, profile in `~/.codex/aiven.config.toml` | `codex -p aiven` |
 | Pi | Aiven provider in `~/.pi/agent/models.json` | `pi --model aiven/<alias>` |
 | OpenCode | Aiven provider in `~/.config/opencode/opencode.json`, or `opencode.jsonc` when it exists; `$XDG_CONFIG_HOME/opencode` when set | `opencode -m aiven/<alias>` |

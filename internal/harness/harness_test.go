@@ -14,17 +14,40 @@ import (
 	"github.com/aiven-open/ai-gateway-cli/internal/models"
 )
 
-func TestModelArgsAddsTheModelOnlyWithoutNativeArgs(t *testing.T) {
+func TestModelArgsInjectsUnlessExplicitModelMetaOrSubcommand(t *testing.T) {
 	for _, tc := range []struct{ args, want []string }{
 		{nil, []string{"--model", "m"}},
 		{[]string{}, []string{"--model", "m"}},
-		{[]string{"hi"}, []string{"hi"}},
-		// A global option and its value ahead of a subcommand that takes no model flag.
-		{[]string{"--log-level", "INFO", "models", "aiven"}, []string{"--log-level", "INFO", "models", "aiven"}},
+		{[]string{"--continue"}, []string{"--model", "m", "--continue"}},
+		{[]string{"-p", "hi"}, []string{"--model", "m", "-p", "hi"}},
+		{[]string{"--model", "other/x", "-p", "hi"}, []string{"--model", "other/x", "-p", "hi"}},
+		{[]string{"-m=other/x"}, []string{"-m=other/x"}},
+		{[]string{"--provider", "anthropic"}, []string{"--provider", "anthropic"}},
+		{[]string{"--help"}, []string{"--help"}},
+		{[]string{"-v"}, []string{"-v"}},
+		{[]string{"update"}, []string{"update"}},
+		{[]string{"config", "list"}, []string{"config", "list"}},
 		{[]string{"--", "--model"}, []string{"--", "--model"}},
 	} {
 		if got := harness.ModelArgs(tc.args, "m", "--model"); !slices.Equal(got, tc.want) {
 			t.Errorf("ModelArgs(%q) = %q, want %q", tc.args, got, tc.want)
+		}
+	}
+
+	for _, tc := range []struct{ args, want []string }{
+		{nil, []string{"-m", "m"}},
+		{[]string{"run", "--pure", "hi"}, []string{"run", "-m", "m", "--pure", "hi"}},
+		{[]string{"run", "-m", "other/x", "hi"}, []string{"run", "-m", "other/x", "hi"}},
+		{[]string{"--continue"}, []string{"-m", "m", "--continue"}},
+		{[]string{"/tmp/project"}, []string{"-m", "m", "/tmp/project"}},
+		{[]string{"--prompt", "models"}, []string{"-m", "m", "--prompt", "models"}},
+		{[]string{"--log-level", "INFO", "models", "aiven"}, []string{"--log-level", "INFO", "models", "aiven"}},
+		{[]string{"models"}, []string{"models"}},
+		{[]string{"auth", "list"}, []string{"auth", "list"}},
+		{[]string{"--help"}, []string{"--help"}},
+	} {
+		if got := harness.OpencodeModelArgs(tc.args, "m"); !slices.Equal(got, tc.want) {
+			t.Errorf("OpencodeModelArgs(%q) = %q, want %q", tc.args, got, tc.want)
 		}
 	}
 }

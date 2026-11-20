@@ -289,8 +289,11 @@ func fitWith(s string, width int, ellipsis string) string {
 		return s
 	}
 	ew := cells(ellipsis)
-	if width <= ew {
-		return ellipsis[:min(len(ellipsis), width)]
+	if width < ew {
+		return ""
+	}
+	if width == ew {
+		return ellipsis
 	}
 	var b strings.Builder
 	used, state := 0, -1

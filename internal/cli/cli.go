@@ -14,6 +14,9 @@ import (
 
 // Run executes one invocation and returns the process exit code.
 func Run(ctx context.Context, args []string, env config.Env, deps Deps) int {
+	if !deps.Term.NoVT {
+		defer enableOutputVT(deps.Stdout, deps.Stderr)()
+	}
 	if handled, code := Informational(args, env.Environ, deps); handled {
 		return code
 	}
@@ -39,6 +42,9 @@ func Run(ctx context.Context, args []string, env config.Env, deps Deps) int {
 // Informational handles help and rejects malformed invocations before configuration, cwd or credential access.
 // environ is read only for NO_COLOR and TERM.
 func Informational(args, environ []string, deps Deps) (bool, int) {
+	if !deps.Term.NoVT {
+		defer enableOutputVT(deps.Stdout, deps.Stderr)()
+	}
 	presentation, _, _ := splitNative(args)
 	plain := slices.Contains(presentation, "--plain")
 	if len(args) == 0 || slices.Contains([]string{"help", "-h", "--help"}, args[0]) {

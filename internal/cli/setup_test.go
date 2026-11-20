@@ -43,7 +43,7 @@ func (p *answerPrompter) ReadSecret(prompt string) (string, error) {
 }
 
 func isPickPrompt(p string) bool {
-	return strings.HasPrefix(p, "Numbers or names") || strings.HasPrefix(p, "Apply this change") ||
+	return strings.HasPrefix(p, "Numbers or names") || strings.HasPrefix(p, "Apply option for ") ||
 		strings.HasPrefix(p, "Choose model ") || strings.HasPrefix(p, "Choose direct-invocation ") ||
 		strings.HasPrefix(p, "Choose apply ")
 }
@@ -62,13 +62,13 @@ func TestSetupConfirmsEnvironmentKeyBeforeAnyRequest(t *testing.T) {
 	s.env.Environ = append(s.env.Environ, creds.EnvVar+"="+keyLong)
 	asked := false
 	s.deps.Prompter = hookPrompter{
-		on: "Use this key with " + g.URL + "? [y/N] ",
+		on: "Choose key option (Enter for 2): ",
 		hook: func() {
 			asked = true
 			if len(g.journal()) != 0 {
 				t.Errorf("gateway received a request before credential confirmation")
 			}
-			for _, want := range []string{"Gateway: " + g.URL, "Key source: " + creds.EnvVar, "Key: AVNS_…wxyz"} {
+			for _, want := range []string{"Gateway: " + g.URL, "Key source: " + creds.EnvVar, "Key: AVNS_…wxyz", "Use this key with " + g.URL + "?"} {
 				if !strings.Contains(s.errb.String(), want) {
 					t.Errorf("confirmation did not show %q: %s", want, s.errb.String())
 				}
@@ -90,7 +90,7 @@ func TestSetupConfirmsEnvironmentKeyBeforeAnyRequest(t *testing.T) {
 
 func TestSetupResolvesChecksAndSavesKey(t *testing.T) {
 	hidden := "Paste your Aiven AI Gateway API key (hidden): "
-	envConsent := "Use this key with <gateway>? [y/N] "
+	envConsent := "Choose key option (Enter for 2): "
 	cases := []connectCase{
 		{
 			name:     "stdin flag",
@@ -226,7 +226,7 @@ func TestSetupResolvesChecksAndSavesKey(t *testing.T) {
 			name:     "unrecognised environment answer",
 			environ:  []string{"AIVEN_AI_GATEWAY_KEY=" + keyFlash},
 			prompter: &answerPrompter{answer: "maybe"},
-			wantErr:  "expected y or n",
+			wantErr:  "expected key option number",
 		},
 		{
 			name:        "expired key file prompts",
@@ -466,7 +466,7 @@ func TestSetupConfiguresNamedTool(t *testing.T) {
 		if r.code != 0 || len(s.runner.calls) != 0 ||
 			!strings.Contains(r.stderr, "native default left as it was\n") ||
 			!strings.Contains(r.stderr, "Or start the native tool directly\n  "+tc.run) ||
-			!strings.Contains(r.stderr, "Start a session\n  aiven-ai-gateway launch "+tc.tool+"   # ") {
+			!strings.Contains(r.stderr, "aiven-ai-gateway launch "+tc.tool+"  ") {
 			t.Fatalf("exit %d, stderr %q, calls %v", r.code, r.stderr, s.runner.calls)
 		}
 		for _, f := range tc.files {
@@ -577,7 +577,7 @@ func TestSetupKeepsThePreviewedBackupNameWhenAnotherRunTakesIt(t *testing.T) {
 	const before = "model = 'o3'\n"
 	writeFile(t, path, before)
 	taken := fsutil.BackupPath(path, fixedNow)
-	s.deps.Prompter = hookPrompter{"Apply this change", func() { writeFile(t, taken, "another run") }}
+	s.deps.Prompter = hookPrompter{"Apply option for", func() { writeFile(t, taken, "another run") }}
 	r := s.run("setup", "--key-stdin", "codex")
 	if r.code != 1 || !strings.Contains(r.stderr, "(previous version: "+taken+")") ||
 		!strings.Contains(r.stderr, taken+" already exists; retry") {
@@ -591,7 +591,7 @@ func TestSetupKeepsThePreviewedBackupNameWhenAnotherRunTakesIt(t *testing.T) {
 func TestSetupPreviewsAToolChangeBeforeWritingIt(t *testing.T) {
 	modelAsk := "Choose model option (Enter for 1): "
 	dflt := `Choose direct-invocation option (Enter for 1, or "back"): `
-	ask := "Apply this change to codex? [Y/n/v] "
+	ask := "Apply option for codex (Enter for 1): "
 	for _, tc := range []struct {
 		name, want  string
 		args        []string

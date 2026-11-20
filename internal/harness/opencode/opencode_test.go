@@ -200,8 +200,10 @@ func TestLaunchAddsTheDefaultModelUnlessTheArgsChooseOne(t *testing.T) {
 	setUp(t, in)
 	for _, tc := range []struct{ args, want []string }{
 		{nil, []string{"opencode", "-m", "aiven/claude-sonnet"}},
-		{[]string{"."}, []string{"opencode", "."}},
-		{[]string{"run", "hi"}, []string{"opencode", "run", "hi"}},
+		{[]string{"."}, []string{"opencode", "-m", "aiven/claude-sonnet", "."}},
+		{[]string{"--prompt", "models"}, []string{"opencode", "-m", "aiven/claude-sonnet", "--prompt", "models"}},
+		{[]string{"run", "hi"}, []string{"opencode", "run", "-m", "aiven/claude-sonnet", "hi"}},
+		{[]string{"run", "--pure", "hi"}, []string{"opencode", "run", "-m", "aiven/claude-sonnet", "--pure", "hi"}},
 		{[]string{"--log-level", "INFO", "models", "aiven"}, []string{"opencode", "--log-level", "INFO", "models", "aiven"}},
 		{[]string{"--model=aiven/glm"}, []string{"opencode", "--model=aiven/glm"}},
 		{[]string{"auth", "login"}, []string{"opencode", "auth", "login"}},

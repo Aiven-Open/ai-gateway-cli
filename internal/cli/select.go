@@ -139,15 +139,17 @@ func (s *selectState) viewport(total, avail int) (start, end int) {
 func (s *selectState) render(width, height int) []string {
 	g := s.th.g
 	// Leave a 2-cell margin on wide terminals so East Asian Ambiguous glyphs never trigger unexpected soft-wrap.
+	// On tiny widths (1..4 cells), drop the rail gutter so the active option still fits within width.
+	useRail := s.c.rail && (width == 0 || width > 4)
 	maxCells := 0
 	if width > 2 {
 		maxCells = width - 2
 	} else if width > 0 {
-		maxCells = width - 1
+		maxCells = width
 	}
 	titlePrefix, bodyPrefix := "", ""
 	titleMax, bodyMax := maxCells, maxCells
-	if s.c.rail {
+	if useRail {
 		titlePrefix = s.th.cyan(g.active) + "  "
 		bodyPrefix = s.th.dim(g.railBar) + "  "
 		if maxCells > 0 {
@@ -158,14 +160,23 @@ func (s *selectState) render(width, height int) []string {
 	fitTitle := func(text string) string { return fitWith(text, titleMax, g.ellipsis) }
 	fitBody := func(text string) string { return fitWith(text, bodyMax, g.ellipsis) }
 
-	header := []string{titlePrefix + s.th.bold(fitTitle(s.c.title))}
-	if s.c.subtitle != "" {
-		header = append(header, bodyPrefix+s.th.dim(fitBody(s.c.subtitle)))
+	budget := 0
+	if height > 0 {
+		budget = max(1, height-1)
 	}
 	showFilter := s.filtering || s.filter != ""
-	if showFilter {
+	// Reserve at least 1 row for the active option before allocating rows to title, subtitle, filter or hint.
+	var header []string
+	if budget == 0 || len(header)+1 < budget {
+		header = append(header, titlePrefix+s.th.bold(fitTitle(s.c.title)))
+	}
+	if s.c.subtitle != "" && (budget == 0 || len(header)+1 < budget) {
+		header = append(header, bodyPrefix+s.th.dim(fitBody(s.c.subtitle)))
+	}
+	if showFilter && (budget == 0 || len(header)+1 < budget) {
 		header = append(header, bodyPrefix+fitBody("  Filter: "+s.filter))
 	}
+	showHint := budget == 0 || len(header)+2 <= budget
 
 	visible := s.visible()
 	if len(visible) > 0 && s.cursor >= len(visible) {
@@ -176,22 +187,38 @@ func (s *selectState) render(width, height int) []string {
 		labelWidth = max(labelWidth, cells(s.c.options[i].label))
 	}
 
-	budget := 0
-	if height > 0 {
-		budget = max(1, height-1)
-	}
 	var body []string
 	if len(visible) == 0 {
 		body = append(body, bodyPrefix+fitBody("  No match; Backspace edits the filter"))
 	} else {
 		start, end := 0, len(visible)
+		avail := len(visible)
 		if budget > 0 {
-			avail := max(1, budget-len(header)-1)
+			hintRows := 0
+			if showHint {
+				hintRows = 1
+			}
+			avail = max(1, budget-len(header)-hintRows)
 			start, end = s.viewport(len(visible), avail)
 		} else {
 			s.offset = 0
 		}
-		if start > 0 {
+		wantTop := start > 0
+		wantBot := end < len(visible)
+		if budget > 0 {
+			optRows := end - start
+			if wantTop && optRows+1 > avail {
+				wantTop = false
+			}
+			topRows := 0
+			if wantTop {
+				topRows = 1
+			}
+			if wantBot && optRows+topRows+1 > avail {
+				wantBot = false
+			}
+		}
+		if wantTop {
 			body = append(body, bodyPrefix+s.th.dim(fitBody(fmt.Sprintf("  %s %d more", g.up, start))))
 		}
 		for n := start; n < end; n++ {
@@ -209,7 +236,7 @@ func (s *selectState) render(width, height int) []string {
 				),
 			)
 		}
-		if end < len(visible) {
+		if wantBot {
 			body = append(
 				body,
 				bodyPrefix+s.th.dim(fitBody(fmt.Sprintf("  %s %d more", g.down, len(visible)-end))),
@@ -251,11 +278,8 @@ func (s *selectState) render(width, height int) []string {
 	lines := make([]string, 0, len(header)+len(body)+1)
 	lines = append(lines, header...)
 	lines = append(lines, body...)
-	if budget == 0 || len(lines) < budget {
+	if showHint && (budget == 0 || len(lines) < budget) {
 		lines = append(lines, hint)
-	}
-	if budget > 0 && len(lines) > budget {
-		lines = lines[:budget]
 	}
 	return lines
 }

@@ -145,7 +145,7 @@ func Setup(in Input) (harness.Plan, error) {
 		return harness.Plan{}, err
 	}
 	if in.WorkDir != "" {
-		if _, err := withPins(slots{}, nil, in.UserHome, in.WorkDir); err != nil {
+		if _, err := withPins(nil, slots{}, nil, in.UserHome, in.WorkDir); err != nil {
 			return harness.Plan{}, err
 		}
 	}
@@ -183,6 +183,9 @@ func wire(in Input, path string) (harness.File, error) {
 		cfg["model"] = main
 		if v, ok := env["ANTHROPIC_MODEL"].(string); ok && bare(v) != "" {
 			env["ANTHROPIC_MODEL"] = main
+		} else if !in.Default && userLayerUngranted(in.Table, in.UserHome) {
+			// Clear an ungranted user-level ANTHROPIC_MODEL so --settings aiven.settings.json and launch win.
+			env["ANTHROPIC_MODEL"] = ""
 		}
 	} else if model, ok := cfg["model"].(string); cfg["model"] == nil || ok && bare(model) == "" {
 		// A model the user chose in this file stays, and so does an ANTHROPIC_MODEL, which Claude Code runs over it. Setup
@@ -396,7 +399,7 @@ func Launch(in Input) (harness.Plan, error) {
 	if err != nil {
 		return harness.Plan{}, err
 	}
-	s, err := withPins(defaultSlots(in.Table), cfg, in.UserHome, in.WorkDir)
+	s, err := withPins(in.Table, defaultSlots(in.Table), cfg, in.UserHome, in.WorkDir)
 	if err != nil {
 		return harness.Plan{}, err
 	}

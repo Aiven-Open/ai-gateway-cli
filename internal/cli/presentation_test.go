@@ -149,8 +149,8 @@ func TestSetupSummaryNamesEachOutcomeAndItsRecovery(t *testing.T) {
 	}{
 		{
 			name: "configured", args: []string{"--yes"},
-			want:   []string{"Setup complete\n", "  Codex       configured\n", "Start a session\n  aiven-ai-gateway launch codex   # gpt-sol\n", "Or start the native tool directly\n  codex -p aiven\n"},
-			absent: []string{"Needs attention", "Configure later", "Optional bash/zsh shortcuts", "alias "},
+			want:   []string{"Setup complete\n", "  Codex       configured\n", "Start a session\n  COMMAND                        MODEL\n  aiven-ai-gateway launch codex  gpt-sol\n", "Or start the native tool directly\n  codex -p aiven\n"},
+			absent: []string{"Needs attention", "Configure later", "Optional bash/zsh shortcuts", "alias ", "# gpt-sol"},
 		},
 		{
 			name: "declined", prepare: func(s *session) { s.deps.Prompter = &answerPrompter{answer: "n"} },
