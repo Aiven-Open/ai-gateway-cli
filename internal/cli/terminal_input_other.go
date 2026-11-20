@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Aiven, Helsinki, Finland. https://aiven.io/
 
-//go:build !darwin && !linux
+//go:build !darwin && !linux && !windows
 
 package cli
 

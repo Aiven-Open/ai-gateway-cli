@@ -54,7 +54,7 @@ var setupTools = map[string]struct {
 	},
 	"claude": {
 		connectClaude,
-		func([]models.Model) string { return "claude --settings ~/" + claude.SettingsFile },
+		func([]models.Model) string { return claudeDirectCommand(runtime.GOOS) },
 		"claude",
 		[]string{"CLAUDE_CONFIG_DIR"},
 	},
@@ -66,6 +66,14 @@ var setupTools = map[string]struct {
 	},
 }
 
+// claudeDirectCommand formats Claude's direct --settings invocation for the target OS.
+func claudeDirectCommand(goos string) string {
+	if goos == "windows" {
+		return `claude --settings %USERPROFILE%\.claude\aiven.settings.json`
+	}
+	return "claude --settings ~/" + claude.SettingsFile
+}
+
 // moved refuses redirects that would make setup and the Console's native instructions name different files.
 func moved(env config.Env, tool string) error {
 	for _, kv := range env.Environ {
@@ -73,7 +81,7 @@ func moved(env config.Env, tool string) error {
 		matches := func(m string) bool { return config.SameVar(name, m) }
 		if v != "" && slices.ContainsFunc(setupTools[tool].moved, matches) {
 			return fmt.Errorf("%s is set, so %s would not read the config aiven-ai-gateway writes; "+
-				"unset it and rerun, or configure %s by hand", name, tool, tool)
+				"clear %s in your environment and rerun, or configure %s by hand", name, tool, name, tool)
 		}
 	}
 	return nil

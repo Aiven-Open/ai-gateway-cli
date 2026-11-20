@@ -35,8 +35,10 @@ type presenter struct {
 }
 
 func newPresenter(env config.Env, deps Deps, plain bool) presenter {
-	plain = plain || plainRequested(env.Environ)
-	p := presenter{ui: newUI(deps.Stderr, deps.Term.StderrTTY, deps.Term.StderrWidth, plain)}
+	plain = plain || plainRequested(env.Environ) || deps.Term.NoVT
+	p := presenter{
+		ui: newUIWithEnv(deps.Stderr, deps.Term.StderrTTY, deps.Term.StderrWidth, plain, env.Environ),
+	}
 	if sel, ok := deps.Prompter.(selector); ok && !plain && deps.Term.StdinTTY && deps.Term.StderrTTY {
 		p.inline = sel
 	}
@@ -283,11 +285,11 @@ func directCommand(tool string, table []models.Model, asDefault bool) string {
 	return t.run(table)
 }
 
-// shellQuote makes s one literal word for bash, zsh and sh. Words of plainly safe characters stay as they are, so
-// the common command reads as typed; anything else is single-quoted.
+// shellQuote makes s one literal word for bash, zsh, sh and fish, and avoids leaving '%' unquoted so cmd.exe does
+// not expand environment variables. Plainly safe words stay unquoted; anything else is single-quoted.
 func shellQuote(s string) string {
 	if s != "" &&
-		strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@%+:,./-") == "" {
+		strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@+:,./-") == "" {
 		return s
 	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
