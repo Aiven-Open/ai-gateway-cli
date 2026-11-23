@@ -89,9 +89,9 @@ func TestSetupPickerOffersToolsOnPathAndConfiguresTheChosenOnes(t *testing.T) {
 		hint     string
 		reprompt int
 	}{
-		{name: "number from detected", missing: []string{"pi", "opencode", "omp"}, answers: []string{"2", "", ""}, menu: "(found on PATH):\n  1) Codex (codex)\n  2) Claude Code (claude)\n", want: []string{"claude"}},
-		{name: "names and numbers deduplicated", missing: []string{"omp"}, answers: []string{" 1, pi codex ", "", "", "", ""}, want: []string{"pi", "codex"}},
-		{name: "all when none found gives installation guidance", missing: []string{"pi", "opencode", "codex", "claude", "omp"}, answers: []string{"ALL"}, menu: "(none found on PATH):\n  1) Pi (pi)\n  2) OpenCode (opencode)\n  3) Codex (codex)\n  4) Claude Code (claude)\n  5) OMP (omp)\n", code: 1},
+		{name: "number from detected", missing: []string{"pi", "opencode", "omp"}, answers: []string{"2", "", "", ""}, menu: "(found on PATH):\n  1) Codex (codex) — new\n  2) Claude Code (claude) — new\n", want: []string{"claude"}},
+		{name: "names and numbers deduplicated", missing: []string{"omp"}, answers: []string{" 1, pi codex ", "", "", ""}, want: []string{"pi", "codex"}},
+		{name: "none found exits cleanly before key prompt", missing: []string{"pi", "opencode", "codex", "claude", "omp"}, menu: "No supported coding harnesses found on PATH.", hint: "Run 'aiven-ai-gateway login' to save your key now.", code: 0},
 		{name: "enter skips", answers: []string{""}, hint: later},
 		{name: "s skips", answers: []string{"s"}, hint: later},
 		{name: "re-asks then accepts unavailable tool", missing: []string{"omp"}, answers: []string{"9", "omp"}, code: 1, reprompt: 1},
@@ -129,7 +129,7 @@ func TestSetupPickerOffersToolsOnPathAndConfiguresTheChosenOnes(t *testing.T) {
 func TestSetupPickerSkipsAToolWhoseConfigIsMoved(t *testing.T) {
 	s := newSession(t, newGatewayDouble(t)).stdin(keyValid)
 	s.env.Environ = append(s.env.Environ, "CODEX_HOME="+filepath.Join(s.fakeHome, "elsewhere"))
-	s.deps.Prompter = &scriptedPrompter{answers: []string{"pi,codex", "", ""}}
+	s.deps.Prompter = &scriptedPrompter{answers: []string{"pi,codex", "", "", ""}}
 	r := s.run("setup", "--key-stdin")
 	if r.code != 1 || !strings.Contains(r.stderr, "aiven-ai-gateway: codex: CODEX_HOME is set") ||
 		!strings.Contains(r.stderr, "Pi          configured\n") ||

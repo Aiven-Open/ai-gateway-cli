@@ -55,9 +55,9 @@ func TestPlainOMPUsesNormalHomeWithoutPluginOrDefaultWrite(t *testing.T) {
 		t.Fatalf("plain native argv: %q", got)
 	}
 	if !strings.Contains(r.stderr, "omp --model aiven/claude-sonnet") ||
-		!strings.Contains(r.stderr, "alias omp-aiven='aiven-ai-gateway launch omp --'") ||
-		!strings.Contains(r.stderr, "With native arguments, add your own model flag for OMP.") {
-		t.Fatalf("missing direct command or shortcut: %s", r.stderr)
+		!strings.Contains(r.stderr, "aiven-ai-gateway launch omp") ||
+		strings.Contains(r.stderr, "alias omp-aiven=") {
+		t.Fatalf("unexpected direct command or shortcut: %s", r.stderr)
 	}
 }
 
@@ -110,7 +110,7 @@ func TestPlainOMPEmptyNativeSettingsKeepComments(t *testing.T) {
 				if asDefault {
 					answer = "y"
 				}
-				s.deps.Prompter = &callbackPrompter{answers: []string{answer, "y"}}
+				s.deps.Prompter = &callbackPrompter{answers: []string{"", answer, "y"}}
 				if r := s.run("setup", "omp", "--key-stdin"); r.code != 0 {
 					t.Fatalf("%d %s", r.code, r.stderr)
 				}

@@ -68,8 +68,8 @@ func TestSetupAnnouncesEachRequestBeforeSendingItAndSavesOnlyAfterTheProbe(t *te
 	s.deps.Prompter = &scriptedPrompter{answers: []string{"all"}}
 	code := cli.Run(t.Context(), []string{"setup", "--key-stdin", "--yes"}, s.env, s.deps)
 	reqs := seen()
-	// The listing, then one check per distinct protocol and model: Claude Code checks Messages with glm and Pi with
-	// claude-sonnet; Pi checks Chat Completions with aiven-model and OpenCode with claude-sonnet.
+	// The listing, then one check per distinct protocol and model: Claude Code and Pi share Messages with
+	// claude-sonnet; Pi checks Chat Completions with aiven-model and OpenCode with claude-sonnet; Codex Responses.
 	if code != 0 || len(reqs) != 5 {
 		t.Fatalf("exit %d, %d requests, stderr %q", code, len(reqs), stderr.String())
 	}
@@ -80,19 +80,23 @@ func TestSetupAnnouncesEachRequestBeforeSendingItAndSavesOnlyAfterTheProbe(t *te
 		t.Errorf("listing arrived after %q (key saved %v)", list.stderr, list.keySaved)
 	}
 	for _, probe := range reqs[1:] {
-		if probe.method != http.MethodPost || !strings.Contains(probe.stderr, "Basic check: ") ||
-			!strings.HasSuffix(probe.stderr, "; it may incur usage…\n") || probe.keySaved {
+		if probe.method != http.MethodPost ||
+			!strings.Contains(
+				probe.stderr,
+				"Sending one 1-token check per configured protocol and model (may incur usage).\n",
+			) || probe.keySaved {
 			t.Errorf("probe arrived after %q (key saved %v)", probe.stderr, probe.keySaved)
 		}
 	}
 	out := stderr.String()
-	probe := reqs[len(reqs)-1]
-	after := out[len(probe.stderr):]
-	if !strings.HasPrefix(
-		after,
-		"  OK Responses with gpt-sol: HTTP 200; basic check passed\n  Saving the key…\n  OK saved to "+s.keyPath()+"\n",
-	) {
-		t.Errorf("after the probe: %q", after)
+	if !strings.Contains(out, "OK Responses with gpt-sol: HTTP 200 (") ||
+		!strings.Contains(out, "; basic check passed\n\nPi configuration\n") {
+		t.Errorf("missing probe summary before preview: %q", out)
+	}
+	saveIdx := strings.Index(out, "  Saving the key…\n  OK saved to "+s.keyPath()+"\n")
+	lastPreviewIdx := strings.LastIndex(out, "OMP configuration\n")
+	if saveIdx < 0 || lastPreviewIdx < 0 || saveIdx < lastPreviewIdx {
+		t.Errorf("key saved before all previews completed: %q", out)
 	}
 	// Each configured protocol and model is checked once before saving the key.
 	for _, tool := range []string{"Pi", "OpenCode", "Codex", "Claude Code", "OMP"} {
@@ -145,8 +149,8 @@ func TestSetupSummaryNamesEachOutcomeAndItsRecovery(t *testing.T) {
 	}{
 		{
 			name: "configured", args: []string{"--yes"},
-			want:   []string{"Setup complete\n", "  Codex       configured\n", "Start a session\n  aiven-ai-gateway launch codex\n", "Or start the native tool directly\n  codex -p aiven\n", "Optional bash/zsh shortcuts\n", "  alias codex-aiven='aiven-ai-gateway launch codex --'\n"},
-			absent: []string{"Needs attention", "Configure later", "alias aiven-codex="},
+			want:   []string{"Setup complete\n", "  Codex       configured\n", "Start a session\n  COMMAND                        MODEL\n  aiven-ai-gateway launch codex  gpt-sol\n", "Or start the native tool directly\n  codex -p aiven\n"},
+			absent: []string{"Needs attention", "Configure later", "Optional bash/zsh shortcuts", "alias ", "# gpt-sol"},
 		},
 		{
 			name: "declined", prepare: func(s *session) { s.deps.Prompter = &answerPrompter{answer: "n"} },
@@ -179,16 +183,16 @@ func TestSetupSummaryNamesEachOutcomeAndItsRecovery(t *testing.T) {
 			absent: []string{"Start a session", "alias "},
 		},
 		{
-			name: "cancelled at the default question", code: 1,
+			name: "cancelled at the model question", code: 1,
 			prepare: func(s *session) { s.deps.Prompter = &scriptedPrompter{} },
-			want:    []string{"Setup cancelled\n", "  Credential  not saved by this run; no key was read\n", "  Codex       not configured; not attempted: setup was cancelled before an answer\n"},
-			absent:  []string{"Start a session", "Retrieving available models"},
+			want:    []string{"Setup cancelled\n", "  Credential  not saved by this run; existing key files unchanged; setup was cancelled\n", "  Codex       not configured; not attempted: setup was cancelled before an answer\n"},
+			absent:  []string{"Start a session", "Saving the key"},
 		},
 		{
 			name: "end of input at the apply question", code: 1,
-			prepare: func(s *session) { s.deps.Prompter = &scriptedPrompter{answers: []string{""}} },
-			want:    []string{"Setup cancelled\n", "  Credential  saved to ", "  Codex       cancelled; no files written\n", "Needs attention\n  aiven-ai-gateway setup codex\n"},
-			absent:  []string{"Start a session", "alias ", "written: "},
+			prepare: func(s *session) { s.deps.Prompter = &scriptedPrompter{answers: []string{"", ""}} },
+			want:    []string{"Setup cancelled\n", "  Credential  not saved by this run; existing key files unchanged; setup was cancelled\n", "  Codex       cancelled; no files written\n", "Needs attention\n  aiven-ai-gateway setup codex\n"},
+			absent:  []string{"Start a session", "alias ", "written: ", "Saving the key"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -269,7 +273,7 @@ func TestStylingFollowsEachStreamAndThePlainSwitches(t *testing.T) {
 
 func TestHelpGoesToStdoutAndNamesThePlainMode(t *testing.T) {
 	r := newSession(t, newGatewayDouble(t)).run("--help")
-	for _, want := range []string{"--plain", "NO_COLOR", "v shows the full\n      redacted diff", "Help and the model list go to stdout"} {
+	for _, want := range []string{"--plain", "NO_COLOR", "Esc / Shift+Tab", "Help and the model list go to stdout"} {
 		if r.code != 0 || r.stderr != "" || !strings.Contains(r.stdout, want) {
 			t.Errorf("help lacks %q: exit %d, stdout %q, stderr %q", want, r.code, r.stdout, r.stderr)
 		}
@@ -281,25 +285,19 @@ func TestHelpGoesToStdoutAndNamesThePlainMode(t *testing.T) {
 
 func TestCancellationStopsTheRemainingTools(t *testing.T) {
 	s := newSession(t, newGatewayDouble(t)).stdin(keyValid)
-	// The picker, one default question per tool, then end of input at the first apply question.
-	p := &scriptedPrompter{answers: []string{"all", "", "", "", "", ""}}
+	// Beat 1: all, Beat 2: Recommended defaults, Beat 3: launch-only, then EOF at Review.
+	p := &scriptedPrompter{answers: []string{"all", "", ""}}
 	s.deps.Prompter = p
 	r := s.run("setup", "--key-stdin")
-	if r.code != 1 || !strings.Contains(r.stderr, "Setup cancelled\n") ||
-		strings.Count(r.stderr, "not attempted after the cancellation") != len(toolFiles)-1 {
+	if r.code != 1 || !strings.Contains(r.stderr, "Setup cancelled\n") {
 		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
-	}
-	if applies := slices.DeleteFunc(
-		p.prompts,
-		func(q string) bool { return !strings.HasPrefix(q, "Apply this change") },
-	); len(
-		applies,
-	) != 1 {
-		t.Errorf("apply questions after the cancellation: %q", applies)
 	}
 	for tool, file := range toolFiles {
 		if _, err := os.Stat(filepath.Join(s.fakeHome, file)); err == nil {
 			t.Errorf("%s configured after the cancellation", tool)
 		}
+	}
+	if _, err := os.Stat(s.keyPath()); !os.IsNotExist(err) {
+		t.Error("key saved after cancellation at Review")
 	}
 }

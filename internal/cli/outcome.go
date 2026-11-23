@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/aiven-open/ai-gateway-cli/internal/config"
+	"github.com/aiven-open/ai-gateway-cli/internal/harness"
 	"github.com/aiven-open/ai-gateway-cli/internal/models"
 )
 
@@ -35,7 +36,7 @@ type presenter struct {
 }
 
 func newPresenter(env config.Env, deps Deps, plain bool) presenter {
-	plain = plain || deps.Term.NoVT || plainRequested(env.Environ)
+	plain = plain || plainRequested(env.Environ) || deps.Term.NoVT
 	p := presenter{
 		ui: newUIWithEnv(deps.Stderr, deps.Term.StderrTTY, deps.Term.StderrWidth, plain, env.Environ),
 	}
@@ -69,9 +70,11 @@ const (
 
 // targetOutcome is what setup did to one harness.
 type targetOutcome struct {
-	tool      string
-	status    targetStatus
-	asDefault bool
+	tool          string
+	status        targetStatus
+	asDefault     bool
+	selection     harness.ModelSelection
+	resolvedModel string
 	// reason explains a status other than configured or unchanged; written lists files changed with recovery notes.
 	reason  string
 	written []string
@@ -93,12 +96,6 @@ type setupRun struct {
 	checks     []protocolCheck
 }
 
-func (r *setupRun) add(tool string) *targetOutcome {
-	o := &targetOutcome{tool: tool}
-	r.targets = append(r.targets, o)
-	return o
-}
-
 // sharedFailure ends a run whose credential stage failed: no target was configured, whatever passed preflight.
 func (r *setupRun) sharedFailure(deps Deps, stage string, err error) int {
 	_ = failGateway(deps, err)
@@ -114,16 +111,17 @@ func (r *setupRun) sharedFailure(deps Deps, stage string, err error) int {
 	return 1
 }
 
-// cancel ends a run before any credential was read or saved.
-func (r *setupRun) cancel(deps Deps, err error) int {
+// cancelAfterKey ends a run cancelled during beats before saves or writes run.
+func (r *setupRun) cancelAfterKey(deps Deps, table []models.Model, err error) int {
 	_ = fail(deps, err.Error())
 	r.cancelled = true
+	r.table = table
 	for _, o := range r.targets {
 		if o.status == statusPending {
 			o.reason = "not attempted: setup was cancelled before an answer"
 		}
 	}
-	r.credential = "not saved by this run; no key was read"
+	r.credential = "not saved by this run; existing key files unchanged; setup was cancelled"
 	r.finish()
 	return 1
 }
@@ -161,9 +159,14 @@ func (r *setupRun) finish() int {
 		u.heading("Basic protocol checks")
 		u.line(2, "These do not show that the tool's own requests are accepted.")
 		for _, check := range r.checks {
-			text := fmt.Sprintf("%s with %s: HTTP %d", check.protocol.Label(), check.model, check.status)
+			text := fmt.Sprintf(
+				"%s with %s: HTTP %d",
+				check.key.protocol.Label(),
+				check.key.model,
+				check.status,
+			)
 			if check.status == 0 {
-				text = check.protocol.Label() + " with " + check.model + ": no HTTP response"
+				text = check.key.protocol.Label() + " with " + check.key.model + ": no HTTP response"
 			}
 			if check.err != nil {
 				u.status(2, red, "FAILED", text+"; "+check.err.Error())
@@ -224,37 +227,69 @@ func (r *setupRun) finish() int {
 	}
 	if len(ready) > 0 {
 		u.heading("Start a session")
+		cmdWidth := len("COMMAND")
+		hasModels := false
 		for _, o := range ready {
-			u.command(2, "aiven-ai-gateway launch "+o.tool)
-		}
-		u.heading("Or start the native tool directly")
-		for _, o := range ready {
-			if !u.command(2, directCommand(o.tool, r.table, o.asDefault && o.status == statusConfigured)) {
-				u.line(2, toolLabel(o.tool)+": direct command unavailable because an argument "+
-					"contains terminal controls.")
-				u.line(2, "Use aiven-ai-gateway launch "+o.tool+" instead; its arguments remain literal.")
+			cmdWidth = max(cmdWidth, len("aiven-ai-gateway launch "+o.tool))
+			if o.resolvedModel != "" && safe(o.resolvedModel) == o.resolvedModel {
+				hasModels = true
 			}
 		}
+		if hasModels {
+			u.printf("  %s  %s\n", u.th.dim(pad("COMMAND", cmdWidth)), u.th.dim("MODEL"))
+		}
 		for _, o := range ready {
-			if o.tool == "claude" {
+			cmd := "aiven-ai-gateway launch " + o.tool
+			if hasModels && o.resolvedModel != "" && safe(o.resolvedModel) == o.resolvedModel {
+				u.printf(
+					"  %s%s  %s\n",
+					u.th.cyan(cmd),
+					strings.Repeat(" ", cmdWidth-len(cmd)),
+					u.th.dim(o.resolvedModel),
+				)
+			} else {
+				u.command(2, cmd)
+			}
+		}
+		type directEntry struct {
+			outcome *targetOutcome
+			cmd     string
+		}
+		var directEntries []directEntry
+		for _, o := range ready {
+			sel := o.selection
+			if sel.IsZero() && o.resolvedModel != "" && isLauncherPrefTool(o.tool) {
+				sel = harness.ModelSelection{Model: o.resolvedModel}
+			}
+			if cmd := directCommand(
+				r.env,
+				o.tool,
+				r.table,
+				o.asDefault && o.status == statusConfigured,
+				sel,
+			); cmd != "" {
+				directEntries = append(directEntries, directEntry{outcome: o, cmd: cmd})
+			}
+		}
+		if len(directEntries) > 0 {
+			u.heading("Or start the native tool directly")
+			showedClaude := false
+			for _, entry := range directEntries {
+				if !u.command(2, entry.cmd) {
+					u.line(2, toolLabel(entry.outcome.tool)+": direct command unavailable because an argument "+
+						"contains terminal controls.")
+					u.line(
+						2,
+						"Use aiven-ai-gateway launch "+entry.outcome.tool+" instead; its arguments remain literal.",
+					)
+				} else if entry.outcome.tool == "claude" {
+					showedClaude = true
+				}
+			}
+			if showedClaude {
 				u.line(2, "Direct claude --settings also loads extra settings kept in that file;")
 				u.line(2, "launch passes only the launcher's own settings.")
 			}
-		}
-		u.heading("Optional bash/zsh shortcuts")
-		u.line(2, "Copy into your shell configuration if you want them; setup never edits it.")
-		u.line(2, "Native arguments follow the shortcut, as after --.")
-		var unpicked []string
-		for _, o := range ready {
-			if o.tool == "pi" || o.tool == "opencode" || o.tool == "omp" {
-				unpicked = append(unpicked, toolLabel(o.tool))
-			}
-		}
-		if len(unpicked) > 0 {
-			u.line(2, "With native arguments, add your own model flag for "+strings.Join(unpicked, ", ")+".")
-		}
-		for _, o := range ready {
-			u.command(2, "alias "+o.tool+"-aiven='aiven-ai-gateway launch "+o.tool+" --'")
 		}
 	}
 	if len(later) > 0 {
@@ -276,21 +311,56 @@ func (r *setupRun) finish() int {
 }
 
 // directCommand is the native invocation that uses what setup wrote. With Aiven as the default the bare binary does.
-func directCommand(tool string, table []models.Model, asDefault bool) string {
+func directCommand(
+	env config.Env,
+	tool string,
+	table []models.Model,
+	asDefault bool,
+	sel harness.ModelSelection,
+) string {
 	t := setupTools[tool]
-	switch {
-	case asDefault && t.bin != "":
+	if asDefault && t.bin != "" {
 		return t.bin
 	}
-	return t.run(table)
+	return t.run(env, table, sel)
 }
 
-// shellQuote makes s one literal word for bash, zsh and sh. Words of plainly safe characters stay as they are, so
-// the common command reads as typed; anything else is single-quoted.
-func shellQuote(s string) string {
-	if s != "" &&
-		strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@%+:,./-") == "" {
+// windowsSharedQuote quotes s only when one literal form works identically in both cmd.exe and PowerShell.
+// Paths holding expansion or quote characters (%, $, backticks, quotes, control chars) have no safe shared literal.
+func windowsSharedQuote(s string) (string, bool) {
+	if s == "" || strings.ContainsRune(s, '\t') || safe(s) != s {
+		return "", false
+	}
+	const safeChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@+:,./-\\"
+	if strings.Trim(s, safeChars) == "" {
+		return s, true
+	}
+	if strings.ContainsAny(s, "%!$`\"'\r\n") {
+		return "", false
+	}
+	return `"` + s + `"`, true
+}
+
+// shellQuote makes s one literal word for bash, zsh, sh and fish, and avoids leaving '%' unquoted.
+func shellQuote(s string) string { return shellQuoteForOS(s, "unix") }
+
+// shellQuoteForOS quotes s for the target OS shell. Plainly safe words stay unquoted; on Windows plain paths with
+// spaces and no expansion characters use double quotes (valid in both PowerShell and cmd.exe), while values holding
+// expansion characters (%, $, backticks or quotes) use PowerShell single-quote escaping so neither %VAR% nor $VAR
+// expands. Unix/fish use POSIX single quotes.
+func shellQuoteForOS(s, goos string) string {
+	safeChars := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@+:,./-"
+	if goos == "windows" {
+		safeChars += "\\"
+	}
+	if s != "" && strings.Trim(s, safeChars) == "" {
 		return s
+	}
+	if goos == "windows" {
+		if s != "" && !strings.ContainsAny(s, "%$`\"'\r\n") {
+			return `"` + s + `"`
+		}
+		return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

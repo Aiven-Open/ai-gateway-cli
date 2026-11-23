@@ -513,7 +513,7 @@ func TestLaunchRefusesAToolWhoseConfigIsMoved(t *testing.T) {
 			before := len(g.journal())
 			s.env.Environ = append(s.env.Environ, name+"="+filepath.Join(s.fakeHome, "elsewhere"))
 			r := s.run("launch", h)
-			want := "aiven-ai-gateway: " + name + " is set, so " + h + " would not read the config aiven-ai-gateway writes; unset it and rerun, or configure " + h + " by hand\n"
+			want := "aiven-ai-gateway: " + name + " is set, so " + h + " would not read the config aiven-ai-gateway writes; clear " + name + " in your environment and rerun, or configure " + h + " by hand\n"
 			if r.code != 1 || r.stderr != want || len(s.runner.calls) != 0 || len(g.journal()) != before {
 				t.Fatalf(
 					"exit %d, stderr %q, exec'd %v, %d gateway requests",
