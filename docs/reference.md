@@ -15,103 +15,169 @@ credentials or configuration. The primary commands (`setup` and `launch`)
 accept `claude`, `codex`, `pi`, `opencode` or `omp`; without a terminal,
 name the harness explicitly.
 
-Bare `setup` offers a list of tools found on `PATH`: arrow keys move, Space
-marks, typing filters and Enter continues. Bare `launch` offers the
-installed tools and starts the one under the cursor. `Esc` or `Ctrl-C`
-cancels either list before any key is read or saved, and nothing is
-launched. The list is drawn in place below the prompt, without switching to
-the alternate screen, and is replaced by one line naming the choice, so the
-scrollback keeps a readable record.
+Bare `setup` first scans `PATH` locally. When no supported harness is
+installed, it prints installation hints and `aiven-ai-gateway login` and
+exits cleanly without asking for a key. Otherwise it validates the key,
+lists `/v1/models`, snapshots candidate configurations read-only, and opens
+an inline multi-select list of installed harnesses pre-selected with live
+status badges (`new`, `configured (<model>)`, or `! ungranted: <id> in
+<file>`) and a dimmed list of harnesses not on `PATH`. Arrow keys or
+`j`/`k` move, `Space` marks, `a` toggles all/none, `/` enters filter mode,
+`Shift+Tab` or `Esc` steps back (clearing a non-empty filter first), and
+`Enter` continues. Long lists such as `Custom model…` clamp to terminal
+height (`height - 1` rows) with `↑`/`↓ N more` indicators. Bare `launch`
+offers the installed tools and starts the one under the cursor. `Ctrl-C`
+cancels before any key or file is written, and nothing is launched. Lists
+draw in place without switching to the alternate screen and collapse to
+durable vertical-rail lines (`┌`, `│`, `◇`, `✓`, `└`), closing the rail
+before review tables, unified diffs and copyable commands.
 
-Inline keyboard decoding on macOS and Linux keeps arrow-key and UTF-8
-fragments across reads. Escape waits up to 100 ms for a sequence suffix,
-then cancels. Other platforms do not yet implement that bounded suffix wait:
-use `--plain` there. Native Windows terminal behavior remains unverified.
+Inline keyboard decoding on macOS, Linux and Windows keeps arrow-key and
+UTF-8 fragments across reads and bounds standalone `Esc` to 100 ms. On
+Windows, virtual terminal input/output modes are enabled and restored on
+exit; legacy ConHost consoles where VT modes are unavailable automatically
+fall back to `--plain`. Other platforms require `--plain`.
 
 `--plain` on `setup` or `launch`, a nonempty `NO_COLOR` or `TERM=dumb`
 replaces the lists with numbered prompts that read one line each, and turns
-off colour and cursor motion. Screen readers and terminals without cursor
-control use this mode. End of input at any question never counts as an
-answer.
+off colour, spinners and cursor motion. Non-UTF-8 locales (`LC_ALL=C` or
+`POSIX`) use ASCII markers instead of UTF-8 box-drawing glyphs. Screen
+readers and terminals without cursor control use this mode. End of input at
+any question never counts as an answer.
 
 ## Setup Workflow, Probes and Exit Status
 
-`setup` never starts a harness. It validates the selected configuration,
-asks whether Aiven should become the native default, and checks model
-access. It sends one minimal inference request per configured protocol and
-model: Chat Completions, Messages or Responses, with a one-output-token
-limit on each request. These basic checks may incur usage. They do not show
-that a tool's own requests, or the models its other slots and pins name, are
-accepted. Tools that test the same model on the same protocol share one
-check; a refusal fails only the tools that test that model. Each result
-names the tested model and HTTP status. Non-authentication refusals report a
-request failure and the gateway's safe error message, rather than declaring
-the key rejected. If a saved key is rejected or grants no models, setup asks
-before checking a different environment key, or asks for a replacement.
+`setup` never starts a harness. After local discovery, key validation and
+read-only inspection of dedicated and native-default files (including
+Claude Code's `~/.claude/settings.json` and project `.claude/settings*.json`
+layers), interactive `setup` runs three reversible steps before review:
 
-Codex and Claude Code check the model their configuration selects. When the
-key does not grant it, setup sends no inference request, saves neither the
-key nor any tool, and names the file to change: the key is shared, and that
-tool would keep requesting the model.
+1. **Harnesses** (bare `setup` only): pre-selected installed tools with
+   live selection count, status badges and missing-tools footer.
+2. **Default model & inline conflict resolution:** offers curated presets
+   (`Anthropic`, `OpenAI`, `Gemini`, `Open-weight`, filtered to granted
+   models) and a searchable `Custom model…` picker. For two or more tools, a single menu
+   handles `Recommended defaults`, presets, `Customize per tool…`, and
+   inline resolution of ungranted Claude Code or Codex models (offering
+   `Switch <tool> -> <alias> & use Recommended defaults` when
+   `models.ProviderAlias` matches a wrapped Bedrock, Vertex or dated
+   provider ID, or defaulting to `Leave unchanged (cancel setup)` when no
+   alias matches). `Customize per tool…` opens a per-tool menu where you can
+   configure any specific harness (then choose `Done — continue` or customize
+   another) or pick `Customize one by one…` to step through every selected
+   tool. Single-tool runs prompt directly, keeping existing granted models as
+   `Keep current (<alias>)` and defaulting ungranted models to
+   `Keep unchanged (refuse setup)`.
+3. **Default provider:** asks *"Use Aiven AI Gateway as the default?"*,
+   defaulting to `Yes` for all selected tools, with options to keep
+   launcher-only (`aiven-ai-gateway launch`) or choose per tool (naming
+   each config file).
 
-A tool is configured only if all its configured protocols pass. A partially
-successful run writes only those tools and exits nonzero. If none pass,
-setup saves no key or configuration; any existing key files remain
-unchanged. Existing failed-tool files remain untouched. Authentication
-failure or cancellation stops remaining checks and prevents the run from
-saving configuration. Setup never retries with another protocol or adds
-client compatibility settings to work around gateway rejection.
+In Claude Code, recommended defaults stay on Claude models whenever
+Anthropic models are granted (removing any stale `ANTHROPIC_CUSTOM_MODEL_OPTION`).
+Picking a preset sets `model` (replacing any non-blank
+`env.ANTHROPIC_MODEL`) and the preset's tier slots
+(`ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL`). Picking a single
+custom model sets `model` and `ANTHROPIC_CUSTOM_MODEL_OPTION` while
+keeping the Claude tier slots intact whenever Anthropic models are granted
+(or filling the tier slots with the chosen model on keys without Anthropic
+models), and recomputes context-window variables and `[1m]`. In Codex, the choice updates `aiven.config.toml` (and canonical
+`config.toml` when Aiven is set as the default provider). In Pi, OpenCode
+and OMP, the full granted catalogue is written to the provider file, the
+chosen default alias is persisted per gateway in
+`~/.config/aiven/ai-gateway-models.json` (`0600`) for `aiven-ai-gateway
+launch <tool>`, and the native default is updated when Aiven is set as the
+default provider.
 
-Setup announces each stage before it starts and reports its result:
-retrieving the model list and its count, each test request and the model it
-uses, and saving the key. Each tool's configuration preview follows. A run
-ends with a summary: where the key was saved or why it was not, and for each
-tool whether it was configured, unchanged, declined, not installed, failed,
-partially written, cancelled or not attempted, with the files written.
+With `--yes` or without a terminal, `setup` skips interactive model and
+default-provider menus: fresh configurations use natural defaults
+(falling back through the Open-weight preference order when no Anthropic or
+OpenAI model is granted), existing granted models stay unchanged, and
+ungranted Codex or Claude Code models (across dedicated, user and project
+layers) fail before probes or writes, naming any derived gateway alias.
 
-Only ready tools get a launch command, the direct native command and an
-optional bash/zsh alias such as `alias codex-aiven='aiven-ai-gateway launch
-codex --'`. Alias names begin with the tool name for shell completion:
-`pi-aiven`, `opencode-aiven`, `codex-aiven`, `claude-aiven` and `omp-aiven`.
-Setup prints the aliases and never edits shell files. Tools that need
-attention or were declined get the `aiven-ai-gateway setup <harness>`
-command to run again. The exit status is nonzero when any tool failed, was
-not installed, was partially written or the run was cancelled; a decline
-alone exits zero but is not reported as complete.
+Next, `setup` prints one dimmed usage notice and probes each distinct
+uncached `(protocol, model)` concurrently (Chat Completions, Messages or
+Responses, 1 output token each) with a live spinner on styled terminals and
+deterministic sorted status rows with elapsed latency. Completed probe
+results are memoized across `Back` navigation so stepping back and forward
+never re-sends already-verified probes. These basic checks may incur usage.
+They do not show that a tool's own requests, or the models its other slots
+and pins name, are accepted. A refusal fails only the tools depending on
+that model; authentication failure cancels remaining checks and prevents
+saving any key or configuration.
+
+Finally, `setup` closes the vertical rail (`└`) and presents a rail-free
+review table (for multiple tools: `Apply all`, `Inspect redacted diffs`,
+`Back`, `Cancel`) or diff preview (for one tool: `Apply`, `Show full
+redacted diff`, `Back`, `Cancel`). Only after explicit approval (or `--yes`)
+does `setup` save the key (`0600`), write approved files atomically with
+timestamped `.bak` backups, and persist launcher model preferences for
+approved Pi, OpenCode and OMP targets. When zero configuration changes are
+approved (cancelled, declined, or non-interactive without `--yes`), neither
+the key nor `ai-gateway-models.json` is written.
+
+Ready tools end with a compact launch table (`COMMAND` / `MODEL`, without
+shell comment markers so commands paste cleanly in `cmd.exe`, PowerShell,
+`bash`, `zsh` and `fish`) and the direct native command. Tools that need attention or were declined get the
+`aiven-ai-gateway setup <harness>` command to run again. The exit status is
+nonzero when any tool failed, was not installed, was partially written or
+the run was cancelled; a decline alone exits zero but is not reported as
+complete.
+
+### Optional Shell Shortcuts
+
+`setup` never edits shell startup files or prints shell-specific alias
+blocks. If you want short commands that forward native arguments after `--`,
+add equivalents for your shell:
+
+```sh
+# bash / zsh
+alias claude-aiven='aiven-ai-gateway launch claude --'
+alias codex-aiven='aiven-ai-gateway launch codex --'
+alias pi-aiven='aiven-ai-gateway launch pi --'
+alias opencode-aiven='aiven-ai-gateway launch opencode --'
+alias omp-aiven='aiven-ai-gateway launch omp --'
+```
+
+```fish
+# fish
+abbr -a claude-aiven 'aiven-ai-gateway launch claude --'
+abbr -a pi-aiven 'aiven-ai-gateway launch pi --'
+```
+
+```powershell
+# PowerShell
+function claude-aiven { aiven-ai-gateway launch claude -- @args }
+function pi-aiven { aiven-ai-gateway launch pi -- @args }
+```
+
+When forwarding native arguments to Pi, OpenCode or OMP without a model,
+provider, help/version flag or management subcommand, `launch` still
+injects the persisted gateway default model (for OpenCode `run`, immediately
+after `run`). Pass an explicit `--model` or `-m` to override it.
 
 ### Credential Input and Prompts
 
 Setup displays the selected gateway URL before reading or checking a key. It
 uses `--key-stdin` first, otherwise the key saved for that gateway. A
-working saved key offers a keep/replace choice, defaulting to keep. Without
-a usable saved key, interactive setup shows the source and a masked
-`AIVEN_AI_GATEWAY_KEY`, then asks whether to use it with the displayed
-gateway. Only an explicit yes sends it; no or Enter asks for a key using
-hidden input. `--yes` does not answer this question.
+working saved key is reused automatically without prompting; run
+`aiven-ai-gateway login` or pass `--key-stdin` to replace it. Without a
+usable saved key, interactive setup shows the masked `AIVEN_AI_GATEWAY_KEY`
+and asks whether to use it with the displayed gateway (via an inline menu on
+styled terminals or a numbered menu in plain mode). Only an explicit approval sends
+it; otherwise setup reads a key with echo disabled before prompting. `--yes`
+does not answer this question.
 
 For unattended setup without a working saved key, provide the key with
 `--key-stdin`, even when `AIVEN_AI_GATEWAY_KEY` is set. Add `--yes` to apply
-configuration without further prompts. Later unattended runs can reuse the
-saved key for that gateway. Never put a key in command arguments; clipboard
-input is not supported.
+configuration without further prompts. Without a terminal or `--yes`,
+configuration is skipped and no key is saved. Never put a key in command
+arguments; clipboard input is not supported.
 
 ```text
 aiven-ai-gateway setup pi --key-stdin --yes < /path/to/gateway-key
 ```
-
-`Apply this change to <harness>? [Y/n/v]` accepts Enter or `y` to apply; `n`
-declines that tool; `v` shows the full redacted diff and asks again. On a
-terminal with the inline list the same three choices are offered as Apply,
-Decline and Show the full redacted diff. `--yes` prints the preview and
-applies on-demand configuration without prompting. Without a terminal or
-`--yes`, configuration is skipped after the explicit key save.
-
-`Make Aiven the native default for <tool>? [y/N]` accepts only an explicit
-yes: Enter and `--yes` leave the native default unchanged. End of input at
-this question cancels the run before any key is read. Pi and OMP each have
-their own native-default question. The default choice is included in the
-complete preview. The summary says Aiven is the native default only when
-this run made it so; otherwise it says the default was left as it was.
 
 ## Protocol Routing and Model Catalogue
 
@@ -231,8 +297,8 @@ replacements preserve POSIX permission bits on Unix and the file's DACL on
 Windows; extended ACLs on Unix (`chmod +a` on macOS, `setfacl` on Linux) are
 not preserved. A multi-file failure can leave earlier files configured: the
 error names completed files and recovery copies. Fix the cause and rerun, or
-restore those copies before retrying. Declining config does not undo an
-already completed key save.
+restore those copies before retrying. Declining or skipping all tool
+configurations saves neither the key nor model preferences.
 
 ## Per-Harness Setup and Launch Rules
 
@@ -247,16 +313,21 @@ persistent provider metadata or changing defaults. It sends no test request
 and prints no model list before starting the tool. Native clients still
 write their own session/history data.
 
-Arguments after `--` are passed as a literal native argument vector. With
-none, Pi and OMP get `--model aiven/<SonnetOrFirst>` and OpenCode gets `-m
-aiven/<SonnetOrFirst>`. With any, these three tools get them unchanged and
-start on their own default model unless the arguments choose one, as in
-`launch pi -- --model aiven/claude-sonnet -p hi`: where a model flag may go
-depends on each tool's subcommands and options. OMP keeps all its native
-tools. Codex selects `-p aiven`; later native profile/config/model options
-follow Codex's own precedence. Claude adds launcher-owned inline settings; a
-later `--model` follows native precedence. Use native configuration
-overrides deliberately: they can change the selected provider or settings.
+Arguments after `--` are passed as a literal native argument vector. For Pi
+and OMP, `launch` prepends `--model aiven/<alias>` unless the arguments
+already specify a model, provider, help/version flag or management
+subcommand (`update`, `install`, `remove`, `list`, `config`, `plugin`,
+`commit`). For OpenCode, `launch` injects `-m aiven/<alias>` when starting
+interactively or immediately after `run` unless a model, provider or
+help/version flag is already present, leaving other subcommands (`models`,
+`auth`, `serve`, …) untouched. In all three tools, `<alias>` is the model
+persisted by `setup` in `~/.config/aiven/ai-gateway-models.json` for that
+gateway when still granted (otherwise falling back to the catalogue
+default). OMP keeps all its native tools. Codex selects `-p aiven`; later
+native profile/config/model options follow Codex's own precedence. Claude
+adds launcher-owned inline settings; a later `--model` follows native
+precedence. Use native configuration overrides deliberately: they can change
+the selected provider or settings.
 
 ### Claude Code
 
@@ -276,7 +347,10 @@ merges apart from `model`, so an `ANTHROPIC_MODEL` from any of these files
 runs over every file's `model`, and a blank one in a later file clears an
 earlier one. A blank slot pin such as `ANTHROPIC_DEFAULT_OPUS_MODEL` clears
 an earlier one too, leaving the launcher's default for that slot. Explicit
-native `--model` follows Claude's own precedence.
+native `--model` follows Claude's own precedence. Setup validates each
+settings file it writes and probes the effective model resolved across
+these layers, refusing before any inference request or key save when the
+key does not grant it.
 
 The context window follows the model the session runs, including a native
 `--model` and Claude's `opus`, `sonnet`, `haiku` and `fable` aliases. Setup
