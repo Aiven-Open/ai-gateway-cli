@@ -20,8 +20,13 @@ import (
 // or on Windows its embedded bash-like shell, and caches its output until a 401.
 func APIKey(baseURL string) string { return "!" + creds.CommandLine(baseURL, runtime.GOOS) }
 
+// ModelFor returns the --model value for sel against table, falling back to SonnetOrFirst.
+func ModelFor(table []models.Model, sel harness.ModelSelection) string {
+	return "aiven/" + harness.AliasFor(table, sel)
+}
+
 // Model is the --model value that picks the gateway's default alias.
-func Model(table []models.Model) string { return "aiven/" + models.SonnetOrFirst(table) }
+func Model(table []models.Model) string { return ModelFor(table, harness.ModelSelection{}) }
 
 // Setup updates the YAML OMP reads; only an explicit default choice changes modelRoles.
 func Setup(in harness.Input) (harness.Plan, error) {
@@ -67,9 +72,12 @@ func Setup(in harness.Input) (harness.Plan, error) {
 	if err != nil {
 		return harness.Plan{}, err
 	}
+	if _, err := in.Selection.ResolveMain(in.Table); err != nil {
+		return harness.Plan{}, err
+	}
 	files := []harness.File{{Path: modelPath, Data: data, Backup: true, Models: true}}
 	if in.Default {
-		data, err = mergeConfig(configPath, "modelRoles", "default", Model(in.Table))
+		data, err = mergeConfig(configPath, "modelRoles", "default", ModelFor(in.Table, in.Selection))
 		if err != nil {
 			return harness.Plan{}, err
 		}
@@ -78,9 +86,11 @@ func Setup(in harness.Input) (harness.Plan, error) {
 	return harness.Plan{Files: files}, nil
 }
 
-// Launch selects the configured default model when there are no native args, and passes native args unchanged.
+// Launch selects the configured (or persisted setup) default model when there are no native args, and passes native
+// args unchanged.
 func Launch(in harness.Input) (harness.Plan, error) {
-	args := harness.ModelArgs(in.Args, Model(in.Table), "--model")
+	alias := harness.AliasFor(in.Table, in.Selection)
+	args := harness.ModelArgs(in.Args, "aiven/"+alias, "--model")
 	if len(args) != len(in.Args) {
 		if in.UserHome == "" {
 			return harness.Plan{}, config.ErrNoHome
@@ -93,7 +103,7 @@ func Launch(in harness.Input) (harness.Plan, error) {
 		found := false
 		for _, entry := range list {
 			m, _ := entry.(map[string]any)
-			found = found || m["id"] == models.SonnetOrFirst(in.Table)
+			found = found || m["id"] == alias
 		}
 		if !found {
 			return harness.Plan{}, errors.New(

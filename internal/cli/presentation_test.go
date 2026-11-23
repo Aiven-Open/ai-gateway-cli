@@ -70,7 +70,7 @@ func TestSetupAnnouncesEachRequestBeforeSendingItAndSavesOnlyAfterTheProbe(t *te
 	reqs := seen()
 	// The listing, then one check per distinct protocol and model: Claude Code checks Messages with glm and Pi with
 	// claude-sonnet; Pi checks Chat Completions with aiven-model and OpenCode with claude-sonnet.
-	if code != 0 || len(reqs) != 6 {
+	if code != 0 || len(reqs) != 5 {
 		t.Fatalf("exit %d, %d requests, stderr %q", code, len(reqs), stderr.String())
 	}
 	list := reqs[0]

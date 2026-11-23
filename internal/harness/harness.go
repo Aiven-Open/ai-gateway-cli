@@ -9,10 +9,49 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/aiven-open/ai-gateway-cli/internal/fsutil"
 	"github.com/aiven-open/ai-gateway-cli/internal/models"
 )
+
+// ModelSelection overrides automatic model defaults during setup. Its zero value
+// keeps existing configured models and uses automatic defaults for fresh setups.
+type ModelSelection struct {
+	Preset models.PresetID
+	Model  string
+}
+
+// IsZero reports whether no explicit preset or model was chosen.
+func (s ModelSelection) IsZero() bool { return s.Preset == "" && s.Model == "" }
+
+// ResolveMain returns the chosen main alias against table, or "" when zero or table is empty.
+func (s ModelSelection) ResolveMain(table []models.Model) (string, error) {
+	if s.Model != "" {
+		return s.Model, nil
+	}
+	if s.Preset != "" {
+		if len(table) == 0 {
+			return "", nil
+		}
+		p, ok := models.FindPreset(table, s.Preset)
+		if !ok {
+			return "", fmt.Errorf("preset %q has no granted models", s.Preset)
+		}
+		return p.Main, nil
+	}
+	return "", nil
+}
+
+// AliasFor returns the granted model alias for sel against table, falling back to SonnetOrFirst.
+func AliasFor(table []models.Model, sel ModelSelection) string {
+	if chosen, err := sel.ResolveMain(table); err == nil && chosen != "" {
+		if _, granted := models.Find(table, chosen); granted {
+			return chosen
+		}
+	}
+	return models.SonnetOrFirst(table)
+}
 
 // Input is what the table-driven harnesses (codex, pi, opencode) need; the table is non-empty.
 type Input struct {
@@ -26,6 +65,8 @@ type Input struct {
 	Args []string
 	// Default makes the gateway the native default only during explicitly selected setup.
 	Default bool
+	// Selection overrides the model or preset chosen during setup; zero value preserves automatic defaults.
+	Selection ModelSelection
 }
 
 // File is generated harness configuration. It never carries the gateway key.
@@ -56,13 +97,44 @@ type Plan struct {
 	Env   []string
 }
 
-// ModelArgs chooses model with flag when there are no native args. Native args pass unchanged: where a model flag
-// may go among them depends on the harness's subcommands and the options that take values, which only it parses.
+// IsModelOrMetaFlag reports whether arg is a model/provider override or help/version flag.
+func IsModelOrMetaFlag(arg string) bool {
+	switch arg {
+	case "--model", "-m", "--provider", "-h", "--help", "-v", "--version":
+		return true
+	}
+	return strings.HasPrefix(arg, "--model=") || strings.HasPrefix(arg, "-m=") ||
+		strings.HasPrefix(arg, "--provider=")
+}
+
+func hasExplicitModelOrMeta(args []string) bool {
+	for _, a := range args {
+		if a == "--" {
+			return false
+		}
+		if IsModelOrMetaFlag(a) {
+			return true
+		}
+	}
+	return false
+}
+
+// ModelArgs prepends flag and model when args do not already specify a model, provider, help/version flag,
+// or non-session management subcommand.
 func ModelArgs(args []string, model, flag string) []string {
-	if len(args) > 0 {
+	if len(args) == 0 {
+		return []string{flag, model}
+	}
+	if args[0] == "--" || hasExplicitModelOrMeta(args) {
 		return args
 	}
-	return []string{flag, model}
+	switch args[0] {
+	case "update", "install", "remove", "list", "config", "plugin", "commit":
+		return args
+	}
+	out := make([]string, 0, len(args)+2)
+	out = append(out, flag, model)
+	return append(out, args...)
 }
 
 // ReadObject parses the JSON/JSONC object at path, keeping numbers verbatim; a missing file is an empty object.

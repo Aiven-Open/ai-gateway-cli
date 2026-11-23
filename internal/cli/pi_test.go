@@ -131,7 +131,10 @@ func TestPiDefaultsToProductionSonnet(t *testing.T) {
 func TestPiForwardsArgs(t *testing.T) {
 	s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid)
 	s.setupAndLaunch("pi", "-p", "hi")
-	if want := []string{"pi", "-p", "hi"}; !slices.Equal(s.launched().argv, want) {
+	if want := []string{"pi", "--model", "aiven/claude-sonnet", "-p", "hi"}; !slices.Equal(
+		s.launched().argv,
+		want,
+	) {
 		t.Errorf("argv = %q, want %q", s.launched().argv, want)
 	}
 }
@@ -148,7 +151,9 @@ func TestPiLeavesTheUsersDefaultAndModelChoiceAlone(t *testing.T) {
 	for _, tc := range []struct{ args, want []string }{
 		{[]string{"--model", "anthropic/opus", "hi"}, []string{"pi", "--model", "anthropic/opus", "hi"}},
 		{[]string{"--model=aiven/glm"}, []string{"pi", "--model=aiven/glm"}},
-		{[]string{"-c", "hi"}, []string{"pi", "-c", "hi"}},
+		{[]string{"-c", "hi"}, []string{"pi", "--model", "aiven/claude-sonnet", "-c", "hi"}},
+		{[]string{"--continue"}, []string{"pi", "--model", "aiven/claude-sonnet", "--continue"}},
+		{[]string{"--help"}, []string{"pi", "--help"}},
 		{[]string{"update"}, []string{"pi", "update"}},
 		{[]string{"--", "--model"}, []string{"pi", "--", "--model"}},
 	} {

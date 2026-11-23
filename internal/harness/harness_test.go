@@ -11,15 +11,22 @@ import (
 	"testing"
 
 	"github.com/aiven-open/ai-gateway-cli/internal/harness"
+	"github.com/aiven-open/ai-gateway-cli/internal/models"
 )
 
-func TestModelArgsAddsTheModelOnlyWithoutNativeArgs(t *testing.T) {
+func TestModelArgsInjectsUnlessExplicitModelMetaOrSubcommand(t *testing.T) {
 	for _, tc := range []struct{ args, want []string }{
 		{nil, []string{"--model", "m"}},
 		{[]string{}, []string{"--model", "m"}},
-		{[]string{"hi"}, []string{"hi"}},
-		// A global option and its value ahead of a subcommand that takes no model flag.
-		{[]string{"--log-level", "INFO", "models", "aiven"}, []string{"--log-level", "INFO", "models", "aiven"}},
+		{[]string{"--continue"}, []string{"--model", "m", "--continue"}},
+		{[]string{"-p", "hi"}, []string{"--model", "m", "-p", "hi"}},
+		{[]string{"--model", "other/x", "-p", "hi"}, []string{"--model", "other/x", "-p", "hi"}},
+		{[]string{"-m=other/x"}, []string{"-m=other/x"}},
+		{[]string{"--provider", "anthropic"}, []string{"--provider", "anthropic"}},
+		{[]string{"--help"}, []string{"--help"}},
+		{[]string{"-v"}, []string{"-v"}},
+		{[]string{"update"}, []string{"update"}},
+		{[]string{"config", "list"}, []string{"config", "list"}},
 		{[]string{"--", "--model"}, []string{"--", "--model"}},
 	} {
 		if got := harness.ModelArgs(tc.args, "m", "--model"); !slices.Equal(got, tc.want) {
@@ -119,5 +126,36 @@ func TestJSONKeepsShellOperatorsReadable(t *testing.T) {
 	got := string(harness.JSON(map[string]string{"helper": "[ -f k ] && cat k <in >out"}))
 	if want := "{\n  \"helper\": \"[ -f k ] && cat k <in >out\"\n}\n"; got != want {
 		t.Errorf("JSON = %q, want %q", got, want)
+	}
+}
+
+func TestModelSelectionResolveMain(t *testing.T) {
+	t.Parallel()
+	table := []models.Model{{Alias: "glm-5"}, {Alias: "gpt-5.4"}}
+	if got, err := (harness.ModelSelection{}).ResolveMain(table); err != nil || got != "" {
+		t.Errorf("zero = %q, %v", got, err)
+	}
+	if got, err := (harness.ModelSelection{Model: "gpt-5.4"}).ResolveMain(
+		table,
+	); err != nil ||
+		got != "gpt-5.4" {
+		t.Errorf("model = %q, %v", got, err)
+	}
+	if got, err := (harness.ModelSelection{Preset: models.PresetOpenWeight}).ResolveMain(
+		table,
+	); err != nil ||
+		got != "glm-5" {
+		t.Errorf("preset = %q, %v", got, err)
+	}
+	if got, err := (harness.ModelSelection{Preset: models.PresetAnthropic}).ResolveMain(
+		nil,
+	); err != nil ||
+		got != "" {
+		t.Errorf("empty table preset = %q, %v", got, err)
+	}
+	if _, err := (harness.ModelSelection{Preset: models.PresetAnthropic}).ResolveMain(
+		table,
+	); err == nil {
+		t.Error("expected error for unsatisfied preset on non-empty table")
 	}
 }

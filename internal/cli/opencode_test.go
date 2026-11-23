@@ -74,7 +74,10 @@ func TestOpencodeDefaultsToProductionSonnet(t *testing.T) {
 func TestOpencodeForwardsArgs(t *testing.T) {
 	s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid)
 	s.setupAndLaunch("opencode", "run", "hi")
-	if want := []string{"opencode", "run", "hi"}; !slices.Equal(s.launched().argv, want) {
+	if want := []string{"opencode", "run", "-m", "aiven/claude-sonnet", "hi"}; !slices.Equal(
+		s.launched().argv,
+		want,
+	) {
 		t.Errorf("argv = %q, want %q", s.launched().argv, want)
 	}
 }
@@ -88,7 +91,10 @@ func TestOpencodeLeavesTheUsersDefaultAndModelChoiceAlone(t *testing.T) {
 		{nil, []string{"opencode", "-m", "aiven/claude-sonnet"}},
 		{[]string{"-m", "anthropic/claude"}, []string{"opencode", "-m", "anthropic/claude"}},
 		{[]string{"--model=aiven/glm", "."}, []string{"opencode", "--model=aiven/glm", "."}},
-		{[]string{"run", "hi"}, []string{"opencode", "run", "hi"}},
+		{[]string{"run", "hi"}, []string{"opencode", "run", "-m", "aiven/claude-sonnet", "hi"}},
+		{[]string{"run", "--pure", "hi"}, []string{"opencode", "run", "-m", "aiven/claude-sonnet", "--pure", "hi"}},
+		{[]string{"models"}, []string{"opencode", "models"}},
+		{[]string{"--help"}, []string{"opencode", "--help"}},
 		{[]string{"--log-level", "INFO", "models"}, []string{"opencode", "--log-level", "INFO", "models"}},
 	} {
 		s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid)

@@ -48,7 +48,10 @@ func TestPlainOMPUsesNormalHomeWithoutPluginOrDefaultWrite(t *testing.T) {
 	if r := s.run("launch", "omp", "--", "-p", "literal prompt"); r.code != 0 {
 		t.Fatalf("launch: %d %s", r.code, r.stderr)
 	}
-	if got := s.launched().argv; !slices.Equal(got, []string{"omp", "-p", "literal prompt"}) {
+	if got := s.launched().argv; !slices.Equal(
+		got,
+		[]string{"omp", "--model", "aiven/claude-sonnet", "-p", "literal prompt"},
+	) {
 		t.Fatalf("plain native argv: %q", got)
 	}
 	if !strings.Contains(r.stderr, "omp --model aiven/claude-sonnet") ||
