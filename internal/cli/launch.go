@@ -28,19 +28,35 @@ type launchOptions struct {
 	plain  bool
 }
 
-func parseLaunch(args []string) (launchOptions, error) {
-	before, native, _ := splitNative(args)
-	o := launchOptions{native: native}
-	for _, a := range before {
-		switch {
-		case a == "--plain":
-			o.plain = true
-		case o.tool == "" && setupTools[a].prepare != nil:
-			o.tool = a
-		default:
-			return launchOptions{}, errors.New("launch: name one harness and put native " +
-				"arguments after --. Run: aiven-ai-gateway launch --help")
+// splitLaunch splits launch arguments into launcher flags before the harness name (or --), the
+// optional harness name, and literal native arguments forwarded to the harness. A single leading --
+// immediately after the harness name is stripped so both forms work identically across shells.
+func splitLaunch(args []string) (before []string, tool string, native []string) {
+	for i, a := range args {
+		if a == "--" {
+			return args[:i], "", args[i+1:]
 		}
+		if setupTools[a].prepare != nil {
+			rest := args[i+1:]
+			if len(rest) > 0 && rest[0] == "--" {
+				rest = rest[1:]
+			}
+			return args[:i], a, rest
+		}
+	}
+	return args, "", nil
+}
+
+func parseLaunch(args []string) (launchOptions, error) {
+	before, tool, native := splitLaunch(args)
+	o := launchOptions{tool: tool, native: native}
+	for _, a := range before {
+		if a == "--plain" {
+			o.plain = true
+			continue
+		}
+		return launchOptions{}, errors.New("launch: pass launcher flags before one harness, " +
+			"or put native arguments after -- when picking a harness. Run: aiven-ai-gateway launch --help")
 	}
 	return o, nil
 }

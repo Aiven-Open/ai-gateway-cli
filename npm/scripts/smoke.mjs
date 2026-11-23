@@ -188,18 +188,20 @@ for (const name of names) {
     assert(!text.includes(key), `${name} setup wrote the key into ${file}`);
   }
   const argv = ["two words", "", 'quote"slash\\', "a & b | c < d > e (f) ^ %USERPROFILE%", '{"inline":"x && y || z"}'];
-  const launch = await runAsync(["launch", name, "--", ...argv], "");
-  assert.equal(launch.status, 23, `${name} launch: ${launch.stderr}`);
-  assert(launch.stderr.includes(`Gateway: ${toolEnv.AIVEN_AI_GATEWAY_BASE_URL}\n`), `${name} launch omitted the gateway`);
-  const observed = JSON.parse(launch.stdout.trim().split("\n").at(-1));
-  assert.deepEqual(observed.Argv.slice(-argv.length), argv, `${name} native arguments`);
-  assert(expected[name].argv(observed.Argv.slice(0, -argv.length)), `${name} launch arguments`);
-  assert(!JSON.stringify(observed.Argv).includes(key), `${name} launch put the key in argv`);
-  assert.equal(observed.Env, "from-launch");
-  assert.equal(observed.GatewayKeySet, false, `${name} inherited an unbound gateway key`);
-  assert.equal(observed.GatewayKey, "", `${name} received a gateway key in its environment`);
-  assert.equal(observed.AnthropicToken, name === "claude" ? "" : "sk-smoke-inherited-anthropic");
-  launches[name] = { argv: observed.Argv.map((arg) => arg.slice(0, 40)), written };
+  for (const launchArgs of [["launch", name, ...argv], ["launch", name, "--", ...argv]]) {
+    const launch = await runAsync(launchArgs, "");
+    assert.equal(launch.status, 23, `${name} launch: ${launch.stderr}`);
+    assert(launch.stderr.includes(`Gateway: ${toolEnv.AIVEN_AI_GATEWAY_BASE_URL}\n`), `${name} launch omitted the gateway`);
+    const observed = JSON.parse(launch.stdout.trim().split("\n").at(-1));
+    assert.deepEqual(observed.Argv.slice(-argv.length), argv, `${name} native arguments`);
+    assert(expected[name].argv(observed.Argv.slice(0, -argv.length)), `${name} launch arguments`);
+    assert(!JSON.stringify(observed.Argv).includes(key), `${name} launch put the key in argv`);
+    assert.equal(observed.Env, "from-launch");
+    assert.equal(observed.GatewayKeySet, false, `${name} inherited an unbound gateway key`);
+    assert.equal(observed.GatewayKey, "", `${name} received a gateway key in its environment`);
+    assert.equal(observed.AnthropicToken, name === "claude" ? "" : "sk-smoke-inherited-anthropic");
+    launches[name] = { argv: observed.Argv.map((arg) => arg.slice(0, 40)), written };
+  }
 }
 const modelList = await runAsync(["models"], "");
 assert.equal(modelList.status, 0, modelList.stderr);

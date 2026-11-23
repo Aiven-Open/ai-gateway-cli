@@ -21,9 +21,10 @@ Commands
       Never starts a session. Without a harness, a terminal offers installed tools.
       Interactive steps support Esc / Shift+Tab to go back before saving.
       Interactive setup sets Aiven as default; --yes leaves tool defaults unchanged.
-  launch [harness] [--plain] [-- native args]
+  launch [--plain] [harness] [--] [native args]
       Start one configured tool. Setup is required first; launch writes no
       configuration. Without a harness, a terminal offers one installed tool.
+      Arguments after the harness (or after -- when picking) are forwarded literally.
   login
       Check that a key can list models, then save it. Sends no test request and
       configures no tool.
@@ -40,7 +41,7 @@ Output
   next steps go to stderr. --plain, NO_COLOR or TERM=dumb use numbered prompts
   with no colour or cursor motion. Help needs no credentials or configuration.
   --version prints build metadata without reading credentials or configuration.
-  Native arguments must follow -- and are forwarded literally.
+  Native launch arguments after a harness (or after --) are forwarded literally.
 `
 
 var escapes = regexp.MustCompile("\x1b\\[[0-9;]*m")

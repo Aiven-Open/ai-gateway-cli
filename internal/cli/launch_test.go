@@ -88,14 +88,68 @@ func TestLaunchAnnouncesOnlyTheCatalogueAndTheStart(t *testing.T) {
 }
 
 func TestLaunchPlainFlagIsAcceptedAndNotForwarded(t *testing.T) {
-	s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid).configured("pi")
-	r := s.run("launch", "--plain", "pi", "--", "--plain")
-	if r.code != 0 || len(s.runner.calls) != 1 {
-		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
+	for _, args := range [][]string{
+		{"launch", "--plain", "pi", "--", "--plain"},
+		{"launch", "--plain", "pi", "--plain"},
+	} {
+		s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid).configured("pi")
+		r := s.run(args...)
+		if r.code != 0 || len(s.runner.calls) != 1 {
+			t.Fatalf("%q: exit %d, stderr %q", args, r.code, r.stderr)
+		}
+		argv := s.runner.calls[0].argv
+		if argv[len(argv)-1] != "--plain" || len(argv) > 1 && argv[len(argv)-2] == "--plain" {
+			t.Errorf("%q: argv %q, want only the native --plain forwarded", args, argv)
+		}
 	}
-	argv := s.runner.calls[0].argv
-	if argv[len(argv)-1] != "--plain" || len(argv) > 1 && argv[len(argv)-2] == "--plain" {
-		t.Errorf("argv %q, want only the native --plain forwarded", argv)
+}
+
+func TestLaunchForwardsNativeArgsDirectlyAfterHarnessAndKeepsSeparatorCompatible(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{
+			name: "direct flag after harness",
+			args: []string{"launch", "claude", "--dangerously-skip-permissions"},
+			want: []string{"--dangerously-skip-permissions"},
+		},
+		{
+			name: "separator still accepted after harness",
+			args: []string{"launch", "claude", "--", "--dangerously-skip-permissions"},
+			want: []string{"--dangerously-skip-permissions"},
+		},
+		{
+			name: "double separator preserves inner -- for native tool",
+			args: []string{"launch", "claude", "--", "--", "-x"},
+			want: []string{"--", "-x"},
+		},
+		{
+			name: "inner -- in native args stays intact",
+			args: []string{"launch", "claude", "-p", "--", "-not-a-flag"},
+			want: []string{"-p", "--", "-not-a-flag"},
+		},
+		{
+			name: "trailing -- produces no extra native arg",
+			args: []string{"launch", "claude", "--"},
+			want: nil,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid).configured("claude")
+			r := s.run(tc.args...)
+			if r.code != 0 || len(s.runner.calls) != 1 {
+				t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
+			}
+			// Claude launch prefixes ["claude", "--settings", "<json>"].
+			got := s.runner.calls[0].argv[3:]
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("forwarded = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

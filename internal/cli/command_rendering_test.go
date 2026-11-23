@@ -24,12 +24,16 @@ func TestEarlyHelpPlainFlagBoundaryGrid(t *testing.T) {
 	Informational(nil, nil, Deps{Stdout: &reference})
 	for _, command := range []string{"login", "setup", "launch"} {
 		for _, help := range []string{"-h", "--help"} {
-			for _, args := range [][]string{
+			cases := [][]string{
 				{command, "--plain", help},
 				{command, help, "--plain"},
-				{command, "claude", "--plain", help},
+				{command, "--plain", help, "claude"},
 				{command, help, "--plain", "--", "--plain"},
-			} {
+			}
+			if command != "launch" {
+				cases = append(cases, []string{command, "claude", "--plain", help})
+			}
+			for _, args := range cases {
 				for _, stdoutTTY := range []bool{false, true} {
 					var out, errOut bytes.Buffer
 					handled, code := Informational(args, []string{"TERM=xterm-256color"}, Deps{
@@ -52,6 +56,7 @@ func TestEarlyHelpPlainFlagBoundaryGrid(t *testing.T) {
 	}
 	for _, args := range [][]string{
 		{"launch", "--help", "--", "--plain"},
+		{"launch", "--help", "claude", "--plain"},
 		{"help", "--", "--plain"},
 	} {
 		var out bytes.Buffer
@@ -60,14 +65,21 @@ func TestEarlyHelpPlainFlagBoundaryGrid(t *testing.T) {
 			t.Fatalf("native-side --plain changed launcher help: %q: %q", args, out.String())
 		}
 	}
-	var out bytes.Buffer
-	handled, code := Informational(
-		[]string{"launch", "claude", "--", "--plain", "--help"},
-		nil,
-		Deps{Stdout: &out},
-	)
-	if handled || code != 0 || out.Len() != 0 {
-		t.Fatalf("native help intercepted: handled=%v code=%d out=%q", handled, code, out.String())
+	for _, args := range [][]string{
+		{"launch", "claude", "--", "--plain", "--help"},
+		{"launch", "claude", "--plain", "--help"},
+	} {
+		var out bytes.Buffer
+		handled, code := Informational(args, nil, Deps{Stdout: &out})
+		if handled || code != 0 || out.Len() != 0 {
+			t.Fatalf(
+				"%q: native help intercepted: handled=%v code=%d out=%q",
+				args,
+				handled,
+				code,
+				out.String(),
+			)
+		}
 	}
 }
 

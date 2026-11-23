@@ -75,7 +75,13 @@ func Informational(args, environ []string, deps Deps) (bool, int) {
 	if !slices.Contains([]string{"launch", "setup", "login", "logout", "models"}, cmd) {
 		return true, fail(deps, "unknown command. Run: aiven-ai-gateway --help")
 	}
-	before, _, _ := splitNative(args[1:])
+	var before []string
+	if cmd == "launch" {
+		before, _, _ = splitLaunch(args[1:])
+		plain = slices.Contains(before, "--plain")
+	} else {
+		before, _, _ = splitNative(args[1:])
+	}
 	for _, a := range before {
 		if a == "--help" || a == "-h" {
 			writeHelp(deps, environ, plain)
@@ -146,9 +152,10 @@ var helpCommands = []helpCommand{
 			"Interactive setup sets Aiven as default; --yes leaves tool defaults unchanged.",
 		},
 	},
-	{"launch", "[harness] [--plain] [-- native args]", []string{
+	{"launch", "[--plain] [harness] [--] [native args]", []string{
 		"Start one configured tool. Setup is required first; launch writes no",
 		"configuration. Without a harness, a terminal offers one installed tool.",
+		"Arguments after the harness (or after -- when picking) are forwarded literally.",
 	}},
 	{"login", "", []string{
 		"Check that a key can list models, then save it. Sends no test request and",
@@ -166,7 +173,7 @@ var helpOutput = []string{
 	"next steps go to stderr. --plain, NO_COLOR or TERM=dumb use numbered prompts",
 	"with no colour or cursor motion. Help needs no credentials or configuration.",
 	"--version prints build metadata without reading credentials or configuration.",
-	"Native arguments must follow -- and are forwarded literally.",
+	"Native launch arguments after a harness (or after --) are forwarded literally.",
 }
 
 // writeHelp styles only terminal stdout when neither the launcher flag nor the environment requests plain text.

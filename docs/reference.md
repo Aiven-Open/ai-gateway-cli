@@ -128,28 +128,28 @@ complete.
 ### Optional Shell Shortcuts
 
 `setup` never edits shell startup files or prints shell-specific alias
-blocks. If you want short commands that forward native arguments after `--`,
-add equivalents for your shell:
+blocks. If you want short commands that forward native arguments, add
+equivalents for your shell:
 
 ```sh
 # bash / zsh
-alias claude-aiven='aiven-ai-gateway launch claude --'
-alias codex-aiven='aiven-ai-gateway launch codex --'
-alias pi-aiven='aiven-ai-gateway launch pi --'
-alias opencode-aiven='aiven-ai-gateway launch opencode --'
-alias omp-aiven='aiven-ai-gateway launch omp --'
+alias claude-aiven='aiven-ai-gateway launch claude'
+alias codex-aiven='aiven-ai-gateway launch codex'
+alias pi-aiven='aiven-ai-gateway launch pi'
+alias opencode-aiven='aiven-ai-gateway launch opencode'
+alias omp-aiven='aiven-ai-gateway launch omp'
 ```
 
 ```fish
 # fish
-abbr -a claude-aiven 'aiven-ai-gateway launch claude --'
-abbr -a pi-aiven 'aiven-ai-gateway launch pi --'
+abbr -a claude-aiven 'aiven-ai-gateway launch claude'
+abbr -a pi-aiven 'aiven-ai-gateway launch pi'
 ```
 
 ```powershell
 # PowerShell
-function claude-aiven { aiven-ai-gateway launch claude -- @args }
-function pi-aiven { aiven-ai-gateway launch pi -- @args }
+function claude-aiven { aiven-ai-gateway launch claude @args }
+function pi-aiven { aiven-ai-gateway launch pi @args }
 ```
 
 When forwarding native arguments to Pi, OpenCode or OMP without a model,
@@ -313,7 +313,10 @@ persistent provider metadata or changing defaults. It sends no test request
 and prints no model list before starting the tool. Native clients still
 write their own session/history data.
 
-Arguments after `--` are passed as a literal native argument vector. For Pi
+Arguments after the harness name (or after `--` when picking a harness; an
+optional leading `--` after the harness name is also stripped) are passed as
+a literal native argument vector. Launcher flags such as `--plain` or
+`--help` go before the harness name. For Pi
 and OMP, `launch` prepends `--model aiven/<alias>` unless the arguments
 already specify a model, provider, help/version flag or management
 subcommand (`update`, `install`, `remove`, `list`, `config`, `plugin`,

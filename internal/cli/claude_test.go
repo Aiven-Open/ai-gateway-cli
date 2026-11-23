@@ -863,8 +863,8 @@ func TestClaudeRefusesRemovedIsolatedLauncherFlag(t *testing.T) {
 	g := newGatewayDouble(t)
 	s := newSession(t, g).loggedIn(keyValid).configured("claude")
 	before, requests := configurationSnapshot(t, s.fakeHome, s.env.WorkDir), len(g.journal())
-	r := s.run("launch", "claude", "--isolated")
-	if want := "aiven-ai-gateway: launch: name one harness and put native arguments after --. Run: aiven-ai-gateway launch --help\n"; r.code != 1 ||
+	r := s.run("launch", "--isolated", "claude")
+	if want := "aiven-ai-gateway: launch: pass launcher flags before one harness, or put native arguments after -- when picking a harness. Run: aiven-ai-gateway launch --help\n"; r.code != 1 ||
 		r.stderr != want {
 		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
 	}

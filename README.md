@@ -41,8 +41,8 @@ use, configure it once, then launch sessions:
 ```sh
 aiven-ai-gateway setup claude
 aiven-ai-gateway launch claude
-aiven-ai-gateway launch codex -- resume
-aiven-ai-gateway launch pi -- --model aiven/claude-sonnet
+aiven-ai-gateway launch codex resume
+aiven-ai-gateway launch pi --model aiven/claude-sonnet
 aiven-ai-gateway models
 ```
 
@@ -68,7 +68,7 @@ motion. Non-UTF-8 locales (`LC_ALL=C`/`POSIX`) fall back to ASCII markers.
 | Command | Summary |
 | --- | --- |
 | `setup [harness] [--key-stdin] [-y\|--yes] [--plain]` | Discover installed harnesses, validate a key, choose a model or curated preset (resolving ungranted configured models), probe each configured protocol and model concurrently (1 output token each, which may incur usage), review redacted diffs, save the key (`0600`) and launcher model preferences, and write harness configuration with timestamped `.bak` backups. Never starts a session. |
-| `launch [harness] [--plain] [-- native args]` | Start one configured harness against the selected gateway without modifying persistent configuration. Arguments after `--` are forwarded literally to the native tool. |
+| `launch [--plain] [harness] [--] [native args]` | Start one configured harness against the selected gateway without modifying persistent configuration. Arguments after the harness name (or after `--` when picking a harness) are forwarded literally to the native tool; an optional `--` after the harness name is also accepted. |
 | `login` | Check that an explicitly supplied key can list models, save it (`0600`), and list granted models. Sends no inference request and configures no harness. |
 | `logout` | Remove the saved key file for the selected gateway, leaving other gateways' key files and harness configurations intact. Does not revoke the server key or unset environment variables. |
 | `models` | List granted models on stdout grouped by publisher, with the exact model IDs that harness flags take (`aiven-ai-gateway models > models.txt`). |
