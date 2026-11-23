@@ -307,7 +307,7 @@ type choiceDrawWriter struct {
 
 func (w choiceDrawWriter) Write(b []byte) (int, error) {
 	n, err := w.tty.Write(b)
-	if err == nil && strings.Contains(string(b), "Esc cancels") {
+	if err == nil && strings.Contains(string(b), "Esc ") {
 		w.draws <- struct{}{}
 	}
 	return n, err
@@ -348,6 +348,7 @@ func TestPTYInlineSelectDecodesSeparateWrites(t *testing.T) {
 				lines:  bufio.NewReader(p.tty),
 			}
 			c := toolChoice(false)
+			c.filterDefault = true
 			c.options = append(c.options, option{label: "名前"})
 			type result struct {
 				picked []int

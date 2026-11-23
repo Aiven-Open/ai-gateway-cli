@@ -35,8 +35,10 @@ type presenter struct {
 }
 
 func newPresenter(env config.Env, deps Deps, plain bool) presenter {
-	plain = plain || plainRequested(env.Environ)
-	p := presenter{ui: newUI(deps.Stderr, deps.Term.StderrTTY, deps.Term.StderrWidth, plain)}
+	plain = plain || deps.Term.NoVT || plainRequested(env.Environ)
+	p := presenter{
+		ui: newUIWithEnv(deps.Stderr, deps.Term.StderrTTY, deps.Term.StderrWidth, plain, env.Environ),
+	}
 	if sel, ok := deps.Prompter.(selector); ok && !plain && deps.Term.StdinTTY && deps.Term.StderrTTY {
 		p.inline = sel
 	}

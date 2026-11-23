@@ -18,6 +18,10 @@ import (
 // pipe while prompts and progress still reach a terminal on stderr.
 type Terminal struct {
 	StdinTTY, StdoutTTY, StderrTTY bool
+	// NoVT is true when the interactive stderr/stdin console cannot enable virtual terminal processing.
+	NoVT bool
+	// StdoutNoVT is true when stdout is a terminal that cannot enable virtual terminal processing.
+	StdoutNoVT bool
 	// StdoutWidth and StderrWidth return the stream's current width in cells, or 0 when unknown.
 	StdoutWidth, StderrWidth func() int
 }
@@ -38,39 +42,35 @@ func plainRequested(environ []string) bool {
 type ui struct {
 	w     io.Writer
 	color bool
+	th    theme
 	// width is the terminal's width in cells, or 0 when the stream is not a terminal: layout never follows COLUMNS
 	// or a guess there, so redirected output is the same everywhere.
 	width int
 }
 
 func newUI(w io.Writer, tty bool, width func() int, plain bool) ui {
-	u := ui{w: w, color: tty && !plain}
+	return newUIWithEnv(w, tty, width, plain, nil)
+}
+
+func newUIWithEnv(w io.Writer, tty bool, width func() int, plain bool, environ []string) ui {
+	color := tty && !plain
+	u := ui{
+		w:     w,
+		color: color,
+		th:    newTheme(color, utf8Locale(environ)),
+	}
 	if tty && width != nil {
 		u.width = width()
 	}
 	return u
 }
 
-const (
-	bold   = "1"
-	dim    = "2"
-	red    = "31"
-	green  = "32"
-	yellow = "33"
-	cyan   = "36"
-)
-
-func (u ui) paint(code, s string) string {
-	if !u.color || s == "" {
-		return s
-	}
-	return "\x1b[" + code + "m" + s + "\x1b[0m"
-}
+func (u ui) paint(code, s string) string { return u.th.paint(code, s) }
 
 func (u ui) printf(format string, args ...any) { _, _ = fmt.Fprintf(u.w, format, args...) }
 
 // heading starts a section after a blank line.
-func (u ui) heading(s string) { u.printf("\n%s\n", u.paint(bold, safe(s))) }
+func (u ui) heading(s string) { u.printf("\n%s\n", u.th.bold(safe(s))) }
 
 // line prints one indented line of plain text.
 func (u ui) line(indent int, s string) { u.printf("%s%s\n", strings.Repeat(" ", indent), safe(s)) }
@@ -89,7 +89,7 @@ func (u ui) command(indent int, s string) bool {
 	if strings.ContainsRune(s, '\t') || safe(s) != s {
 		return false
 	}
-	u.printf("%s%s\n", strings.Repeat(" ", indent), u.paint(cyan, s))
+	u.printf("%s%s\n", strings.Repeat(" ", indent), u.th.cyan(s))
 	return true
 }
 
@@ -140,9 +140,18 @@ func safe(s string) string {
 func cells(s string) int { return uniseg.StringWidth(s) }
 
 // fit cuts s to at most width cells on a grapheme boundary, marking a cut with an ellipsis.
-func fit(s string, width int) string {
+func fit(s string, width int) string { return fitWith(s, width, "…") }
+
+func fitWith(s string, width int, ellipsis string) string {
 	if width <= 0 || cells(s) <= width {
 		return s
+	}
+	ew := cells(ellipsis)
+	if width < ew {
+		return ""
+	}
+	if width == ew {
+		return ellipsis
 	}
 	var b strings.Builder
 	used, state := 0, -1
@@ -150,13 +159,13 @@ func fit(s string, width int) string {
 		var cluster string
 		var w int
 		cluster, rest, w, state = uniseg.FirstGraphemeClusterInString(rest, state)
-		if used+w > width-1 {
+		if used+w > width-ew {
 			break
 		}
 		b.WriteString(cluster)
 		used += w
 	}
-	return b.String() + "…"
+	return b.String() + ellipsis
 }
 
 func pad(s string, width int) string {
@@ -173,7 +182,7 @@ func renderModels(u ui, table []models.Model) {
 		if i > 0 {
 			u.printf("\n")
 		}
-		u.printf("%s\n", u.paint(bold, safe(g.Name)))
+		u.printf("%s\n", u.th.bold(safe(g.Name)))
 		// The readable name leads; the exact id harness flags take follows it, once when the two are the same.
 		nameWidth := 0
 		for _, m := range g.Models {
@@ -186,7 +195,7 @@ func renderModels(u ui, table []models.Model) {
 			plain[j], entries[j] = id, id
 			if name != id {
 				plain[j] = pad(name, nameWidth) + "  " + id
-				entries[j] = pad(name, nameWidth) + "  " + u.paint(dim, id)
+				entries[j] = pad(name, nameWidth) + "  " + u.th.dim(id)
 			}
 			cellWidth = max(cellWidth, cells(plain[j]))
 		}

@@ -56,6 +56,8 @@ func TestHelpIsStyledOnlyOnAStdoutTerminal(t *testing.T) {
 	}{
 		{name: "redirected", term: cli.Terminal{StdinTTY: true, StderrTTY: true}},
 		{name: "stdout terminal", term: cli.Terminal{StdoutTTY: true}, styled: true},
+		{name: "legacy console without VT", term: cli.Terminal{StdoutTTY: true, StderrTTY: true, NoVT: true}},
+		{name: "stdout-only legacy console without VT", term: cli.Terminal{StdoutTTY: true, StdoutNoVT: true}},
 		{name: "NO_COLOR", term: cli.Terminal{StdoutTTY: true}, environ: []string{"NO_COLOR=1"}},
 		{name: "TERM=dumb", term: cli.Terminal{StdoutTTY: true}, environ: []string{"TERM=dumb"}},
 		{name: "empty NO_COLOR", term: cli.Terminal{StdoutTTY: true}, environ: []string{"NO_COLOR="}, styled: true},
