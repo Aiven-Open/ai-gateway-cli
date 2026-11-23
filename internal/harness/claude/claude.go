@@ -284,6 +284,9 @@ func Selected(data []byte) (string, error) {
 	return alias, err
 }
 
+// DefaultModel returns the main model alias that Claude Code setup selects by default for t.
+func DefaultModel(t []models.Model) string { return defaultSlots(t).main }
+
 // defaultSlots keeps Claude Code on Claude models whenever Anthropic models are granted, falling back through
 // curated presets (OpenAI, Gemini, Open-weight latest DeepSeek) otherwise. It never injects an unsolicited
 // cross-vendor ANTHROPIC_CUSTOM_MODEL_OPTION.

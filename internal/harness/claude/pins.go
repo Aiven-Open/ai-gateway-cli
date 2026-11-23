@@ -240,16 +240,19 @@ func pinnedFrom(t []models.Model, s slots, layers ...layer) (slots, string, stri
 				dedicatedClearsUserCustom = true
 			}
 		}
-		if l.kind != layerUser || !dedicatedOverridesUser {
-			if v, _ := l.settings["model"].(string); bare(v) != "" {
-				model, modelPath = bare(v), l.path
-			}
-			if v, ok := env["ANTHROPIC_MODEL"].(string); ok {
-				if b := bare(v); b != "" {
-					envModel, envModelPath = b, l.path
-				} else {
-					envModel, envModelPath = "", ""
-				}
+		if l.kind == layerUser && dedicatedOverridesUser {
+			// Explicit launcher-only choice in aiven.settings.json already holds the resolved model,
+			// tier slots (preserving granted Claude tiers on custom picks) and custom option.
+			continue
+		}
+		if v, _ := l.settings["model"].(string); bare(v) != "" {
+			model, modelPath = bare(v), l.path
+		}
+		if v, ok := env["ANTHROPIC_MODEL"].(string); ok {
+			if b := bare(v); b != "" {
+				envModel, envModelPath = b, l.path
+			} else {
+				envModel, envModelPath = "", ""
 			}
 		}
 		s.opus = pin(env, "ANTHROPIC_DEFAULT_OPUS_MODEL", s.opus, defaults.opus)

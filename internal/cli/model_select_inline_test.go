@@ -1020,6 +1020,145 @@ func TestBeat2RecommendedDefaultsShowsPersistedLauncherPreference(t *testing.T) 
 	}
 }
 
+func TestBeat2RecommendedDefaultsShowsClaudePresetAliasWhenDistinctFromPi(t *testing.T) {
+	t.Parallel()
+	srv, _ := inlineGateway(t, `[
+		{"id":"claude-sonnet","owned_by":"Anthropic"},
+		{"id":"claude-sonnet-4-5","owned_by":"Anthropic"}
+	]`)
+	env, _ := inlineSetupEnv(t, srv.URL)
+	p := &inlineSetupPrompter{
+		secret: "sk-test-inline-valid",
+		scriptedSelector: scriptedSelector{
+			answers: []selectAnswer{
+				// Beat 1: pi(0), claude(3)
+				{picked: []int{0, 3}},
+				// Beat 2: cancel after inspecting Recommended defaults detail
+				{err: errCancelled},
+			},
+		},
+	}
+	var stderr strings.Builder
+	deps := inlineDeps(p, &stderr)
+	deps.HTTP = srv.Client()
+
+	if code := Run(context.Background(), []string{"setup"}, env, deps); code != 1 {
+		t.Fatalf("exit %d, want 1", code)
+	}
+	detail := p.asked[1].options[0].detail
+	if !strings.Contains(detail, "Claude Code: claude-sonnet-4-5") {
+		t.Errorf("Beat 2 Recommended defaults detail = %q, want Claude Code: claude-sonnet-4-5", detail)
+	}
+}
+
+func TestLauncherOnlyClaudeChoicesOverrideUserTierAndCustomPinsOnLaunch(t *testing.T) {
+	t.Parallel()
+	const cat = `[
+		{"id":"claude-sonnet-5-5","owned_by":"Anthropic"},
+		{"id":"claude-sonnet-4-5","owned_by":"Anthropic"},
+		{"id":"gpt-6.1-sol","owned_by":"OpenAI"},
+		{"id":"glm-5","owned_by":"Z.ai"}
+	]`
+	userJSON := `{"model":"claude-sonnet-5-5","env":{"ANTHROPIC_DEFAULT_SONNET_MODEL":"claude-sonnet-4-5","ANTHROPIC_CUSTOM_MODEL_OPTION":"gpt-6.1-sol"}}`
+
+	t.Run("preset owns its tier slots on launch", func(t *testing.T) {
+		t.Parallel()
+		srv, _ := inlineGateway(t, cat)
+		env, home := inlineSetupEnv(t, srv.URL)
+		userSettings := filepath.Join(home, ".claude", "settings.json")
+		if err := os.MkdirAll(filepath.Dir(userSettings), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(userSettings, []byte(userJSON), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		p := &inlineSetupPrompter{
+			secret: "sk-test-inline-valid",
+			scriptedSelector: scriptedSelector{
+				answers: []selectAnswer{
+					// Claude menu: 0=Keep current, 1=Anthropic, 2=OpenAI
+					{picked: []int{2}},
+					// Beat 3: 1 = No — only via launch
+					{picked: []int{1}},
+					// Review: 0 = Apply
+					{picked: []int{0}},
+				},
+			},
+		}
+		var stderr strings.Builder
+		deps := inlineDeps(p, &stderr)
+		deps.HTTP = srv.Client()
+		if code := Run(context.Background(), []string{"setup", "claude"}, env, deps); code != 0 {
+			t.Fatalf("setup exit %d, stderr:\n%s", code, stderr.String())
+		}
+		runner := &inlineRunner{}
+		launchDeps := Deps{Stderr: &stderr, HTTP: srv.Client(), Runner: runner}
+		if code := Run(context.Background(), []string{"launch", "claude"}, env, launchDeps); code != 0 {
+			t.Fatalf("launch exit %d, stderr:\n%s", code, stderr.String())
+		}
+		if !slices.Contains(runner.lastEnv, "ANTHROPIC_DEFAULT_SONNET_MODEL=gpt-6.1-sol") ||
+			!slices.Contains(runner.lastEnv, "ANTHROPIC_CUSTOM_MODEL_OPTION=") {
+			t.Fatalf("expected OpenAI preset tier and blank custom option, got env %v", runner.lastEnv)
+		}
+	})
+
+	t.Run("custom pick owns custom option while keeping granted user Claude tier", func(t *testing.T) {
+		t.Parallel()
+		srv, _ := inlineGateway(t, cat)
+		env, home := inlineSetupEnv(t, srv.URL)
+		userSettings := filepath.Join(home, ".claude", "settings.json")
+		if err := os.MkdirAll(filepath.Dir(userSettings), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(userSettings, []byte(userJSON), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		p := &inlineSetupPrompter{
+			secret: "sk-test-inline-valid",
+			scriptedSelector: scriptedSelector{
+				answers: []selectAnswer{
+					// Claude menu: 0=Keep current, 1=Anthropic, 2=OpenAI, 3=Open-weight, 4=Custom model…
+					{picked: []int{4}},
+					// Custom picker: Anthropic(0..1), OpenAI(2), Z.ai(3=glm-5)
+					{picked: []int{3}},
+					// Beat 3: 1 = No — only via launch
+					{picked: []int{1}},
+					// Review: 0 = Apply
+					{picked: []int{0}},
+				},
+			},
+		}
+		var stderr strings.Builder
+		deps := inlineDeps(p, &stderr)
+		deps.HTTP = srv.Client()
+		if code := Run(context.Background(), []string{"setup", "claude"}, env, deps); code != 0 {
+			t.Fatalf("setup exit %d, stderr:\n%s", code, stderr.String())
+		}
+		runner := &inlineRunner{}
+		launchDeps := Deps{Stderr: &stderr, HTTP: srv.Client(), Runner: runner}
+		if code := Run(context.Background(), []string{"launch", "claude"}, env, launchDeps); code != 0 {
+			t.Fatalf("launch exit %d, stderr:\n%s", code, stderr.String())
+		}
+		if !slices.Contains(runner.lastEnv, "ANTHROPIC_DEFAULT_SONNET_MODEL=claude-sonnet-4-5") ||
+			!slices.Contains(runner.lastEnv, "ANTHROPIC_CUSTOM_MODEL_OPTION=glm-5") {
+			t.Fatalf(
+				"expected custom glm-5 and preserved claude-sonnet-4-5 tier, got env %v",
+				runner.lastEnv,
+			)
+		}
+	})
+}
+
+type inlineRunner struct {
+	lastEnv []string
+}
+
+func (*inlineRunner) LookPath(name string) (string, error) { return "/usr/bin/" + name, nil }
+func (r *inlineRunner) Exec(_ string, _ []string, env []string) error {
+	r.lastEnv = append([]string(nil), env...)
+	return nil
+}
+
 type plainSetupPrompter struct {
 	secret  string
 	answers []string

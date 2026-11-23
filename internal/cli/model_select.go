@@ -584,6 +584,8 @@ func selectCustomizeHub(
 
 func defaultToolPreviewModel(tool string, env config.Env, table []models.Model) string {
 	switch tool {
+	case "claude":
+		return claude.DefaultModel(table)
 	case "codex":
 		return models.CodexOrFirst(table)
 	case "pi", "opencode", "omp":
