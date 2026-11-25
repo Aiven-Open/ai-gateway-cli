@@ -75,6 +75,7 @@ build() {
   {
     echo 'cask "aiven-ai-gateway" do'
     echo "  version \"$version\""
+    echo '  binary "aiven-ai-gateway", target: "avn-aig"'
     while read -r sum name; do
       echo "  sha256 \"$sum\""
       echo "  url \"$url/$name\""
@@ -159,6 +160,8 @@ nolegal=$(variant nolegal "$final")
 archive "$nolegal" 0.2.0 darwin_arm64 "synthetic v0.2.0 darwin_arm64" LICENSE aiven-ai-gateway
 nocask=$(variant nocask "$final")
 rm "$nocask/homebrew/Casks/aiven-ai-gateway.rb"
+noshort=$(variant noshort "$final")
+grep -vF 'target: "avn-aig"' "$final/homebrew/Casks/aiven-ai-gateway.rb" >"$noshort/homebrew/Casks/aiven-ai-gateway.rb"
 plaincask=$(variant plaincask "$final")
 sed 's#download/aiven-ai-gateway-v#download/v#' "$final/homebrew/Casks/aiven-ai-gateway.rb" \
   >"$plaincask/homebrew/Casks/aiven-ai-gateway.rb"
@@ -188,5 +191,6 @@ check "pushed tag differs from build" 1 "$final" v0.2.1 '' '.' STUB_RELEASE=none
 check "archive bytes differ from checksums: no gh call" 1 "$rebuilt" v0.2.0 '' '.' STUB_RELEASE=none
 check "archive without THIRD_PARTY_NOTICES: no gh call" 1 "$nolegal" v0.2.0 '' '.' STUB_RELEASE=none
 check "no generated cask: no gh call" 1 "$nocask" v0.2.0 '' '.' STUB_RELEASE=none
+check "cask without the avn-aig link: no gh call" 1 "$noshort" v0.2.0 '' '.' STUB_RELEASE=none
 check "cask on the plain tag: no gh call" 1 "$plaincask" v0.2.0 '' '.' STUB_RELEASE=none
 exit $fail

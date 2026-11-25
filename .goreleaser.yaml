@@ -47,6 +47,9 @@ homebrew_casks:
       template: "https://github.com/aiven/homebrew-tap/releases/download/aiven-ai-gateway-{{ .Tag }}/{{ .ArtifactName }}"
     description: Launch Claude Code and other agents against Aiven AI Gateway
     skip_upload: true
+    # A second name for the same binary; the default binary stanza stays.
+    custom_block: |
+      binary "aiven-ai-gateway", target: "avn-aig"
 # Release notes are this repository's public commit subjects since the previous tag.
 changelog:
   use: git

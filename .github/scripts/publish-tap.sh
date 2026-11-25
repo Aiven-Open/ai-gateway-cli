@@ -47,6 +47,7 @@ listed=$(awk '{ print $2 }' "$dist/checksums.txt" | sort | paste -sd ' ' -)
 generated=$dist/homebrew/$cask
 [[ -f $generated ]] || fail "GoReleaser generated no $generated"
 grep -qF "version \"$version\"" "$generated" || fail "$generated is not version $version"
+grep -qF 'target: "avn-aig"' "$generated" || fail "$generated does not link avn-aig"
 while read -r sum name; do
   grep -qF "sha256 \"$sum\"" "$generated" || fail "$generated lacks the checksum of $name"
 done <"$dist/checksums.txt"
