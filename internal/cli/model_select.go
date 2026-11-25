@@ -485,7 +485,7 @@ func selectCustomizeHub(
 		switch {
 		case entry.set:
 			customizedAny = true
-			detail = entry.label
+			detail = safe(entry.label)
 		case t.existing.present && !t.existing.granted:
 			hasUnresolved = true
 			if firstUnresolved < 0 {
