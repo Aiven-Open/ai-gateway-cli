@@ -197,6 +197,7 @@ type setupTarget struct {
 	out          *targetOutcome
 	snapshot     harness.Plan
 	plan         harness.Plan
+	nativeFile   string
 	planSel      harness.ModelSelection
 	currentPref  string
 	existing     configuredModel
@@ -366,6 +367,7 @@ func (s *setupSession) inspectCandidates() {
 			continue
 		}
 		t.plan = plan0
+		t.nativeFile = nativeFileOf(t.snapshot, plan0)
 		t.existing = inspectConfiguredModel(t.out.tool, s.env, s.table, t.snapshot, plan0)
 		t.badge = toolBadge(t.out.tool, s.env, s.table, t.existing)
 	}

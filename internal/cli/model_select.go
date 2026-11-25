@@ -312,25 +312,6 @@ func resolvedToolModel(
 	return models.SonnetOrFirst(table)
 }
 
-func nativeDefaultFile(tool string, env config.Env) string {
-	switch tool {
-	case "claude":
-		return "~/.claude/settings.json"
-	case "codex":
-		return "~/.codex/config.toml"
-	case "pi":
-		return "~/.pi/agent/settings.json"
-	case "opencode":
-		if env.ConfigHome != "" {
-			return filepath.Join(env.ConfigHome, "opencode", "opencode.json")
-		}
-		return "~/.config/opencode/opencode.json"
-	case "omp":
-		return "~/.omp/agent/config.yml"
-	}
-	return ""
-}
-
 type modelMenuItem struct {
 	option       option
 	refuse       bool
@@ -943,7 +924,7 @@ func selectDirectInvocation(
 	if len(eligible) == 1 {
 		t := eligible[0]
 		tool := t.out.tool
-		nativeFile := nativeDefaultFile(tool, env)
+		nativeFile := nativeDefaultFile(t, env)
 		yesDetail := "updates " + nativeFile
 		if tool == "claude" && t.existing.present && !t.existing.granted &&
 			t.existing.file == filepath.Join(env.UserHome, ".claude", "settings.json") {
@@ -1080,7 +1061,7 @@ func selectDirectPerTool(
 			theme:     &p.ui.th,
 		}
 		for _, t := range eligible {
-			detail := nativeDefaultFile(t.out.tool, env)
+			detail := nativeDefaultFile(t, env)
 			if t.out.tool == "claude" && t.existing.present && !t.existing.granted &&
 				t.existing.file == filepath.Join(env.UserHome, ".claude", "settings.json") {
 				detail += " (fixes ungranted model)"
@@ -1118,7 +1099,7 @@ func selectDirectPerTool(
 		offered[i] = t.out.tool
 		p.ui.line(
 			4,
-			fmt.Sprintf("%d) %s (%s)", i+1, toolLabel(t.out.tool), nativeDefaultFile(t.out.tool, env)),
+			fmt.Sprintf("%d) %s (%s)", i+1, toolLabel(t.out.tool), nativeDefaultFile(t, env)),
 		)
 	}
 	for range 3 {
