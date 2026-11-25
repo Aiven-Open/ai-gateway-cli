@@ -466,7 +466,7 @@ func TestSetupConfiguresNamedTool(t *testing.T) {
 		if r.code != 0 || len(s.runner.calls) != 0 ||
 			!strings.Contains(r.stderr, "native default left as it was\n") ||
 			!strings.Contains(r.stderr, "Or start the native tool directly\n  "+tc.run) ||
-			!strings.Contains(r.stderr, "aiven-ai-gateway launch "+tc.tool+"\n    Default model: ") {
+			!strings.Contains(r.stderr, "aiven-ai-gateway "+tc.tool+"\n    Default model: ") {
 			t.Fatalf("exit %d, stderr %q, calls %v", r.code, r.stderr, s.runner.calls)
 		}
 		for _, f := range tc.files {
@@ -1125,7 +1125,7 @@ func TestSetupDoesNotAdvertiseUnchangedToolWhenKeyWasNotSaved(t *testing.T) {
 	s.runner.missing = []string{"codex"}
 	s.deps.Prompter = &scriptedPrompter{answers: []string{"claude,codex"}}
 	r := s.stdin(keyBare).run("setup", "--key-stdin", "--yes")
-	if strings.Contains(r.stderr, "aiven-ai-gateway launch claude") ||
+	if strings.Contains(r.stderr, "aiven-ai-gateway claude\n") ||
 		!strings.Contains(r.stderr, "the key was not saved") {
 		t.Errorf("exit %d, stderr %q", r.code, r.stderr)
 	}

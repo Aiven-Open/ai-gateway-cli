@@ -20,6 +20,10 @@ func Run(ctx context.Context, args []string, env config.Env, deps Deps) int {
 	if handled, code := Informational(args, env.Environ, deps); handled {
 		return code
 	}
+	// A harness name is short for launch; with no arguments at all, a terminal picks one.
+	if len(args) == 0 || slices.Contains(toolNames, args[0]) {
+		return launchCommand(ctx, args, env, deps)
+	}
 	switch args[0] {
 	case "--version", "version":
 		_, _ = fmt.Fprint(deps.Stdout, formatVersion(deps.Build))
@@ -47,9 +51,13 @@ func Informational(args, environ []string, deps Deps) (bool, int) {
 	}
 	presentation, _, _ := splitNative(args)
 	plain := slices.Contains(presentation, "--plain")
-	if len(args) == 0 || slices.Contains([]string{"help", "-h", "--help"}, args[0]) {
+	if len(args) == 0 && deps.Prompter == nil ||
+		len(args) > 0 && slices.Contains([]string{"help", "-h", "--help"}, args[0]) {
 		writeHelp(deps, environ, plain)
 		return true, 0
+	}
+	if len(args) == 0 {
+		return false, 0
 	}
 	head, _, _ := strings.Cut(args[0], "=")
 	if head == "--key" || head == "--api-key" {
@@ -70,7 +78,7 @@ func Informational(args, environ []string, deps Deps) (bool, int) {
 			"Run: aiven-ai-gateway setup omp")
 	}
 	if slices.Contains(toolNames, cmd) {
-		return true, fail(deps, "session shortcut removed. Run: aiven-ai-gateway launch "+cmd)
+		return false, 0
 	}
 	if !slices.Contains(commandNames, cmd) {
 		return true, fail(deps, "unknown command. Run: aiven-ai-gateway --help")
@@ -140,6 +148,11 @@ type helpCommand struct {
 }
 
 var helpCommands = []helpCommand{
+	{"<harness>", "[native args]", []string{
+		"Start a configured tool, the same as launch <harness>. Arguments after",
+		"the harness name go to the tool unchanged. With no arguments at all, a",
+		"terminal offers the installed tools.",
+	}},
 	{
 		"setup",
 		"[harness] [--key-stdin] [-y|--yes] [--plain]",
@@ -186,7 +199,7 @@ func writeHelp(deps Deps, environ []string, plain bool) {
 		nil,
 		plain || stdoutPlain || plainRequested(environ),
 	)
-	u.printf("%s aiven-ai-gateway <command> [args]\n", u.paint(bold, "usage:"))
+	u.printf("%s %s <command> [args]\n", u.paint(bold, "usage:"), deps.command())
 	u.heading("Commands")
 	for _, c := range helpCommands {
 		head := "  " + u.paint(bold+";"+cyan, c.name)

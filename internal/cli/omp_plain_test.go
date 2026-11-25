@@ -55,7 +55,7 @@ func TestPlainOMPUsesNormalHomeWithoutPluginOrDefaultWrite(t *testing.T) {
 		t.Fatalf("plain native argv: %q", got)
 	}
 	if !strings.Contains(r.stderr, "omp --model aiven/claude-sonnet") ||
-		!strings.Contains(r.stderr, "aiven-ai-gateway launch omp") ||
+		!strings.Contains(r.stderr, "aiven-ai-gateway omp") ||
 		strings.Contains(r.stderr, "alias omp-aiven=") {
 		t.Fatalf("unexpected direct command or shortcut: %s", r.stderr)
 	}
