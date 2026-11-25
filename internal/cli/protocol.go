@@ -228,59 +228,27 @@ func checkProtocols(
 		)
 		probeCtx, cancelProbes := context.WithCancel(ctx)
 		defer cancelProbes()
-		results := make([]probeResult, len(uncached))
-		sem := make(chan struct{}, maxConcurrentProbes)
-		var wg sync.WaitGroup
+		pending := make([]probeKey, len(uncached))
 		for slot, idx := range uncached {
-			pk := checks[idx].key
-			wg.Add(1)
-			go func(slot int, pk probeKey) {
-				defer wg.Done()
-				select {
-				case sem <- struct{}{}:
-					defer func() { <-sem }()
-				case <-probeCtx.Done():
-					results[slot] = probeResult{
-						err: errors.New("not attempted after authentication failure or cancellation"),
-					}
-					return
-				}
-				if authFailed.Load() || probeCtx.Err() != nil {
-					results[slot] = probeResult{
-						err: errors.New("not attempted after authentication failure or cancellation"),
-					}
-					return
-				}
-				start := time.Now()
-				status, err := probeWithRetry(probeCtx, gw, key, pk)
-				dur := time.Since(start)
-				if rejected(err) {
-					authFailed.Store(true)
-					cancelProbes()
-				}
-				results[slot] = probeResult{status: status, err: err, duration: dur}
-			}(slot, pk)
+			pending[slot] = checks[idx].key
 		}
 		label := fmt.Sprintf("Checking %d protocol(s)…", len(uncached))
 		if len(uncached) == 1 {
-			c := checks[uncached[0]]
-			label = fmt.Sprintf("Checking %s (%s)…", c.key.protocol.Label(), c.key.model)
+			label = fmt.Sprintf("Checking %s (%s)…", pending[0].protocol.Label(), pending[0].model)
 		}
+		var results []probeResult
 		_ = run.p.ui.runWithProgress(run.p.ui.railPrefix(), label, func() error {
-			wg.Wait()
+			results = probeAll(probeCtx, cancelProbes, gw, key, pending, &authFailed)
 			return nil
 		})
 		for slot, idx := range uncached {
 			res := results[slot]
 			if authFailed.Load() && res.err != nil && !rejected(res.err) &&
 				errors.Is(res.err, context.Canceled) {
-				res.err = errors.New("not attempted after authentication failure or cancellation")
+				res.err = errNotAttempted
 			}
-			checks[idx].status = res.status
-			checks[idx].err = res.err
-			checks[idx].duration = res.duration
-			if cache != nil && !errors.Is(res.err, context.Canceled) &&
-				!authFailed.Load() {
+			checks[idx].status, checks[idx].err, checks[idx].duration = res.status, res.err, res.duration
+			if cache != nil && !errors.Is(res.err, context.Canceled) && !authFailed.Load() {
 				cache[checks[idx].key] = res
 			}
 		}
@@ -313,6 +281,58 @@ func checkProtocols(
 		}
 	}
 	return ready
+}
+
+var errNotAttempted = errors.New("not attempted after authentication failure or cancellation")
+
+// probeAll sends keys through at most maxConcurrentProbes workers, so a long selection holds that many goroutines
+// rather than one per model.
+func probeAll(
+	ctx context.Context,
+	cancel context.CancelFunc,
+	gw gateway.Client,
+	key string,
+	keys []probeKey,
+	authFailed *atomic.Bool,
+) []probeResult {
+	results := make([]probeResult, len(keys))
+	next := make(chan int)
+	var wg sync.WaitGroup
+	for range min(maxConcurrentProbes, len(keys)) {
+		wg.Go(func() {
+			for slot := range next {
+				results[slot] = probeOne(ctx, cancel, gw, key, keys[slot], authFailed)
+			}
+		})
+	}
+	for slot := range keys {
+		next <- slot
+	}
+	close(next)
+	wg.Wait()
+	return results
+}
+
+// probeOne sends one check unless authentication already failed or the run was cancelled; a rejected key cancels
+// the checks still waiting.
+func probeOne(
+	ctx context.Context,
+	cancel context.CancelFunc,
+	gw gateway.Client,
+	key string,
+	pk probeKey,
+	authFailed *atomic.Bool,
+) probeResult {
+	if authFailed.Load() || ctx.Err() != nil {
+		return probeResult{err: errNotAttempted}
+	}
+	start := time.Now()
+	status, err := probeWithRetry(ctx, gw, key, pk)
+	if rejected(err) {
+		authFailed.Store(true)
+		cancel()
+	}
+	return probeResult{status: status, err: err, duration: time.Since(start)}
 }
 
 func printProtocolResult(u ui, check protocolCheck) {
