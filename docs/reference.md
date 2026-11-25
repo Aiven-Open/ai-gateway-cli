@@ -8,7 +8,8 @@ installation and quickstart usage, see [`README.md`](../README.md).
 
 `avn-aig` and `aiven-ai-gateway` are the same command; `go install` provides
 only the long name, and after `npx` setup prints `npx @aivenio/ai-gateway`
-commands.
+commands. The npm package also installs `ai-gateway`, which is what
+`npx @aivenio/ai-gateway` runs; typed directly, it prints hints as `ai-gateway`.
 
 ## Terminal Interaction and Plain Mode
 

@@ -1,6 +1,6 @@
 # @aivenio/ai-gateway
 
-This package installs the `avn-aig` command and its long name `aiven-ai-gateway`. npm selects one
+This package installs the `avn-aig` command, its long name `aiven-ai-gateway` and `ai-gateway`, the bin that `npx @aivenio/ai-gateway` runs. npm selects one
 version-matched native package using its `os`/`cpu` metadata; this package
 contains only JavaScript and documentation. There are no install hooks,
 external binary URLs, telemetry or automatic updates.

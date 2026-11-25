@@ -12,7 +12,9 @@ import (
 const (
 	longName  = "aiven-ai-gateway"
 	shortName = "avn-aig"
-	npxName   = "npx @aivenio/ai-gateway"
+	// npmBinName is the bin npm picks for npx @aivenio/ai-gateway, the package's unscoped name.
+	npmBinName = "ai-gateway"
+	npxName    = "npx @aivenio/ai-gateway"
 	// InvokedAsVar is set by the npm wrapper, which starts the binary by its absolute path and so hides the name typed.
 	InvokedAsVar = "AIVEN_AI_GATEWAY_INVOKED_AS"
 )
@@ -20,7 +22,7 @@ const (
 // commandNames are the subcommands of the launcher.
 var commandNames = []string{"launch", "setup", "login", "logout", "models"}
 
-// CommandName is the command that reaches this binary again the way the user ran it. Only the wrapper's three values
+// CommandName is the command that reaches this binary again the way the user ran it. Only the wrapper's four values
 // of InvokedAsVar count, so the environment cannot put other text into a printed command.
 func CommandName(argv0 string, environ []string) string {
 	for _, kv := range environ {
@@ -31,7 +33,7 @@ func CommandName(argv0 string, environ []string) string {
 		switch value {
 		case "npx":
 			return npxName
-		case longName, shortName:
+		case longName, shortName, npmBinName:
 			return value
 		}
 	}

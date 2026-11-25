@@ -76,6 +76,12 @@ const shortHelp = spawnSync(shortShim, ["--help"], {
   env, encoding: "utf8", timeout: 30_000, shell: isWin, cwd: isolated,
 });
 assert.equal(shortHelp.status, 0, shortHelp.stderr);
+const npmShim = isWin ? join(prefix, "ai-gateway.cmd") : join(prefix, "bin/ai-gateway");
+const npmHelp = spawnSync(npmShim, ["--help"], {
+  env, encoding: "utf8", timeout: 30_000, shell: isWin, cwd: isolated,
+});
+assert.equal(npmHelp.status, 0, npmHelp.stderr);
+assert(npmHelp.stdout.startsWith("usage: ai-gateway <command> [args]\n"), npmHelp.stdout);
 // Each bin script names itself, so the usage line is the same on every platform, whatever the shim is.
 assert(shimHelp.stdout.startsWith("usage: aiven-ai-gateway <command> [args]\n"), shimHelp.stdout);
 assert(shortHelp.stdout.startsWith("usage: avn-aig <command> [args]\n"), shortHelp.stdout);

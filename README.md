@@ -17,7 +17,7 @@ AI Gateway.
   [`npm/README.md`](npm/README.md). Configured harnesses
   read their saved key file directly, so they keep working whichever way the
   launcher was run. Homebrew and npm both install `aiven-ai-gateway` and the
-  short name `avn-aig`.
+  short name `avn-aig`; npm also installs `ai-gateway`.
 
 - **Go module**, once a release is tagged (Go 1.27.4 or later, or default
   `GOTOOLCHAIN=auto`):

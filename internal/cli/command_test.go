@@ -25,6 +25,7 @@ func TestCommandNameFollowsInvocation(t *testing.T) {
 		{"/n/bin/aiven-ai-gateway", []string{cli.InvokedAsVar + "=npx"}, "npx @aivenio/ai-gateway"},
 		{"/n/bin/avn-aig", []string{cli.InvokedAsVar + "=rm -rf ~"}, "avn-aig"},
 		{"/n/bin/avn-aig", []string{cli.InvokedAsVar + "=aiven-ai-gateway"}, "aiven-ai-gateway"},
+		{"/n/bin/aiven-ai-gateway", []string{cli.InvokedAsVar + "=ai-gateway"}, "ai-gateway"},
 	} {
 		if got := cli.CommandName(tc.argv0, tc.environ); got != tc.want {
 			t.Errorf("CommandName(%q, %q) = %q, want %q", tc.argv0, tc.environ, got, tc.want)
@@ -33,7 +34,7 @@ func TestCommandNameFollowsInvocation(t *testing.T) {
 }
 
 func TestHintsUseInvokedCommand(t *testing.T) {
-	for _, command := range []string{"", "avn-aig", "npx @aivenio/ai-gateway"} {
+	for _, command := range []string{"", "avn-aig", "ai-gateway", "npx @aivenio/ai-gateway"} {
 		want := cmp.Or(command, "aiven-ai-gateway")
 		var out, errb bytes.Buffer
 		cli.Informational(

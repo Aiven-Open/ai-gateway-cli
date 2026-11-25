@@ -74,14 +74,15 @@ export function inspectArtifacts(directory) {
   const main = packages.get("@aivenio/ai-gateway");
   assert(main, "missing main package");
   assert.deepEqual(main.metadata.bin, {
+    "ai-gateway": "./bin/ai-gateway.mjs",
     "aiven-ai-gateway": "./bin/aiven-ai-gateway.mjs",
     "avn-aig": "./bin/avn-aig.mjs",
   });
   assert.deepEqual([...main.entries.keys()].sort(), [
-    "package/LICENSE", "package/README.md", "package/THIRD_PARTY_NOTICES", "package/bin/aiven-ai-gateway.mjs",
-    "package/bin/avn-aig.mjs", "package/lib/launcher.mjs", "package/lib/platforms.mjs", "package/package.json",
+    "package/LICENSE", "package/README.md", "package/THIRD_PARTY_NOTICES", "package/bin/ai-gateway.mjs",
+    "package/bin/aiven-ai-gateway.mjs", "package/bin/avn-aig.mjs", "package/lib/launcher.mjs", "package/lib/platforms.mjs", "package/package.json",
   ]);
-  for (const script of ["aiven-ai-gateway", "avn-aig"]) {
+  for (const script of ["ai-gateway", "aiven-ai-gateway", "avn-aig"]) {
     assert.equal(main.entries.get(`package/bin/${script}.mjs`).mode & 0o111, 0o111);
   }
   assert.equal(main.metadata.scripts?.install, undefined);
