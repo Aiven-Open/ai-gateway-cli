@@ -15,7 +15,9 @@ import (
 	"testing"
 
 	"github.com/aiven-open/ai-gateway-cli/internal/config"
+	"github.com/aiven-open/ai-gateway-cli/internal/harness"
 	"github.com/aiven-open/ai-gateway-cli/internal/harness/claude"
+	"github.com/aiven-open/ai-gateway-cli/internal/models"
 )
 
 // refusingGateway serves catalogue and answers the basic check for refused with HTTP 400.
@@ -492,5 +494,90 @@ func TestParsePickOfferedTakesAnOfferedIdWhateverItIsCalled(t *testing.T) {
 	}
 	if _, ok := parsePickOffered("codex", offered); ok {
 		t.Error("an id that is not offered was taken")
+	}
+}
+
+// sharedPresetRun picks the shared vendor preset at index preset with Pi and Claude Code selected
+// and returns the Claude Code env block and top-level model.
+func sharedPresetRun(
+	t *testing.T,
+	catalogue string,
+	preset int,
+) (map[string]any, any, *inlineSetupPrompter) {
+	t.Helper()
+	srv, _ := inlineGateway(t, catalogue)
+	env, home := inlineSetupEnv(t, srv.URL)
+	p := &inlineSetupPrompter{secret: "synthetic-key", scriptedSelector: scriptedSelector{
+		answers: []selectAnswer{
+			{picked: []int{0, 3}}, // Harnesses: Pi and Claude Code
+			{picked: []int{preset}},
+			{picked: []int{1}}, // Default provider: launch only
+			{picked: []int{0}}, // Review: Apply all
+		},
+	}}
+	var stderr strings.Builder
+	deps := inlineDeps(p, &stderr)
+	deps.HTTP = srv.Client()
+	if code := Run(t.Context(), []string{"setup"}, env, deps); code != 0 {
+		t.Fatalf("setup exit %d: %s", code, stderr.String())
+	}
+	path := filepath.Join(home, claude.SettingsFile)
+	return readJSONKey(t, path, "env").(map[string]any), readJSONKey(t, path, "model"), p
+}
+
+func TestSharedVendorPresetSetsClaudeCodeDefaultOnly(t *testing.T) {
+	t.Parallel()
+	env, model, p := sharedPresetRun(t, multiModelTestCatalogue, 3) // 0 Recommended, 3 Open-weight
+	if got := p.asked[1].options[3]; got.label != "Open-weight" || got.detail != "glm-5" {
+		t.Fatalf("Default model option 3 = %+v", got)
+	}
+	if model != "glm-5" || env["ANTHROPIC_CUSTOM_MODEL_OPTION"] != "glm-5" {
+		t.Errorf("Claude Code default = %v, custom %v", model, env["ANTHROPIC_CUSTOM_MODEL_OPTION"])
+	}
+	for _, v := range []string{"ANTHROPIC_DEFAULT_FABLE_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL"} {
+		if env[v] != "claude-sonnet-5-5" {
+			t.Errorf("%s = %v, want claude-sonnet-5-5", v, env[v])
+		}
+	}
+}
+
+func TestSharedVendorPresetKeepsAGrantedFableInItsTier(t *testing.T) {
+	t.Parallel()
+	const catalogue = `[
+	{"id":"claude-sonnet-5-5","owned_by":"Anthropic"},
+	{"id":"claude-fable-5-2","owned_by":"Anthropic"},
+	{"id":"glm-5","owned_by":"Z.ai"}
+]`
+	env, model, p := sharedPresetRun(t, catalogue, 2) // 0 Recommended, 1 Anthropic, 2 Open-weight
+	if got := p.asked[1].options[2]; got.label != "Open-weight" || got.detail != "glm-5" {
+		t.Fatalf("Default model option 2 = %+v", got)
+	}
+	if model != "glm-5" || env["ANTHROPIC_CUSTOM_MODEL_OPTION"] != "glm-5" {
+		t.Errorf("Claude Code default = %v, custom %v", model, env["ANTHROPIC_CUSTOM_MODEL_OPTION"])
+	}
+	if env["ANTHROPIC_DEFAULT_FABLE_MODEL"] != "claude-fable-5-2" {
+		t.Errorf("fable tier = %v, want claude-fable-5-2", env["ANTHROPIC_DEFAULT_FABLE_MODEL"])
+	}
+	if env["ANTHROPIC_DEFAULT_SONNET_MODEL"] != "claude-sonnet-5-5" {
+		t.Errorf("sonnet tier = %v", env["ANTHROPIC_DEFAULT_SONNET_MODEL"])
+	}
+}
+
+func TestSharedSelectionLeavesRecommendedDefaultsAndOtherToolsAlone(t *testing.T) {
+	t.Parallel()
+	table := []models.Model{
+		{Alias: "claude-sonnet-5-5", Owner: "Anthropic"},
+		{Alias: "glm-5", Owner: "Z.ai"},
+	}
+	preset := harness.ModelSelection{Preset: models.PresetOpenWeight}
+	if got := sharedSelection("claude", table, harness.ModelSelection{}); !got.IsZero() {
+		t.Errorf("Recommended defaults for Claude Code = %+v, want zero (keep existing)", got)
+	}
+	if got := sharedSelection("pi", table, preset); got.Preset != preset.Preset || got.Model != "" {
+		t.Errorf("preset for pi = %+v, want unchanged", got)
+	}
+	if got := sharedSelection("claude", table, preset); got.Preset != "" || got.Model != "glm-5" {
+		t.Errorf("preset for claude = %+v, want Model glm-5 only", got)
 	}
 }

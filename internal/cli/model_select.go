@@ -414,7 +414,7 @@ func selectMultiToolModels(
 	}
 	for _, pr := range models.Presets(table) {
 		items = append(items, modelMenuItem{
-			option: option{label: pr.Name, detail: multiPresetDetail(pr, eligible, table)},
+			option: option{label: pr.Name, detail: safe(pr.Main)},
 			sel:    harness.ModelSelection{Preset: pr.ID},
 		})
 	}
@@ -614,17 +614,6 @@ func multiToolSubtitle(eligible []*setupTarget, table []models.Model) string {
 	return sub
 }
 
-func multiPresetDetail(pr models.Preset, eligible []*setupTarget, table []models.Model) string {
-	hasClaude := slices.ContainsFunc(
-		eligible,
-		func(t *setupTarget) bool { return t.out.tool == "claude" },
-	)
-	if hasClaude {
-		return safe(presetDetail(pr, "claude"))
-	}
-	return safe(pr.Main)
-}
-
 func recommendedDefaultsDetail(
 	env config.Env,
 	eligible []*setupTarget,
@@ -702,7 +691,7 @@ func buildModelMenu(
 	}
 	for _, pr := range models.Presets(table) {
 		items = append(items, modelMenuItem{
-			option: option{label: pr.Name, detail: safe(presetDetail(pr, tool))},
+			option: option{label: pr.Name, detail: safe(pr.Main)},
 			sel:    harness.ModelSelection{Preset: pr.ID},
 		})
 	}
@@ -727,16 +716,21 @@ func modelDisplayDetail(table []models.Model, alias string) string {
 	return ""
 }
 
-func presetDetail(pr models.Preset, tool string) string {
-	if tool == "claude" {
-		if pr.ID == models.PresetAnthropic && (pr.Opus != pr.Main || pr.Haiku != pr.Main) {
-			return fmt.Sprintf("%s (opus: %s, haiku: %s)", pr.Main, pr.Opus, pr.Haiku)
-		}
-		if pr.Haiku != "" && pr.Haiku != pr.Main {
-			return fmt.Sprintf("%s (fast: %s)", pr.Main, pr.Haiku)
-		}
+// sharedSelection is the shared Default model answer as tool takes it. Claude Code takes a vendor
+// preset as its default model only, so its tier slots stay on granted Claude models.
+func sharedSelection(
+	tool string,
+	table []models.Model,
+	sel harness.ModelSelection,
+) harness.ModelSelection {
+	if tool != "claude" || sel.Preset == "" {
+		return sel
 	}
-	return pr.Main
+	main, err := sel.ResolveMain(table)
+	if err != nil || main == "" {
+		return sel
+	}
+	return harness.ModelSelection{Model: main}
 }
 
 func selectToolModel(

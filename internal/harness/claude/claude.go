@@ -358,12 +358,35 @@ func resolveSlots(
 	if sel.Model != "" {
 		chosen := bare(sel.Model)
 		if p, ok := models.FindPreset(t, models.PresetAnthropic); ok {
+			// A granted model of a tier's own keeps that tier (a claude-fable the preset does not
+			// name); only a tier the key grants none of takes the preset's stand-in.
+			own := claudeTiers(t)
 			s := slots{
-				main:   chosen,
-				opus:   keepGrantedClaudeTier(t, existingEnv, "ANTHROPIC_DEFAULT_OPUS_MODEL", p.Opus),
-				sonnet: keepGrantedClaudeTier(t, existingEnv, "ANTHROPIC_DEFAULT_SONNET_MODEL", p.Sonnet),
-				haiku:  keepGrantedClaudeTier(t, existingEnv, "ANTHROPIC_DEFAULT_HAIKU_MODEL", p.Haiku),
-				fable:  keepGrantedClaudeTier(t, existingEnv, "ANTHROPIC_DEFAULT_FABLE_MODEL", p.Fable),
+				main: chosen,
+				opus: keepGrantedClaudeTier(
+					t,
+					existingEnv,
+					"ANTHROPIC_DEFAULT_OPUS_MODEL",
+					cmp.Or(own.opus, p.Opus),
+				),
+				sonnet: keepGrantedClaudeTier(
+					t,
+					existingEnv,
+					"ANTHROPIC_DEFAULT_SONNET_MODEL",
+					cmp.Or(own.sonnet, p.Sonnet),
+				),
+				haiku: keepGrantedClaudeTier(
+					t,
+					existingEnv,
+					"ANTHROPIC_DEFAULT_HAIKU_MODEL",
+					cmp.Or(own.haiku, p.Haiku),
+				),
+				fable: keepGrantedClaudeTier(
+					t,
+					existingEnv,
+					"ANTHROPIC_DEFAULT_FABLE_MODEL",
+					cmp.Or(own.fable, p.Fable),
+				),
 			}
 			if chosen != s.opus && chosen != s.sonnet && chosen != s.haiku && chosen != s.fable {
 				s.custom = chosen
