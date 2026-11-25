@@ -6,14 +6,17 @@ Detailed command contracts, protocol routing, credential handling,
 configuration editing and stream rules for `aiven-ai-gateway`. For
 installation and quickstart usage, see [`README.md`](../README.md).
 
-`avn-aig` and `aiven-ai-gateway` are the same command; `go install` provides only the long name, and after `npx` setup prints `npx @aivenio/ai-gateway` commands.
+`avn-aig` and `aiven-ai-gateway` are the same command; `go install` provides
+only the long name, and after `npx` setup prints `npx @aivenio/ai-gateway`
+commands.
 
 ## Terminal Interaction and Plain Mode
 
-Without a terminal, bare `avn-aig` and `--help` display help and exit zero, even
-without credentials or a valid gateway environment. `--version` (or
-`version`) prints the build's version, commit and date without reading
-credentials or configuration. The primary commands (`setup` and `launch`)
+`avn-aig --help` prints this help, and so does bare `avn-aig` without a
+terminal; both exit zero, even without credentials or a valid gateway
+environment. `avn-aig claude --help` passes `--help` to Claude Code.
+`--version` (or `version`) prints the build's version, commit and date without
+reading credentials or configuration. The primary commands (`setup` and `launch`)
 accept `claude`, `codex`, `pi`, `opencode` or `omp`; without a terminal,
 name the harness explicitly.
 
@@ -119,8 +122,8 @@ context-window variables and `[1m]` for each slot. In Codex, the choice updates
 `aiven.config.toml` (and canonical `config.toml` when Aiven is set as the
 default provider). In Pi, OpenCode and OMP, the full granted catalogue is
 written to the provider file, the chosen default alias is persisted per gateway
-in `~/.config/aiven/ai-gateway-models.json` (`0600`) for `avn-aig <tool>`, and the native default is updated when Aiven is set as the
-default provider.
+in `~/.config/aiven/ai-gateway-models.json` (`0600`) for `avn-aig <tool>`, and
+the native default is updated when Aiven is set as the default provider.
 
 With `--yes` or without a terminal, `setup` skips interactive model and
 default-provider menus: fresh configurations use natural defaults
