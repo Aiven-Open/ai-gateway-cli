@@ -78,19 +78,13 @@ func (s *setupSession) restoreKeyIfNothingReady(prev keyFile) {
 	}
 }
 
-// commitNoWrites ends a run with no file to write. A new key is still saved when a selected tool is already up to
-// date, since that tool reads the key file. Any declined, skipped, failed or pending tool means the key is not saved.
+// commitNoWrites ends a run with no file to write. A new key is saved only when every selected tool is already up to
+// date, since each reads the key file. Otherwise the key is not saved.
 func (s *setupSession) commitNoWrites() int {
-	has := func(status targetStatus) bool {
-		return slices.ContainsFunc(
-			s.run.targets,
-			func(o *targetOutcome) bool { return o.status == status },
-		)
-	}
-	if !has(statusUnchanged) || has(statusDeclined) || has(statusSkipped) ||
-		has(statusFailed) || has(statusPending) {
+	if !s.everyToolUnchanged() {
 		s.run.credential = "not saved by this run; existing key files unchanged; " +
 			"no configuration changes were approved"
+		s.holdUnchangedToolsWithoutUsableKey()
 		return s.run.finish()
 	}
 	saved, err := storedKey(s.env)
@@ -105,6 +99,26 @@ func (s *setupSession) commitNoWrites() int {
 		return s.failRotation("saving the key", err)
 	}
 	return s.run.finish()
+}
+
+func (s *setupSession) everyToolUnchanged() bool {
+	return len(s.run.targets) > 0 && !slices.ContainsFunc(
+		s.run.targets,
+		func(o *targetOutcome) bool { return o.status != statusUnchanged },
+	)
+}
+
+// holdUnchangedToolsWithoutUsableKey stops reporting up-to-date tools as ready when the key file does not hold the key
+// they were checked with, since a launch would not find it.
+func (s *setupSession) holdUnchangedToolsWithoutUsableKey() {
+	if saved, err := storedKey(s.env); err == nil && saved == s.key {
+		return
+	}
+	for _, o := range s.run.targets {
+		if o.status == statusUnchanged {
+			o.status, o.reason = statusSkipped, "the key was not saved"
+		}
+	}
 }
 
 // failRotation ends a run whose key rotation failed: tools that were up to date are not reported as ready.

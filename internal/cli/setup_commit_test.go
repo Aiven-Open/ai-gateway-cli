@@ -37,3 +37,25 @@ func TestCommitNoWritesKeepsOldKeyWhenAnotherToolWasSkipped(t *testing.T) {
 		t.Errorf("credential = %q", s.run.credential)
 	}
 }
+
+// Every selected tool up to date means each reads the key file, so the new key is saved.
+func TestCommitNoWritesSavesKeyWhenEveryToolIsUnchanged(t *testing.T) {
+	env := config.Env{BaseURL: "https://a.example", UserHome: t.TempDir()}
+	if _, err := creds.Write(env.UserHome, env.BaseURL, "sk-old", fsutil.WriteAtomic); err != nil {
+		t.Fatal(err)
+	}
+	deps := Deps{Stderr: io.Discard}
+	p := newPresenter(env, deps, true)
+	s := &setupSession{env: env, deps: deps, key: "sk-new", p: p, run: &setupRun{
+		env: env,
+		p:   p,
+		targets: []*targetOutcome{
+			{tool: "claude", status: statusUnchanged},
+			{tool: "codex", status: statusUnchanged},
+		},
+	}}
+	s.commitNoWrites()
+	if got, err := storedKey(env); err != nil || got != "sk-new" {
+		t.Errorf("stored key = %q, %v; want sk-new", got, err)
+	}
+}

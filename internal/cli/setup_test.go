@@ -1091,3 +1091,38 @@ func TestSetupFailedRotationIsNotReportedAsComplete(t *testing.T) {
 		t.Errorf("exit %d, stderr %q", r.code, r.stderr)
 	}
 }
+
+// A missing tool is not up to date, so a new key is not saved beside the one that is.
+func TestSetupKeepsOldKeyWhenAnotherToolIsNotInstalled(t *testing.T) {
+	s := newSession(t, newGatewayDouble(t))
+	if r := s.stdin(keyShort).run("setup", "--key-stdin", "--yes", "claude"); r.code != 0 {
+		t.Fatalf("first setup: exit %d, stderr %q", r.code, r.stderr)
+	}
+	s.runner.missing = []string{"codex"}
+	s.deps.Prompter = &scriptedPrompter{answers: []string{"claude,codex"}}
+	r := s.stdin(keyBare).run("setup", "--key-stdin", "--yes")
+	if got := readOrEmpty(t, s.keyPath()); got != keyShort+"\n" {
+		t.Errorf("key file = %q, want %q; exit %d, stderr %q", got, keyShort+"\n", r.code, r.stderr)
+	}
+}
+
+// An up-to-date tool is not ready when the key it was checked with was not saved and none is usable.
+func TestSetupDoesNotAdvertiseUnchangedToolWhenKeyWasNotSaved(t *testing.T) {
+	s := newSession(t, newGatewayDouble(t))
+	if r := s.stdin(keyShort).run("setup", "--key-stdin", "--yes", "claude"); r.code != 0 {
+		t.Fatalf("first setup: exit %d, stderr %q", r.code, r.stderr)
+	}
+	if err := os.Remove(s.keyPath()); err != nil {
+		t.Fatal(err)
+	}
+	s.runner.missing = []string{"codex"}
+	s.deps.Prompter = &scriptedPrompter{answers: []string{"claude,codex"}}
+	r := s.stdin(keyBare).run("setup", "--key-stdin", "--yes")
+	if strings.Contains(r.stderr, "aiven-ai-gateway launch claude") ||
+		!strings.Contains(r.stderr, "the key was not saved") {
+		t.Errorf("exit %d, stderr %q", r.code, r.stderr)
+	}
+	if got := readOrEmpty(t, s.keyPath()); got != "" {
+		t.Errorf("key file = %q, want none", got)
+	}
+}
