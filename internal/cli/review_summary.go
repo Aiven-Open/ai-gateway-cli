@@ -34,7 +34,7 @@ func printSummary(u ui, item pendingPreview, env config.Env, table []models.Mode
 			if row.paths {
 				v = u.th.dim(v)
 			}
-			u.printf("  %s  %s\n", pad(label, summaryLabelWidth), v)
+			u.verbatim("  " + pad(label, summaryLabelWidth) + "  " + v + "\n")
 			label = ""
 		}
 	}

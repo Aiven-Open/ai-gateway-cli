@@ -59,19 +59,26 @@ test("full literal argv, empty/bare invocation, streams, environment and statuse
       env: { ...env, AIVEN_NPM_TEST_ENV: "synthetic-env", AIVEN_NPM_TEST_STATUS: String(status) },
     });
     assert.equal(result.status, status, result.stderr);
-    assert.deepEqual(JSON.parse(result.stdout), { Argv: argv, Input: "literal stdin", Env: "synthetic-env", InvokedAs: "avn-aig" });
+    assert.deepEqual(JSON.parse(result.stdout), { Argv: argv, Input: "literal stdin", Env: "synthetic-env", InvokedAs: "aiven-ai-gateway" });
     assert.equal(result.stderr, "fixture stderr");
   }
   assert.deepEqual(JSON.parse(run(process.execPath, [wrapper]).stdout).Argv, []);
 });
 
-test("tool is told how it was invoked", () => {
+test("tool is told the bin name that was typed", () => {
   const { wrapper } = installation();
-  const invoked = (extra) => JSON.parse(run(process.execPath, [wrapper], { env: { ...env, ...extra } }).stdout).InvokedAs;
-  assert.equal(invoked({}), "avn-aig");
-  assert.equal(invoked({ npm_command: "exec" }), "npx");
-  assert.equal(invoked({ npm_command: "run-script" }), "npx");
-  assert.equal(invoked({ AIVEN_AI_GATEWAY_INVOKED_AS: "forged" }), "avn-aig");
+  const bins = join(workspace, `bins ${sequence++}`);
+  mkdirSync(bins);
+  for (const name of ["aiven-ai-gateway", "avn-aig", "avn-aig-old"]) symlinkSync(wrapper, join(bins, name));
+  const invoked = (name, extra = {}) =>
+    JSON.parse(run(process.execPath, [join(bins, name)], { env: { ...env, ...extra } }).stdout).InvokedAs;
+  assert.equal(invoked("aiven-ai-gateway"), "aiven-ai-gateway");
+  assert.equal(invoked("avn-aig"), "avn-aig");
+  assert.equal(invoked("avn-aig-old"), "aiven-ai-gateway");
+  assert.equal(invoked("avn-aig", { npm_command: "exec" }), "npx");
+  assert.equal(invoked("aiven-ai-gateway", { npm_command: "run-script" }), "npx");
+  assert.equal(invoked("avn-aig", { AIVEN_AI_GATEWAY_INVOKED_AS: "forged" }), "avn-aig");
+  assert.equal(invoked("aiven-ai-gateway", { AIVEN_AI_GATEWAY_INVOKED_AS: "avn-aig" }), "aiven-ai-gateway");
   assert.deepEqual(metadata.bin, {
     "aiven-ai-gateway": "./bin/aiven-ai-gateway.mjs",
     "avn-aig": "./bin/aiven-ai-gateway.mjs",

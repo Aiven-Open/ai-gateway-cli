@@ -69,8 +69,11 @@ func newUIWithEnv(w io.Writer, tty bool, width func() int, plain bool, environ [
 func (u ui) paint(code, s string) string { return u.th.paint(code, s) }
 
 func (u ui) printf(format string, args ...any) {
-	_, _ = fmt.Fprint(u.w, rewriteHints(fmt.Sprintf(format, args...), u.cmd))
+	u.verbatim(rewriteHints(fmt.Sprintf(format, args...), u.cmd))
 }
+
+// verbatim writes s unchanged: diffs, file content and the model list show what is on disk or in the catalogue.
+func (u ui) verbatim(s string) { _, _ = fmt.Fprint(u.w, s) }
 
 // heading starts a section after a blank line.
 func (u ui) heading(s string) { u.printf("\n%s\n", u.th.bold(safe(s))) }
@@ -200,7 +203,7 @@ func (u ui) block(text string) {
 		case strings.HasPrefix(line, "@@"):
 			code = cyan
 		}
-		u.printf("%s\n", u.paint(code, safe(line)))
+		u.verbatim(u.paint(code, safe(line)) + "\n")
 	}
 }
 
@@ -274,7 +277,7 @@ func renderModels(u ui, table []models.Model) {
 		if i > 0 {
 			u.printf("\n")
 		}
-		u.printf("%s\n", u.th.bold(safe(g.Name)))
+		u.verbatim(u.th.bold(safe(g.Name)) + "\n")
 		// The readable name leads; the exact id harness flags take follows it, once when the two are the same.
 		nameWidth := 0
 		for _, m := range g.Models {
@@ -304,7 +307,7 @@ func renderModels(u ui, table []models.Model) {
 				if j >= len(entries) {
 					break
 				}
-				u.printf("%s", entries[j])
+				u.verbatim(entries[j])
 				if next := (c+1)*rows + r; next < len(entries) {
 					u.printf("%s", strings.Repeat(" ", cellWidth-cells(plain[j])+gap))
 				}

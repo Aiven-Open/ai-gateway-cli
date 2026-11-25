@@ -24,6 +24,7 @@ func TestCommandNameFollowsInvocation(t *testing.T) {
 		{"/n/bin/aiven-ai-gateway", []string{cli.InvokedAsVar + "=avn-aig"}, "avn-aig"},
 		{"/n/bin/aiven-ai-gateway", []string{cli.InvokedAsVar + "=npx"}, "npx @aivenio/ai-gateway"},
 		{"/n/bin/avn-aig", []string{cli.InvokedAsVar + "=rm -rf ~"}, "avn-aig"},
+		{"/n/bin/avn-aig", []string{cli.InvokedAsVar + "=aiven-ai-gateway"}, "aiven-ai-gateway"},
 	} {
 		if got := cli.CommandName(tc.argv0, tc.environ); got != tc.want {
 			t.Errorf("CommandName(%q, %q) = %q, want %q", tc.argv0, tc.environ, got, tc.want)

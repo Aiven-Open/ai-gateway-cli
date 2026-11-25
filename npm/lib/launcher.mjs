@@ -4,7 +4,7 @@ import { spawn } from "node:child_process";
 import { readFileSync, realpathSync, statSync, accessSync, constants } from "node:fs";
 import { createRequire } from "node:module";
 import { constants as osConstants } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { binaryName, packageName, selectTarget } from "./platforms.mjs";
 
@@ -60,7 +60,9 @@ export function run(argv) {
     process.exitCode = 1;
   };
   // npm leaves no command on PATH for npx, npm exec or a package script, so the tool's hints go through npx there.
-  const invokedAs = process.env.npm_command ? "npx" : "avn-aig";
+  // Elsewhere the bin name typed is the script's name, which a Windows shim hides; that case gets the long name.
+  const typed = basename(process.argv[1] ?? "").replace(/\.(mjs|cmd|exe)$/i, "");
+  const invokedAs = process.env.npm_command ? "npx" : typed === "avn-aig" ? "avn-aig" : "aiven-ai-gateway";
   let child;
   try {
     child = spawn(binary, argv, {

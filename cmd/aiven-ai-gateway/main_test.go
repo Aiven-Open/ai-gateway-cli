@@ -165,6 +165,8 @@ func TestShortNameBinaryNamesItself(t *testing.T) {
 		{short, "", "usage: avn-aig "},
 		{long, "npx", "usage: npx @aivenio/ai-gateway "},
 		{long, "", "usage: aiven-ai-gateway "},
+		{long, "aiven-ai-gateway", "usage: aiven-ai-gateway "},
+		{short, "aiven-ai-gateway", "usage: aiven-ai-gateway "},
 	} {
 		cmd := exec.Command(tc.bin, "--help")
 		cmd.Env = []string{"PATH=" + os.Getenv("PATH"), cli.InvokedAsVar + "=" + tc.invokedAs}

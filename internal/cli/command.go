@@ -20,7 +20,7 @@ const (
 // commandNames are the subcommands of the launcher.
 var commandNames = []string{"launch", "setup", "login", "logout", "models"}
 
-// CommandName is the command that reaches this binary again the way the user ran it. Only the wrapper's two values
+// CommandName is the command that reaches this binary again the way the user ran it. Only the wrapper's three values
 // of InvokedAsVar count, so the environment cannot put other text into a printed command.
 func CommandName(argv0 string, environ []string) string {
 	for _, kv := range environ {
@@ -31,8 +31,8 @@ func CommandName(argv0 string, environ []string) string {
 		switch value {
 		case "npx":
 			return npxName
-		case shortName:
-			return shortName
+		case longName, shortName:
+			return value
 		}
 	}
 	base := argv0[strings.LastIndexAny(argv0, `/\`)+1:]
@@ -73,11 +73,8 @@ func (h hintSelector) Select(c choice) ([]int, error) {
 	c.title, c.subtitle = rewriteHints(c.title, h.cmd), rewriteHints(c.subtitle, h.cmd)
 	options := make([]option, len(c.options))
 	for i, o := range c.options {
-		options[i] = option{
-			label:  rewriteHints(o.label, h.cmd),
-			detail: rewriteHints(o.detail, h.cmd),
-			picked: o.picked,
-		}
+		o.label, o.detail = rewriteHints(o.label, h.cmd), rewriteHints(o.detail, h.cmd)
+		options[i] = o
 	}
 	c.options = options
 	return h.selector.Select(c)
