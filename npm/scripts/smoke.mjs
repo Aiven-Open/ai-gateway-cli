@@ -76,6 +76,8 @@ const shortHelp = spawnSync(shortShim, ["--help"], {
   env, encoding: "utf8", timeout: 30_000, shell: isWin, cwd: isolated,
 });
 assert.equal(shortHelp.status, 0, shortHelp.stderr);
+// Each bin script names itself, so the usage line is the same on every platform, whatever the shim is.
+assert(shimHelp.stdout.startsWith("usage: aiven-ai-gateway <command> [args]\n"), shimHelp.stdout);
 assert(shortHelp.stdout.startsWith("usage: avn-aig <command> [args]\n"), shortHelp.stdout);
 
 // Setup and launch each tool against a loopback gateway, with a synthetic key and a fixture standing in for the tool.

@@ -56,7 +56,7 @@ const mainDir = join(packages, "main");
 mkdirSync(mainDir);
 for (const file of ["bin", "lib", "README.md"]) cpSync(join(npmRoot, file), join(mainDir, file), { recursive: true });
 for (const file of ["LICENSE", "THIRD_PARTY_NOTICES"]) cpSync(join(root, file), join(mainDir, file));
-chmodSync(join(mainDir, "bin/aiven-ai-gateway.mjs"), 0o755);
+for (const script of ["aiven-ai-gateway", "avn-aig"]) chmodSync(join(mainDir, `bin/${script}.mjs`), 0o755);
 main.version = version;
 main.optionalDependencies = Object.fromEntries(targets.map((target) => [packageName(target), version]));
 main.scripts = undefined;

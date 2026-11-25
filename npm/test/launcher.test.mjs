@@ -65,23 +65,19 @@ test("full literal argv, empty/bare invocation, streams, environment and statuse
   assert.deepEqual(JSON.parse(run(process.execPath, [wrapper]).stdout).Argv, []);
 });
 
-test("tool is told the bin name that was typed", () => {
-  const { wrapper } = installation();
-  const bins = join(workspace, `bins ${sequence++}`);
-  mkdirSync(bins);
-  for (const name of ["aiven-ai-gateway", "avn-aig", "avn-aig-old"]) symlinkSync(wrapper, join(bins, name));
-  const invoked = (name, extra = {}) =>
-    JSON.parse(run(process.execPath, [join(bins, name)], { env: { ...env, ...extra } }).stdout).InvokedAs;
-  assert.equal(invoked("aiven-ai-gateway"), "aiven-ai-gateway");
-  assert.equal(invoked("avn-aig"), "avn-aig");
-  assert.equal(invoked("avn-aig-old"), "aiven-ai-gateway");
-  assert.equal(invoked("avn-aig", { npm_command: "exec" }), "npx");
-  assert.equal(invoked("aiven-ai-gateway", { npm_command: "run-script" }), "npx");
-  assert.equal(invoked("avn-aig", { AIVEN_AI_GATEWAY_INVOKED_AS: "forged" }), "avn-aig");
-  assert.equal(invoked("aiven-ai-gateway", { AIVEN_AI_GATEWAY_INVOKED_AS: "avn-aig" }), "aiven-ai-gateway");
+test("each bin script tells the tool its own name", () => {
+  const { root } = installation();
+  const invoked = (script, extra = {}) =>
+    JSON.parse(run(process.execPath, [join(root, "bin", script)], { env: { ...env, ...extra } }).stdout).InvokedAs;
+  assert.equal(invoked("aiven-ai-gateway.mjs"), "aiven-ai-gateway");
+  assert.equal(invoked("avn-aig.mjs"), "avn-aig");
+  assert.equal(invoked("avn-aig.mjs", { npm_command: "exec" }), "npx");
+  assert.equal(invoked("aiven-ai-gateway.mjs", { npm_command: "run-script" }), "npx");
+  assert.equal(invoked("avn-aig.mjs", { AIVEN_AI_GATEWAY_INVOKED_AS: "forged" }), "avn-aig");
+  assert.equal(invoked("aiven-ai-gateway.mjs", { AIVEN_AI_GATEWAY_INVOKED_AS: "avn-aig" }), "aiven-ai-gateway");
   assert.deepEqual(metadata.bin, {
     "aiven-ai-gateway": "./bin/aiven-ai-gateway.mjs",
-    "avn-aig": "./bin/aiven-ai-gateway.mjs",
+    "avn-aig": "./bin/avn-aig.mjs",
   });
 });
 
