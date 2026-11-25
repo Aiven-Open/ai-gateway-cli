@@ -435,34 +435,7 @@ func resolveSlots(
 		return s, err == nil, err
 	}
 	if sel.Model != "" {
-		chosen := bare(sel.Model)
-		if p, ok := models.FindPreset(t, models.PresetAnthropic); ok {
-			// A granted model of a tier's own keeps that tier (a claude-fable the preset does not
-			// name); only a tier the key grants none of takes the preset's stand-in.
-			own, stand := claudeTiers(
-				t,
-			), slots{
-				opus:   p.Opus,
-				sonnet: p.Sonnet,
-				haiku:  p.Haiku,
-				fable:  p.Fable,
-			}
-			s := slots{main: chosen}
-			for _, v := range tierVars {
-				s = s.withTier(v, keepGrantedClaudeTier(t, existingEnv, v, cmp.Or(own.tier(v), stand.tier(v))))
-			}
-			if chosen != s.opus && chosen != s.sonnet && chosen != s.haiku && chosen != s.fable {
-				s.custom = chosen
-			}
-			return s, true, nil
-		}
-		return slots{
-			main:   chosen,
-			opus:   chosen,
-			sonnet: chosen,
-			haiku:  chosen,
-			fable:  chosen,
-		}, true, nil
+		return modelSlots(t, sel.Model, existingEnv)
 	}
 	p, ok := models.FindPreset(t, sel.Preset)
 	if !ok {
@@ -474,6 +447,38 @@ func resolveSlots(
 		sonnet: p.Sonnet,
 		haiku:  p.Haiku,
 		fable:  p.Fable,
+	}, true, nil
+}
+
+// modelSlots fills the slots for a single chosen model.
+func modelSlots(t []models.Model, model string, existingEnv map[string]any) (slots, bool, error) {
+	chosen := bare(model)
+	if p, ok := models.FindPreset(t, models.PresetAnthropic); ok {
+		// A granted model of a tier's own keeps that tier (a claude-fable the preset does not
+		// name); only a tier the key grants none of takes the preset's stand-in.
+		own, stand := claudeTiers(
+			t,
+		), slots{
+			opus:   p.Opus,
+			sonnet: p.Sonnet,
+			haiku:  p.Haiku,
+			fable:  p.Fable,
+		}
+		s := slots{main: chosen}
+		for _, v := range tierVars {
+			s = s.withTier(v, keepGrantedClaudeTier(t, existingEnv, v, cmp.Or(own.tier(v), stand.tier(v))))
+		}
+		if chosen != s.opus && chosen != s.sonnet && chosen != s.haiku && chosen != s.fable {
+			s.custom = chosen
+		}
+		return s, true, nil
+	}
+	return slots{
+		main:   chosen,
+		opus:   chosen,
+		sonnet: chosen,
+		haiku:  chosen,
+		fable:  chosen,
 	}, true, nil
 }
 
