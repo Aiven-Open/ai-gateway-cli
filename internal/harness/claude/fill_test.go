@@ -175,7 +175,14 @@ func TestResolveSlotsFillsChosenModelsByTheRule(t *testing.T) {
 			table: aivenOpus,
 			sel:   picks("claude-opus-5-5", "claude-opus-5-5", "glm-5"),
 			want: slots{main: "claude-opus-5-5", custom: "claude-opus-5-5", fable: "glm-5",
-				opus: "claude-opus-5-5", sonnet: "claude-sonnet-5-5", haiku: "claude-haiku-4-5"},
+				sonnet: "claude-sonnet-5-5", haiku: "claude-haiku-4-5"},
+		},
+		{
+			name:  "an Aiven-owned claude- alias picked alone fills one slot and no tier default",
+			table: aivenOpus,
+			sel:   picks("claude-opus-5-5", "claude-opus-5-5"),
+			want: slots{main: "claude-opus-5-5", custom: "claude-opus-5-5",
+				sonnet: "claude-sonnet-5-5", haiku: "claude-haiku-4-5"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

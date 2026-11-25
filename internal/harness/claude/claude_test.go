@@ -1583,7 +1583,7 @@ func TestKeepCurrentDropsSlotsPinnedToAModelTheKeyNoLongerGrants(t *testing.T) {
 func TestKeepCurrentWithTheNativeDefaultKeepsATierAliasAsTheNativeModel(t *testing.T) {
 	t.Parallel()
 	for model, want := range map[string]string{
-		"opus": "opus", "sonnet[1m]": "sonnet[1m]", "retired-model": "gemini-4-neon[1m]",
+		"opus": "opus", "sonnet[1m]": "sonnet[1m]", "default": "default", "retired-model": "gemini-4-neon[1m]",
 	} {
 		in := input(t)
 		in.Table = mixTable
@@ -1597,6 +1597,30 @@ func TestKeepCurrentWithTheNativeDefaultKeepsATierAliasAsTheNativeModel(t *testi
 		data, _ := os.ReadFile(native)
 		if got := decode(t, data)["model"]; got != want {
 			t.Errorf("native model %q became %v, want %q", model, got, want)
+		}
+	}
+}
+
+func TestKeepCurrentWithTheNativeDefaultLeavesANonStringNativeModelAlone(t *testing.T) {
+	t.Parallel()
+	for name, raw := range map[string]string{"number": `5`, "object": `{"id":"retired-model"}`, "list": `["opus"]`} {
+		in := input(t)
+		in.Table = mixTable
+		in.Selection = mixSelection
+		setUp(t, in)
+		native := filepath.Join(in.UserHome, ".claude", "settings.json")
+		write(t, native, `{"model":`+raw+`}`)
+		in.Selection = harness.ModelSelection{}
+		in.Default = true
+		setUp(t, in)
+		data, _ := os.ReadFile(native)
+		var got, want any
+		if err := json.Unmarshal([]byte(raw), &want); err != nil {
+			t.Fatal(err)
+		}
+		got = decode(t, data)["model"]
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("%s native model became %v, want %v", name, got, want)
 		}
 	}
 }

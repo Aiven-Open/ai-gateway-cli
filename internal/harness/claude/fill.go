@@ -78,7 +78,7 @@ func fillSlots(t []models.Model, sel harness.ModelSelection) (slots, error) {
 	held, ticked := withClaudePicks(t, claudeTiers(t), sel.Models)
 	spare := slots{fable: main, opus: main, sonnet: main, haiku: main}
 	if _, ok := models.FindPreset(t, models.PresetAnthropic); ok {
-		spare = defaultSlots(t)
+		spare = claudeOnly(t, defaultSlots(t))
 	}
 	s := slots{main: main}
 	queue := others
@@ -93,6 +93,17 @@ func fillSlots(t []models.Model, sel harness.ModelSelection) (slots, error) {
 		s = s.withTier(v, alias)
 	}
 	return s, nil
+}
+
+// claudeOnly is s with each tier that holds a model IsClaude refuses emptied, so such a model keeps the one slot its
+// pick gave it.
+func claudeOnly(t []models.Model, s slots) slots {
+	for _, v := range tierVars {
+		if alias := s.tier(v); alias != "" && !IsClaude(t, alias) {
+			s = s.withTier(v, "")
+		}
+	}
+	return s
 }
 
 // otherPicks are the picks that are not Anthropic models, once each, in the order chosen.
@@ -113,12 +124,16 @@ func claudeTiers(t []models.Model) slots {
 	return slots{fable: own.Fable, opus: own.Opus, sonnet: own.Sonnet, haiku: own.Haiku}
 }
 
+// tierName is the upper-case name of the tier slot v, as the wiring keys it: OPUS for ANTHROPIC_DEFAULT_OPUS_MODEL.
+func tierName(v string) string {
+	return strings.TrimSuffix(strings.TrimPrefix(v, "ANTHROPIC_DEFAULT_"), "_MODEL")
+}
+
 // namedTier is the tier slot an alias names, checked in tierVars order (claude-fable-5-2 names
 // ANTHROPIC_DEFAULT_FABLE_MODEL), or "" when it names none.
 func namedTier(alias string) string {
 	for _, v := range tierVars {
-		word := strings.ToLower(strings.TrimSuffix(strings.TrimPrefix(v, "ANTHROPIC_DEFAULT_"), "_MODEL"))
-		if strings.Contains(alias, word) {
+		if strings.Contains(alias, strings.ToLower(tierName(v))) {
 			return v
 		}
 	}

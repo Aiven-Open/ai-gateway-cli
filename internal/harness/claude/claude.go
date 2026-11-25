@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -134,6 +135,12 @@ func tierSlot(s slots, model string) (string, bool) {
 	return "", false
 }
 
+// isCodeAlias reports whether model is one of Claude Code's own model aliases: the four tiers, opusplan and default.
+func isCodeAlias(model string) bool {
+	_, tier := tierSlot(slots{}, bare(model))
+	return tier || strings.EqualFold(bare(model), "default")
+}
+
 // APIKeyHelper is the key helper Claude Code runs through its shell for the gateway at baseURL, which prints that
 // gateway's key file. Claude Code caches its output for five minutes and runs it again after a 401 or 403.
 func APIKeyHelper(baseURL string) string { return creds.CommandLine(baseURL, runtime.GOOS) }
@@ -212,8 +219,8 @@ func siblingSlots(sibling, env map[string]any) map[string]any {
 // alias, which resolves through the slots, else the dedicated file's. It reports the model to wire, and drops any
 // other from cfg so that the fresh path sets it.
 func siblingModel(t []models.Model, sibling, cfg map[string]any, s slots) slots {
-	own, _ := cfg["model"].(string)
-	if _, alias := tierSlot(s, bare(own)); !alias && grantedPin(t, cfg, "model", "") == "" {
+	if own, isString := cfg["model"].(string); isString && !isCodeAlias(own) &&
+		grantedPin(t, cfg, "model", "") == "" {
 		delete(cfg, "model")
 	}
 	s.main = cmp.Or(grantedPin(t, sibling, "model", ""), s.main)
@@ -225,6 +232,42 @@ func siblingModel(t []models.Model, sibling, cfg map[string]any, s slots) slots 
 func keepsBlankCustomOption(in Input, env map[string]any) bool {
 	v, ok := env["ANTHROPIC_CUSTOM_MODEL_OPTION"].(string)
 	return ok && v == "" && in.Selection.IsZero()
+}
+
+// tierSource is the env the slots resolve from: the dedicated file's slots under the native one, and for a chosen
+// single model the user's own env beneath the file's.
+func tierSource(in Input, sibling, env, userSettings map[string]any) map[string]any {
+	tierEnv := env
+	if sibling != nil {
+		tierEnv = siblingSlots(sibling, env)
+	}
+	if in.Selection.Model != "" && !in.Default && userSettings != nil {
+		if userEnv, ok := userSettings["env"].(map[string]any); ok && len(userEnv) > 0 {
+			merged := make(map[string]any, len(userEnv)+len(env))
+			maps.Copy(merged, userEnv)
+			maps.Copy(merged, env)
+			tierEnv = merged
+		}
+	}
+	return tierEnv
+}
+
+// gatewayEnv is the env entries every wired file sets: the gateway URL, the tier slots and the blanked credentials.
+func gatewayEnv(baseURL string, ids map[string]string) map[string]string {
+	return map[string]string{
+		"ANTHROPIC_BASE_URL":             baseURL,
+		"ANTHROPIC_DEFAULT_OPUS_MODEL":   ids["OPUS"],
+		"ANTHROPIC_DEFAULT_SONNET_MODEL": ids["SONNET"],
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL":  ids["HAIKU"],
+		"ANTHROPIC_DEFAULT_FABLE_MODEL":  ids["FABLE"],
+		"ANTHROPIC_AUTH_TOKEN":           "",
+		"ANTHROPIC_API_KEY":              "",
+		"CLAUDE_CODE_USE_BEDROCK":        "",
+		"CLAUDE_CODE_USE_VERTEX":         "",
+		"CLAUDE_CODE_USE_FOUNDRY":        "",
+		"AWS_BEARER_TOKEN_BEDROCK":       "",
+		"ANTHROPIC_CUSTOM_HEADERS":       "",
+	}
 }
 
 func wire(in Input, path string) (harness.File, error) {
@@ -240,20 +283,12 @@ func wire(in Input, path string) (harness.File, error) {
 	if !in.Selection.IsZero() && !in.Default {
 		userSettings, _ = harness.ReadObject(filepath.Join(in.UserHome, ".claude", "settings.json"))
 	}
-	tierEnv := env
 	sibling := dedicatedLayer(in, path)
-	if sibling != nil {
-		tierEnv = siblingSlots(sibling, env)
-	}
-	if in.Selection.Model != "" && !in.Default && userSettings != nil {
-		if userEnv, ok := userSettings["env"].(map[string]any); ok && len(userEnv) > 0 {
-			merged := make(map[string]any, len(userEnv)+len(env))
-			maps.Copy(merged, userEnv)
-			maps.Copy(merged, env)
-			tierEnv = merged
-		}
-	}
-	s, explicit, err := resolveSlots(in.Table, in.Selection, tierEnv)
+	s, explicit, err := resolveSlots(
+		in.Table,
+		in.Selection,
+		tierSource(in, sibling, env, userSettings),
+	)
 	if err != nil {
 		return harness.File{}, err
 	}
@@ -286,20 +321,7 @@ func wire(in Input, path string) (harness.File, error) {
 	if explicit || fresh {
 		env[discoveryVar] = "1"
 	}
-	for k, v := range map[string]string{
-		"ANTHROPIC_BASE_URL":             in.BaseURL,
-		"ANTHROPIC_DEFAULT_OPUS_MODEL":   ids["OPUS"],
-		"ANTHROPIC_DEFAULT_SONNET_MODEL": ids["SONNET"],
-		"ANTHROPIC_DEFAULT_HAIKU_MODEL":  ids["HAIKU"],
-		"ANTHROPIC_DEFAULT_FABLE_MODEL":  ids["FABLE"],
-		"ANTHROPIC_AUTH_TOKEN":           "",
-		"ANTHROPIC_API_KEY":              "",
-		"CLAUDE_CODE_USE_BEDROCK":        "",
-		"CLAUDE_CODE_USE_VERTEX":         "",
-		"CLAUDE_CODE_USE_FOUNDRY":        "",
-		"AWS_BEARER_TOKEN_BEDROCK":       "",
-		"ANTHROPIC_CUSTOM_HEADERS":       "",
-	} {
+	for k, v := range gatewayEnv(in.BaseURL, ids) {
 		env[k] = v
 	}
 	if ids["CUSTOM"] != "" {
@@ -417,33 +439,17 @@ func resolveSlots(
 		if p, ok := models.FindPreset(t, models.PresetAnthropic); ok {
 			// A granted model of a tier's own keeps that tier (a claude-fable the preset does not
 			// name); only a tier the key grants none of takes the preset's stand-in.
-			own := claudeTiers(t)
-			s := slots{
-				main: chosen,
-				opus: keepGrantedClaudeTier(
-					t,
-					existingEnv,
-					"ANTHROPIC_DEFAULT_OPUS_MODEL",
-					cmp.Or(own.opus, p.Opus),
-				),
-				sonnet: keepGrantedClaudeTier(
-					t,
-					existingEnv,
-					"ANTHROPIC_DEFAULT_SONNET_MODEL",
-					cmp.Or(own.sonnet, p.Sonnet),
-				),
-				haiku: keepGrantedClaudeTier(
-					t,
-					existingEnv,
-					"ANTHROPIC_DEFAULT_HAIKU_MODEL",
-					cmp.Or(own.haiku, p.Haiku),
-				),
-				fable: keepGrantedClaudeTier(
-					t,
-					existingEnv,
-					"ANTHROPIC_DEFAULT_FABLE_MODEL",
-					cmp.Or(own.fable, p.Fable),
-				),
+			own, stand := claudeTiers(
+				t,
+			), slots{
+				opus:   p.Opus,
+				sonnet: p.Sonnet,
+				haiku:  p.Haiku,
+				fable:  p.Fable,
+			}
+			s := slots{main: chosen}
+			for _, v := range tierVars {
+				s = s.withTier(v, keepGrantedClaudeTier(t, existingEnv, v, cmp.Or(own.tier(v), stand.tier(v))))
 			}
 			if chosen != s.opus && chosen != s.sonnet && chosen != s.haiku && chosen != s.fable {
 				s.custom = chosen
@@ -543,6 +549,30 @@ func configuredSettings(home, baseURL string) (map[string]any, error) {
 	return nil, errors.New("settings have incompatible Aiven gateway or credential helper")
 }
 
+// childEnv is the child env for the gateway at baseURL, running main, with the credentials of other providers blanked.
+func childEnv(baseURL, main string) []string {
+	return []string{
+		"ANTHROPIC_BASE_URL=" + baseURL,
+		"ANTHROPIC_AUTH_TOKEN=",
+		"ANTHROPIC_API_KEY=",
+		"CLAUDE_CODE_USE_BEDROCK=",
+		"CLAUDE_CODE_USE_VERTEX=",
+		"CLAUDE_CODE_USE_FOUNDRY=",
+		"AWS_BEARER_TOKEN_BEDROCK=",
+		"ANTHROPIC_CUSTOM_HEADERS=",
+		"ANTHROPIC_MODEL=" + main,
+	}
+}
+
+// slotEnv is the child env of each tier slot, opus to fable, then the custom option.
+func slotEnv(t []models.Model, s slots, ids map[string]string) []string {
+	var out []string
+	for _, v := range slices.Concat(tierVars[1:], tierVars[:1]) {
+		out = append(out, slot(t, v, s.tier(v), ids[tierName(v)])...)
+	}
+	return append(out, slot(t, "ANTHROPIC_CUSTOM_MODEL_OPTION", s.custom, ids["CUSTOM"])...)
+}
+
 // Launch passes only launcher-owned settings inline. Native user/project settings remain additive;
 // arbitrary extras in SettingsFile are retained by setup for direct native invocation.
 func Launch(in Input) (harness.Plan, error) {
@@ -557,28 +587,14 @@ func Launch(in Input) (harness.Plan, error) {
 	main, ids := wiring(in.Table, s)
 	// The window follows the model a native --model runs instead.
 	name, window := windowVar(in.Table, running(s, s.main, in.Args))
-	child := []string{
-		"ANTHROPIC_BASE_URL=" + in.BaseURL,
-		"ANTHROPIC_AUTH_TOKEN=",
-		"ANTHROPIC_API_KEY=",
-		"CLAUDE_CODE_USE_BEDROCK=",
-		"CLAUDE_CODE_USE_VERTEX=",
-		"CLAUDE_CODE_USE_FOUNDRY=",
-		"AWS_BEARER_TOKEN_BEDROCK=",
-		"ANTHROPIC_CUSTOM_HEADERS=",
-		"ANTHROPIC_MODEL=" + main,
-	}
+	child := childEnv(in.BaseURL, main)
 	w := windowEnv(name, window)
 	child = append(
 		child,
 		maxContextTokens+"="+w[maxContextTokens],
 		autoCompactWindow+"="+w[autoCompactWindow],
 	)
-	child = append(child, slot(in.Table, "ANTHROPIC_DEFAULT_OPUS_MODEL", s.opus, ids["OPUS"])...)
-	child = append(child, slot(in.Table, "ANTHROPIC_DEFAULT_SONNET_MODEL", s.sonnet, ids["SONNET"])...)
-	child = append(child, slot(in.Table, "ANTHROPIC_DEFAULT_HAIKU_MODEL", s.haiku, ids["HAIKU"])...)
-	child = append(child, slot(in.Table, "ANTHROPIC_DEFAULT_FABLE_MODEL", s.fable, ids["FABLE"])...)
-	child = append(child, slot(in.Table, "ANTHROPIC_CUSTOM_MODEL_OPTION", s.custom, ids["CUSTOM"])...)
+	child = append(child, slotEnv(in.Table, s, ids)...)
 	discovery := discoveryOn(cfg)
 	if discovery {
 		child = append(child, discoveryVar+"=1")
