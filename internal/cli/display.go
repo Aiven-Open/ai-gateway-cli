@@ -157,6 +157,9 @@ func (r redactor) redact(text string) string {
 	text = r.lists(text)
 	text = numberField.ReplaceAllStringFunc(text, func(m string) string {
 		sub := numberField.FindStringSubmatch(m)
+		if redact.CountName(strings.TrimRight(sub[1], "\"' \t:=")) {
+			return m
+		}
 		return sub[1] + r.hide(sub[2])
 	})
 	// Masking a comment can remove the end of a block comment, so containers are scanned first. A block comment that
@@ -327,12 +330,15 @@ func quoted(text string) bool {
 // keeps reports whether a credential field's quoted value only says where a key is. field is the name with its
 // separator; a JSON value is compared unescaped, since the launcher's helper command holds quotes.
 func (r redactor) keeps(field, quoted string) bool {
+	name := strings.ToLower(strings.TrimRight(field, "\"' \t:="))
+	if redact.CountName(name) {
+		return true
+	}
 	v := quoted[1 : len(quoted)-1]
 	if quoted[0] == '"' {
 		if u, err := strconv.Unquote(quoted); err == nil {
 			v = u
 		}
 	}
-	name := strings.ToLower(strings.TrimRight(field, "\"' \t:="))
 	return v == "" || launcherValue(v) || r.reference != nil && r.reference(name, v)
 }

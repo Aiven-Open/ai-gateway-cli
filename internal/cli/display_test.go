@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pelletier/go-toml/v2"
 
@@ -224,5 +225,45 @@ func TestRedactHidesAValueThatReadsLikeAPlaceholder(t *testing.T) {
 		if strings.Contains(before+after, "<redacted 1>") {
 			t.Errorf("%q: before %q, after %q", old, before, after)
 		}
+	}
+}
+
+func TestRedactShowsTokenCountsAndHidesTokens(t *testing.T) {
+	for _, line := range []string{
+		`"CLAUDE_CODE_MAX_CONTEXT_TOKENS": "163840"`,
+		`"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "200000"`,
+		`"maxTokens": 32000`,
+		`max_output_tokens = 64000`,
+		`"context_window_tokens": 1000000`,
+	} {
+		if got := newRedactor(nil).redact(line); got != line {
+			t.Errorf("redact(%s) = %s, want it unchanged", line, got)
+		}
+	}
+	for _, line := range []string{
+		`"ACCESS_TOKEN": "opaque"`,
+		`"GITHUB_TOKENS": "opaque"`,
+		`"max_auth_tokens": "opaque"`,
+		`"token": 42`,
+		`api_tokens = "opaque"`,
+	} {
+		if got := newRedactor(nil).redact(line); !strings.Contains(got, "<redacted 1>") {
+			t.Errorf("redact(%s) = %s, want the value hidden", line, got)
+		}
+	}
+}
+
+// Show file changes goes through changes, so the context window a settings file declares is readable there.
+func TestShowChangesKeepsContextWindowAndHidesToken(t *testing.T) {
+	f := harness.File{
+		Path: filepath.Join(t.TempDir(), "aiven.settings.json"),
+		Data: []byte(
+			`{"env":{"CLAUDE_CODE_MAX_CONTEXT_TOKENS":"163840","ANTHROPIC_AUTH_TOKEN":"opaque-value"}}` + "\n",
+		),
+	}
+	_, diff, err := changes([]harness.File{f}, backupNames{time.Unix(0, 0), map[string]string{}})
+	if err != nil || !strings.Contains(diff, `"CLAUDE_CODE_MAX_CONTEXT_TOKENS":"163840"`) ||
+		strings.Contains(diff, "opaque-value") {
+		t.Fatalf("diff %q, %v", diff, err)
 	}
 }
