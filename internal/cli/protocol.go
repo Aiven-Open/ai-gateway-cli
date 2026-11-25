@@ -221,7 +221,7 @@ func checkProtocols(
 
 	if len(uncached) > 0 && !authFailed.Load() {
 		run.p.ui.railNote(
-			"Sending one 1-token check per configured protocol and model (may incur usage).",
+			"Sending 1-token checks for each configured protocol and model (may incur usage).",
 		)
 		probeCtx, cancelProbes := context.WithCancel(ctx)
 		defer cancelProbes()

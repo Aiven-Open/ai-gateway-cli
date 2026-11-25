@@ -68,20 +68,41 @@ layers), interactive `setup` runs three reversible steps before review:
    tool. Single-tool runs prompt directly, keeping existing granted models as
    `Keep current (<alias>)` and defaulting ungranted models to
    `Keep unchanged (refuse setup)`.
+   Claude Code has its own menu instead of presets: `Keep current` when it is
+   already configured, `Recommended defaults` and `Choose models`.
 3. **Default provider:** asks *"Use Aiven AI Gateway as the default?"*,
    defaulting to `Yes` for all selected tools, with options to keep
    launcher-only (`aiven-ai-gateway launch`) or choose per tool (naming
    each config file).
 
-In Claude Code, recommended defaults stay on Claude models whenever
-Anthropic models are granted (removing any stale `ANTHROPIC_CUSTOM_MODEL_OPTION`).
-Picking a preset sets `model` (replacing any non-blank
-`env.ANTHROPIC_MODEL`) and the preset's tier slots
-(`ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL`). Picking a single
-custom model sets `model` and `ANTHROPIC_CUSTOM_MODEL_OPTION` while
-keeping the Claude tier slots intact whenever Anthropic models are granted
-(or filling the tier slots with the chosen model on keys without Anthropic
-models), and recomputes context-window variables and `[1m]`. In Codex, the choice updates `aiven.config.toml` (and canonical
+In Claude Code, the menu is `Keep current` when it is already configured,
+`Recommended defaults` and `Choose models`. The other tools keep their preset
+list. `Recommended defaults` stays on Claude models whenever Anthropic models
+are granted and removes any stale `ANTHROPIC_CUSTOM_MODEL_OPTION`. A shared
+vendor preset in the Default model step sets Claude Code's default model only.
+
+`Choose models` lists every granted model by vendor. Tick any number of Claude
+models and up to five models from other vendors; a sixth is refused where you
+tick it. A model counts as a Claude model when the gateway lists it under
+Anthropic, or lists no publisher and its id starts with `claude-`. Then choose
+the default, which setup writes to `model`. A ticked Claude model goes in the
+tier its id names. The other picks fill `ANTHROPIC_CUSTOM_MODEL_OPTION` first,
+then the tier slots `ANTHROPIC_DEFAULT_{FABLE,OPUS,SONNET,HAIKU}_MODEL`: first
+tiers with no granted Claude model, then tiers holding a Claude model you did
+not tick, then tiers holding one you ticked, and the haiku tier last. Order
+within each group is fable, opus, sonnet, haiku. Choosing again with the same
+picks gives the same slots, because an explicit choice takes tier defaults from
+the gateway's catalogue and not from pins already in the file. `Keep current`
+and `--yes` keep every slot the key still grants.
+
+Claude Code sends some work to a tier by name, so a non-Claude model in a tier
+slot receives that work. Setup sets `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1`,
+which lists the granted Claude models in `/model` too, including one moved out
+of its tier. Every chosen model gets one basic check request, so several picks
+mean several requests. A chosen model that fails its check fails Claude Code
+only; other selected tools still proceed. To change the picks, run setup again.
+Setup recomputes context-window variables and `[1m]` for each slot.
+In Codex, the choice updates `aiven.config.toml` (and canonical
 `config.toml` when Aiven is set as the default provider). In Pi, OpenCode
 and OMP, the full granted catalogue is written to the provider file, the
 chosen default alias is persisted per gateway in
@@ -98,7 +119,7 @@ layers) fail before probes or writes, naming any derived gateway alias.
 
 Next, `setup` prints one dimmed usage notice and probes each distinct
 uncached `(protocol, model)` concurrently (Chat Completions, Messages or
-Responses, 1 output token each) with a live spinner on styled terminals and
+Responses, 1 output token each, and a check that times out is sent once more) with a live spinner on styled terminals and
 deterministic sorted status rows with elapsed latency. Completed probe
 results are memoized across `Back` navigation so stepping back and forward
 never re-sends already-verified probes. These basic checks may incur usage.
@@ -111,11 +132,12 @@ Finally, `setup` closes the vertical rail (`└`) and presents a rail-free
 review table (for multiple tools: `Apply all`, `Inspect redacted diffs`,
 `Back`, `Cancel`) or diff preview (for one tool: `Apply`, `Show full
 redacted diff`, `Back`, `Cancel`). Only after explicit approval (or `--yes`)
-does `setup` save the key (`0600`), write approved files atomically with
-timestamped `.bak` backups, and persist launcher model preferences for
-approved Pi, OpenCode and OMP targets. When zero configuration changes are
-approved (cancelled, declined, or non-interactive without `--yes`), neither
-the key nor `ai-gateway-models.json` is written.
+does `setup` write approved files atomically with timestamped `.bak` backups
+and persist launcher model preferences for approved Pi, OpenCode and OMP
+targets. A new key is saved when a selected tool is already up to date, and
+nothing is saved after a declined change. If no tool ends up with any file
+written, the previous key is put back. When no configuration change is approved,
+`ai-gateway-models.json` is not written.
 
 Ready tools end with a compact launch table (`COMMAND` / `MODEL`, without
 shell comment markers so commands paste cleanly in `cmd.exe`, PowerShell,
