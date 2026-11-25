@@ -206,7 +206,7 @@ func inspectConfiguredModel(
 		}
 		return firstGranted
 	}
-	return configuredModel{}
+	return launcherPrefModel(env, table, tool)
 }
 
 // shortHomePath renders path with a leading "~" when it lies under userHome.
