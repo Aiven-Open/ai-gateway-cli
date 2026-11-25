@@ -184,7 +184,8 @@ func (u ui) command(indent int, s string) bool {
 	if strings.ContainsRune(s, '\t') || safe(s) != s {
 		return false
 	}
-	u.printf("%s%s\n", strings.Repeat(" ", indent), u.th.cyan(s))
+	// The hint is rewritten before the colour codes go on: the pattern needs a word boundary before the name.
+	u.printf("%s%s\n", strings.Repeat(" ", indent), u.th.cyan(rewriteHints(s, u.cmd)))
 	return true
 }
 
