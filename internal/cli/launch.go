@@ -184,7 +184,7 @@ func launchTable(
 		return code
 	}
 	var sel harness.ModelSelection
-	if bin == "pi" || bin == "opencode" || bin == "omp" {
+	if isLauncherPrefTool(bin) {
 		alias, err := config.LoadModelPref(env.UserHome, env.BaseURL, bin)
 		if err != nil {
 			return fail(deps, err.Error())

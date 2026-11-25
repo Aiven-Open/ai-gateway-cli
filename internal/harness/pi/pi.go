@@ -132,9 +132,6 @@ func ModelFor(table []models.Model, sel harness.ModelSelection) string {
 	return "aiven/" + harness.AliasFor(table, sel)
 }
 
-// Model is the --model value that picks the gateway's default alias.
-func Model(table []models.Model) string { return ModelFor(table, harness.ModelSelection{}) }
-
 // Launch selects the gateway default (or persisted setup) model in an already configured provider when there are no
 // native args, and passes native args unchanged.
 func Launch(in harness.Input) (harness.Plan, error) {

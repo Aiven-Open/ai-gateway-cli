@@ -25,9 +25,6 @@ func ModelFor(table []models.Model, sel harness.ModelSelection) string {
 	return "aiven/" + harness.AliasFor(table, sel)
 }
 
-// Model is the --model value that picks the gateway's default alias.
-func Model(table []models.Model) string { return ModelFor(table, harness.ModelSelection{}) }
-
 // Setup updates the YAML OMP reads; only an explicit default choice changes modelRoles.
 func Setup(in harness.Input) (harness.Plan, error) {
 	if in.UserHome == "" {
