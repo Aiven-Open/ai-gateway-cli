@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/aiven-open/ai-gateway-cli/internal/config"
@@ -131,6 +132,35 @@ func takesValue(flag string) bool {
 	return false
 }
 
+// commands are OpenCode's management subcommands, from opencode --help (1.18.25); auth and plug are aliases of
+// providers and plugin.
+var commands = []string{
+	"acp",
+	"agent",
+	"attach",
+	"auth",
+	"completion",
+	"db",
+	"debug",
+	"export",
+	"generate",
+	"github",
+	"help",
+	"import",
+	"mcp",
+	"models",
+	"plug",
+	"plugin",
+	"pr",
+	"providers",
+	"serve",
+	"session",
+	"stats",
+	"uninstall",
+	"upgrade",
+	"web",
+}
+
 // ModelArgs injects -m model for OpenCode interactive launches (including a positional project path or
 // options such as --prompt) and `run`, unless a model, provider, help/version flag or management subcommand is given.
 func ModelArgs(args []string, model string) []string {
@@ -164,32 +194,7 @@ func ModelArgs(args []string, model string) []string {
 			insertAt = i + 1
 			continue
 		}
-		switch a {
-		// From opencode --help (1.18.25); auth and plug are aliases of providers and plugin.
-		case "acp",
-			"agent",
-			"attach",
-			"auth",
-			"completion",
-			"db",
-			"debug",
-			"export",
-			"generate",
-			"github",
-			"help",
-			"import",
-			"mcp",
-			"models",
-			"plug",
-			"plugin",
-			"pr",
-			"providers",
-			"serve",
-			"session",
-			"stats",
-			"uninstall",
-			"upgrade",
-			"web":
+		if slices.Contains(commands, a) {
 			return args
 		}
 	}

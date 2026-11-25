@@ -59,46 +59,52 @@ func Informational(args, environ []string, deps Deps) (bool, int) {
 	if len(args) == 0 {
 		return false, 0
 	}
-	head, _, _ := strings.Cut(args[0], "=")
-	if head == "--key" || head == "--api-key" {
-		return true, fail(
-			deps,
-			"do not pass API keys on the command line; use login or setup --key-stdin",
-		)
+	if handled, code := rejectedForm(args, deps); handled {
+		return true, code
 	}
 	cmd := args[0]
-	if cmd == "--version" || cmd == "version" {
-		return false, 0
-	}
-	if cmd == "connect" {
-		return true, fail(deps, "connect was removed. Run: aiven-ai-gateway setup <harness>")
-	}
-	if cmd == "omp" && len(args) > 1 && args[1] == "init" {
-		return true, fail(deps, "omp init was removed; existing project files are left as they are. "+
-			"Run: aiven-ai-gateway setup omp")
-	}
-	if slices.Contains(toolNames, cmd) {
+	if cmd == "--version" || cmd == "version" || slices.Contains(toolNames, cmd) {
 		return false, 0
 	}
 	if !slices.Contains(commandNames, cmd) {
 		return true, fail(deps, "unknown command. Run: aiven-ai-gateway --help")
 	}
+	return checkCommandArgs(cmd, args[1:], environ, deps)
+}
+
+// rejectedForm refuses a key on the command line and the commands that were removed.
+func rejectedForm(args []string, deps Deps) (bool, int) {
+	head, _, _ := strings.Cut(args[0], "=")
+	switch {
+	case head == "--key" || head == "--api-key":
+		return true, fail(
+			deps,
+			"do not pass API keys on the command line; use login or setup --key-stdin",
+		)
+	case args[0] == "connect":
+		return true, fail(deps, "connect was removed. Run: aiven-ai-gateway setup <harness>")
+	case args[0] == "omp" && len(args) > 1 && args[1] == "init":
+		return true, fail(deps, "omp init was removed; existing project files are left as they are. "+
+			"Run: aiven-ai-gateway setup omp")
+	}
+	return false, 0
+}
+
+// checkCommandArgs answers --help for a known command and rejects arguments it would not accept; rest follows cmd.
+func checkCommandArgs(cmd string, rest, environ []string, deps Deps) (bool, int) {
 	var before []string
 	if cmd == "launch" {
-		before, _, _ = splitLaunch(args[1:])
-		plain = slices.Contains(before, "--plain")
+		before, _, _ = splitLaunch(rest)
 	} else {
-		before, _, _ = splitNative(args[1:])
+		before, _, _ = splitNative(rest)
 	}
-	for _, a := range before {
-		if a == "--help" || a == "-h" {
-			writeHelp(deps, environ, plain)
-			return true, 0
-		}
+	if slices.ContainsFunc(before, func(a string) bool { return a == "--help" || a == "-h" }) {
+		writeHelp(deps, environ, slices.Contains(before, "--plain"))
+		return true, 0
 	}
 	switch cmd {
 	case "setup":
-		if o, err := parseSetup(args[1:]); err != nil {
+		if o, err := parseSetup(rest); err != nil {
 			return true, fail(deps, err.Error())
 		} else if o.tool == "" && deps.Prompter == nil {
 			return true, fail(
@@ -107,13 +113,13 @@ func Informational(args, environ []string, deps Deps) (bool, int) {
 			)
 		}
 	case "launch":
-		if o, err := parseLaunch(args[1:]); err != nil {
+		if o, err := parseLaunch(rest); err != nil {
 			return true, fail(deps, err.Error())
 		} else if o.tool == "" && deps.Prompter == nil {
 			return true, fail(deps, "launch: a harness is required without a terminal")
 		}
 	case "login", "logout", "models":
-		if len(args) != 1 {
+		if len(rest) != 0 {
 			return true, fail(deps, cmd+": unexpected argument. Run: aiven-ai-gateway --help")
 		}
 	}
