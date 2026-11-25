@@ -43,7 +43,7 @@ The `npm` job in the same workflow publishes `@aivenio/ai-gateway` and its seven
 the tap and the signing secrets exist the Homebrew job fails while the `npm` job publishes.
 
 The job prepares all eight packages at the tag's version, inspects the archives and runs the install
-smoke check, and only then publishes: the seven native packages first, then the wrapper, each with
+smoke check, which also covers the `avn-aig` shim, and only then publishes: the seven native packages first, then the wrapper, each with
 provenance. A prerelease tag (`-rc.N`) is published under the `next` dist-tag and leaves `latest`
 alone, so `npx @aivenio/ai-gateway@next` runs the candidate.
 

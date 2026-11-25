@@ -1,20 +1,19 @@
 # @aivenio/ai-gateway
 
-This package installs the `aiven-ai-gateway` command. npm selects one
+This package installs the `avn-aig` command and its long name `aiven-ai-gateway`. npm selects one
 version-matched native package using its `os`/`cpu` metadata; this package
 contains only JavaScript and documentation. There are no install hooks,
 external binary URLs, telemetry or automatic updates.
 
 ```text
-npx @aivenio/ai-gateway
 npx @aivenio/ai-gateway setup claude
-npx @aivenio/ai-gateway launch codex -- resume
+npx @aivenio/ai-gateway claude
 npm install -g @aivenio/ai-gateway
-aiven-ai-gateway --help
+avn-aig --help
 ```
 
-Setup and launch need the native coding tools installed. Bare invocation
-displays the help without setup or launch.
+Setup and launch need the native coding tools installed. Without a terminal, bare
+invocation prints the help; in a terminal it offers the installed tools.
 
 Native packages exist for Linux x64, ARM64 and ARMv7; macOS x64 and ARM64; and
 Windows x64 and ARM64. Linux binaries have CGO disabled and no libc
