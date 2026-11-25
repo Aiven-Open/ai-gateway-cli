@@ -113,17 +113,25 @@ func running(s slots, model string, args []string) string {
 		}
 	}
 	model = bare(model)
-	switch strings.ToLower(model) {
-	case "opus":
-		return s.opus
-	case "sonnet", "opusplan":
-		return s.sonnet
-	case "haiku":
-		return s.haiku
-	case "fable":
-		return s.fable
+	if id, ok := tierSlot(s, model); ok {
+		return id
 	}
 	return model
+}
+
+// tierSlot is the slot model a Claude Code tier alias names, and whether model is such an alias.
+func tierSlot(s slots, model string) (string, bool) {
+	switch strings.ToLower(model) {
+	case "opus":
+		return s.opus, true
+	case "sonnet", "opusplan":
+		return s.sonnet, true
+	case "haiku":
+		return s.haiku, true
+	case "fable":
+		return s.fable, true
+	}
+	return "", false
 }
 
 // APIKeyHelper is the key helper Claude Code runs through its shell for the gateway at baseURL, which prints that
@@ -200,10 +208,12 @@ func siblingSlots(sibling, env map[string]any) map[string]any {
 	return merged
 }
 
-// siblingModel is the model the native file runs on Keep current: its own when the key grants it, else the dedicated
-// file's. It reports the model to wire, and drops an ungranted one from cfg so that the fresh path sets it.
+// siblingModel is the model the native file runs on Keep current: its own when the key grants it or it is a tier
+// alias, which resolves through the slots, else the dedicated file's. It reports the model to wire, and drops any
+// other from cfg so that the fresh path sets it.
 func siblingModel(t []models.Model, sibling, cfg map[string]any, s slots) slots {
-	if grantedPin(t, cfg, "model", "") == "" {
+	own, _ := cfg["model"].(string)
+	if _, alias := tierSlot(s, bare(own)); !alias && grantedPin(t, cfg, "model", "") == "" {
 		delete(cfg, "model")
 	}
 	s.main = cmp.Or(grantedPin(t, sibling, "model", ""), s.main)
