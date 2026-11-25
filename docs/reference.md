@@ -80,14 +80,20 @@ models whenever Anthropic models are granted and removes any stale
 `ANTHROPIC_CUSTOM_MODEL_OPTION`. A shared vendor preset in the Default model
 step sets Claude Code's default model, and the custom model option when that
 model is not one of the tier models. The tiers stay on granted Claude models. On
-a key with no Anthropic models every tier takes the chosen model. A single
-custom model replaces any non-blank `env.ANTHROPIC_MODEL`.
+a key with no Anthropic models every tier takes the chosen model. On the
+single-model path, taken by a shared vendor model or by `Recommended defaults`
+when no preset fits, the chosen model replaces any non-blank
+`env.ANTHROPIC_MODEL`. `Keep current`, `--yes` and the shared
+`Recommended defaults` keep every tier slot the key still grants, including an
+older setup with one model in all tiers. `Recommended defaults` in Claude Code's
+own menu resets them.
 
 `Choose models` lists every granted model by vendor. Tick any number of Claude
 models and up to five models from other vendors; a sixth is refused. The
 arrow-key list refuses it where you tick it, and plain mode refuses the answer
 and asks again. A model counts as a Claude model when the gateway lists it under
-Anthropic, or lists no publisher and its id starts with `claude-`. Then choose
+Anthropic, or its publisher is missing or not one the CLI has reviewed and its
+id starts with `claude-`. Then choose
 the default, which setup writes to `model`. A ticked Claude model goes in the
 tier its id names, and when two ticked models name the same tier the first
 ticked takes it. The other picks fill `ANTHROPIC_CUSTOM_MODEL_OPTION` first,
@@ -139,9 +145,11 @@ review table (for multiple tools: `Apply all`, `Inspect redacted diffs`,
 redacted diff`, `Back`, `Cancel`). Only after explicit approval (or `--yes`)
 does `setup` write approved files atomically with timestamped `.bak` backups
 and persist launcher model preferences for approved Pi, OpenCode and OMP
-targets. A new key is saved when a selected tool is already up to date, and
-nothing is saved after a declined change. If no tool ends up with any file
-written, the previous key is put back. When no configuration change is approved,
+targets. With changes to write, the key is saved
+before the approved changes. With nothing to write, a new key is saved only when
+every selected tool is already up to date. If no tool ends up ready or with a
+file written, the previous key is put back unless another process changed the
+key file meanwhile. When no configuration change is approved,
 `ai-gateway-models.json` is not written.
 
 Ready tools end with a compact launch table (`COMMAND` / `MODEL`, without

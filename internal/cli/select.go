@@ -87,7 +87,6 @@ func newSelectState(c choice) *selectState {
 	}
 }
 
-// visible lists the options whose label contains the filter, ignoring case.
 // toggle flips option i. A tick refuse turns down leaves the option clear and shows the reason until the next key.
 func (s *selectState) toggle(i int) {
 	if s.picked[i] {
@@ -129,6 +128,7 @@ func (s *selectState) pickedIndexes() []int {
 	return out
 }
 
+// visible lists the options whose label contains the filter, ignoring case.
 func (s *selectState) visible() []int {
 	if s.filter == "" {
 		out := make([]int, len(s.c.options))

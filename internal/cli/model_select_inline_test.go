@@ -658,7 +658,7 @@ func TestSetupAlignsNativeDefaultAndProbeWithPersistedLauncherPreference(t *test
 	}
 }
 
-// Custom model pick in Claude interactive setup must preserve existing granted Claude tier slots.
+// Choosing models takes the tiers from the catalogue, never from a pin the settings already hold.
 func TestSetupClaudeChoosingModelsTakesTiersFromTheCatalogue(t *testing.T) {
 	t.Parallel()
 	srv, _ := inlineGateway(t, `[

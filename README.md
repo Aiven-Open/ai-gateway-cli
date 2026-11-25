@@ -113,9 +113,9 @@ back cleanly to the catalogue default).
 Interactive `setup` offers curated presets (`Anthropic`, `OpenAI`,
 `Gemini`, `Open-weight`, filtered to models your key grants) and a
 searchable `Custom model…` picker. Claude Code instead offers `Recommended defaults`
-and `Choose models`, plus `Keep current` when the key grants the configured model, which takes any granted Claude
-models plus up to five models from other vendors; the reference describes how
-they fill Claude Code's model slots. When an existing Claude Code (including
+and `Choose models`, plus `Keep current` when the key grants the configured model.
+`Choose models` takes any granted Claude models plus up to five models from
+other vendors; the reference describes how they fill Claude Code's model slots. When an existing Claude Code (including
 `~/.claude/settings.json` and project `.claude/settings*.json` layers) or
 Codex configuration selects an ungranted model, `setup` badges the conflict
 and offers the matching gateway alias (when known via provider-ID
@@ -126,8 +126,11 @@ Keys are stored with mode `0600` at `~/.config/aiven/ai-gateway-key` for the
 default gateway (`https://ai.aiven.io`), and under
 `~/.config/aiven/ai-gateway-keys/` for custom origins. `setup` reuses a
 valid saved key automatically; run `aiven-ai-gateway login` or pass
-`--key-stdin` to replace it. A key is also saved when a selected tool is
-already up to date and the key is new. Nothing is saved after a declined change.
+`--key-stdin` to replace it. With changes to write, the key is saved before the
+approved changes. With nothing to write, a new key is saved only when every
+selected tool is already up to date. If no tool ends up ready or with a file
+written, the previous key is put back unless another process changed the key
+file meanwhile.
 
 ## Environment
 
