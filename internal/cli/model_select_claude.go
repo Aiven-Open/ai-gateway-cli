@@ -269,7 +269,7 @@ func pickClaudeModelsPlain(
 		if strings.EqualFold(trimmed, "b") || strings.EqualFold(trimmed, "back") {
 			return nil, errBack
 		}
-		picks, ok := parsePickOffered(trimmed, offered)
+		picks, ok := parseModelPicks(trimmed, offered)
 		switch {
 		case trimmed == "" && len(kept) > 0:
 			return kept, nil

@@ -120,7 +120,8 @@ func running(s slots, model string, args []string) string {
 	return model
 }
 
-// tierSlot is the slot model a Claude Code tier alias names, and whether model is such an alias.
+// tierSlot is the slot model a Claude Code alias names, and whether model is such an alias. It is the one list of
+// aliases: default names the main model.
 func tierSlot(s slots, model string) (string, bool) {
 	switch strings.ToLower(model) {
 	case "opus":
@@ -131,14 +132,16 @@ func tierSlot(s slots, model string) (string, bool) {
 		return s.haiku, true
 	case "fable":
 		return s.fable, true
+	case "default":
+		return s.main, true
 	}
 	return "", false
 }
 
 // isCodeAlias reports whether model is one of Claude Code's own model aliases: the four tiers, opusplan and default.
 func isCodeAlias(model string) bool {
-	_, tier := tierSlot(slots{}, bare(model))
-	return tier || strings.EqualFold(bare(model), "default")
+	_, ok := tierSlot(slots{}, bare(model))
+	return ok
 }
 
 // APIKeyHelper is the key helper Claude Code runs through its shell for the gateway at baseURL, which prints that
@@ -196,8 +199,12 @@ func dedicatedLayer(in Input, path string) map[string]any {
 	if !in.Selection.IsZero() || path == own {
 		return nil
 	}
-	// Setup wires the dedicated file first and fails on one that is unreadable, so an error here cannot occur.
-	cfg, _ := harness.ReadObject(own)
+	// Setup wires the dedicated file first and fails on one that is unreadable, so an error here cannot occur. A
+	// missing file holds no slots to copy, so it is no sibling.
+	src, cfg, _ := harness.ReadJSON(own)
+	if src == nil {
+		return nil
+	}
 	return cfg
 }
 

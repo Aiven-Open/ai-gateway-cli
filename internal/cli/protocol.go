@@ -116,6 +116,7 @@ func toolChecks(
 			return nil, notGranted(projPath, projAlias, table)
 		}
 		planned := make(map[string][]byte, len(plan.Files))
+		var configured []string
 		for _, f := range plan.Files {
 			alias, err := claude.Selected(f.Data)
 			if err != nil {
@@ -125,6 +126,7 @@ func toolChecks(
 				return nil, notGranted(f.Path, alias, table)
 			}
 			planned[f.Path] = f.Data
+			configured = append(configured, alias)
 		}
 		path, alias, _, err := claude.Effective(table, env.UserHome, env.WorkDir, planned)
 		if err != nil {
@@ -133,7 +135,7 @@ func toolChecks(
 		if _, granted := models.Find(table, alias); !granted {
 			return nil, notGranted(path, alias, table)
 		}
-		return claudePickChecks(table, sel, path, alias)
+		return claudePickChecks(table, sel, path, append([]string{alias}, configured...))
 	case "opencode":
 		model := cmp.Or(chosen, models.SonnetOrFirst(table))
 		return []probeKey{{protocol: models.ChatCompletions, model: model}}, nil
@@ -352,15 +354,16 @@ func printProtocolResult(u ui, check protocolCheck) {
 	}
 }
 
-// claudePickChecks is the Messages check of the model Claude Code runs and of every other model
-// chosen with it.
+// claudePickChecks is the Messages check of each model in aliases (the one Claude Code runs, then those the files
+// setup writes or keeps select) and of every other model chosen with it, each once.
 func claudePickChecks(
 	table []models.Model,
 	sel harness.ModelSelection,
-	path, alias string,
+	path string,
+	aliases []string,
 ) ([]probeKey, error) {
-	checks := []probeKey{{protocol: models.Messages, model: alias}}
-	for _, m := range sel.Models {
+	var checks []probeKey
+	for _, m := range slices.Concat(aliases, sel.Models) {
 		if _, granted := models.Find(table, m); !granted {
 			return nil, notGranted(path, m, table)
 		}
@@ -371,11 +374,13 @@ func claudePickChecks(
 	return checks, nil
 }
 
-// probeWithRetry sends a basic check once more when the first try ran out of time.
+// probeWithRetry sends a basic check once more when the first try ran out of time before any response. A timeout after
+// the headers means the gateway took the request, so it is not sent again.
 func probeWithRetry(ctx context.Context, gw gateway.Client, key string, pk probeKey) (int, error) {
 	status, err := gw.Probe(ctx, key, pk.model, pk.protocol)
 	var unreachable *gateway.UnreachableError
-	if errors.As(err, &unreachable) && unreachable.Timeout() && ctx.Err() == nil {
+	if errors.As(err, &unreachable) && unreachable.Timeout() && !unreachable.Answered &&
+		ctx.Err() == nil {
 		return gw.Probe(ctx, key, pk.model, pk.protocol)
 	}
 	return status, err

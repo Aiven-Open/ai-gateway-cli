@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/aiven-open/ai-gateway-cli/internal/config"
 	"github.com/aiven-open/ai-gateway-cli/internal/harness"
@@ -257,11 +258,11 @@ func pinnedFrom(t []models.Model, s slots, layers ...layer) (slots, string, stri
 			continue
 		}
 		if v, _ := l.settings["model"].(string); bare(v) != "" {
-			model, modelPath = bare(v), l.path
+			model, modelPath = defaultAlias(bare(v), defaults), l.path
 		}
 		if v, ok := env["ANTHROPIC_MODEL"].(string); ok {
 			if b := bare(v); b != "" {
-				envModel, envModelPath = b, l.path
+				envModel, envModelPath = defaultAlias(b, defaults), l.path
 			} else {
 				envModel, envModelPath = "", ""
 			}
@@ -282,6 +283,14 @@ func pinnedFrom(t []models.Model, s slots, layers ...layer) (slots, string, stri
 		return s, modelPath, "model"
 	}
 	return s, "", ""
+}
+
+// defaultAlias is the main model of defaults when model is Claude Code's default alias, else model.
+func defaultAlias(model string, defaults slots) string {
+	if id, ok := tierSlot(defaults, model); ok && strings.EqualFold(model, "default") {
+		return id
+	}
+	return model
 }
 
 // pin returns the string set under key without its `[1m]` suffix, cleared when that is blank, and current when key is

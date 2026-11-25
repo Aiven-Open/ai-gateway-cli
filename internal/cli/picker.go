@@ -120,6 +120,27 @@ func parsePickOffered(answer string, offered []string) ([]string, bool) {
 	return parsePickList(answer, offered, true)
 }
 
+// parseModelPicks reads numbers into offered and model ids exactly as displayed: ids keep their case, and no word is a
+// shortcut for the tool picker's choices.
+func parseModelPicks(answer string, offered []string) ([]string, bool) {
+	var picked []string
+	sep := func(r rune) bool { return r == ',' || r == ' ' }
+	for field := range strings.FieldsFuncSeq(answer, sep) {
+		name := field
+		if !slices.Contains(offered, field) {
+			n, err := strconv.Atoi(field)
+			if err != nil || n < 1 || n > len(offered) {
+				return nil, false
+			}
+			name = offered[n-1]
+		}
+		if !slices.Contains(picked, name) {
+			picked = append(picked, name)
+		}
+	}
+	return picked, true
+}
+
 func parsePickList(answer string, offered []string, offeredOnly bool) ([]string, bool) {
 	answer = strings.ToLower(strings.TrimSpace(answer))
 	switch answer {

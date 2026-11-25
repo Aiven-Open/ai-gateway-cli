@@ -1638,3 +1638,27 @@ func TestChoosingModelsDropsBlankCustomOptionKeepCurrentLeft(t *testing.T) {
 		t.Errorf("custom option = %q, want dropped on a chosen selection", v)
 	}
 }
+
+func TestKeepCurrentWithNativeDefaultKeepsGrantedNativePinWhenNoDedicatedFileExists(t *testing.T) {
+	t.Parallel()
+	in := input(t)
+	in.Table = mixTable
+	native := filepath.Join(in.UserHome, ".claude", "settings.json")
+	write(t, native, `{"env":{"ANTHROPIC_DEFAULT_OPUS_MODEL":"deepseek-v4.1-flash"}}`)
+	in.Default = true
+	plan, err := claude.Setup(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range plan.Files {
+		if f.Path != native {
+			continue
+		}
+		env := decode(t, f.Data)["env"].(map[string]any)
+		if env["ANTHROPIC_DEFAULT_OPUS_MODEL"] != "deepseek-v4.1-flash" {
+			t.Errorf("native opus pin = %v, want deepseek-v4.1-flash", env["ANTHROPIC_DEFAULT_OPUS_MODEL"])
+		}
+		return
+	}
+	t.Fatal("plan has no native file")
+}

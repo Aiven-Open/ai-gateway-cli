@@ -863,8 +863,10 @@ func TestUnattendedSetupPreservesAndValidatesCanonicalUserEnvModel(t *testing.T)
 		if code != 0 {
 			t.Fatalf("exit %d, stderr:\n%s", code, stderr.String())
 		}
-		if got := probes()["/v1/messages"]; !slices.Equal(got, []string{"glm-5"}) {
-			t.Errorf("Messages probes = %v, want [glm-5]", got)
+		// The kept dedicated model is checked too, since it runs outside the user's own selection.
+		got := slices.Sorted(slices.Values(probes()["/v1/messages"]))
+		if !slices.Equal(got, []string{"claude-sonnet-5-5", "glm-5"}) {
+			t.Errorf("Messages probes = %v, want [claude-sonnet-5-5 glm-5]", got)
 		}
 	})
 	t.Run("refuses ungranted user ANTHROPIC_MODEL over dedicated ANTHROPIC_MODEL", func(t *testing.T) {

@@ -277,12 +277,12 @@ func TestPlainClaudeModelListRefusesSixModelsFromOtherVendors(t *testing.T) {
 	srv, _ := inlineGateway(t, claudeWideCatalogue)
 	env, home := inlineSetupEnv(t, srv.URL)
 	p := &plainSetupPrompter{secret: "synthetic-key", answers: []string{
-		"2",   // Models for Claude Code: 1 Recommended defaults, 2 Choose models
-		"all", // seven models, six from other vendors: refused
-		"2,4", // claude-sonnet-5-5 and gemini-4-neon
-		"2",   // Default model for Claude Code: gemini-4-neon
-		"n",   // Default provider: launch only
-		"1",   // Review: Apply
+		"2",             // Models for Claude Code: 1 Recommended defaults, 2 Choose models
+		"1,2,3,4,5,6,7", // seven models, six from other vendors: refused
+		"2,4",           // claude-sonnet-5-5 and gemini-4-neon
+		"2",             // Default model for Claude Code: gemini-4-neon
+		"n",             // Default provider: launch only
+		"1",             // Review: Apply
 	}}
 	var stderr strings.Builder
 	deps := Deps{
@@ -604,5 +604,39 @@ func TestRepeatSetupKeepsChosenClaudeSlots(t *testing.T) {
 	if string(after) != string(before) ||
 		!strings.Contains(stderr.String(), "Already configured; no file needs a change.") {
 		t.Errorf("repeat setup changed the slots:\n%s\nstderr:\n%s", after, stderr.String())
+	}
+}
+
+// Model ids are matched as displayed, so a mixed-case id is chosen as typed and no word of the tool picker is a shortcut.
+func TestPlainClaudePickerMatchesIdsExactly(t *testing.T) {
+	t.Parallel()
+	table := []models.Model{{Alias: "all"}, {Alias: "Vendor-Mixed"}, {Alias: "other"}}
+	offered := []string{"all", "Vendor-Mixed", "other"}
+	for answer, want := range map[string][]string{
+		"Vendor-Mixed": {"Vendor-Mixed"},
+		"all":          {"all"},
+		"2, other":     {"Vendor-Mixed", "other"},
+	} {
+		deps := Deps{Prompter: &plainSetupPrompter{answers: []string{answer}}, Stderr: io.Discard}
+		got, err := pickClaudeModelsPlain(
+			deps,
+			newPresenter(config.Env{}, deps, true),
+			table,
+			offered,
+			nil,
+		)
+		if err != nil || !slices.Equal(got, want) {
+			t.Errorf("answer %q picked %q, %v; want %q", answer, got, err, want)
+		}
+	}
+	deps := Deps{Prompter: &plainSetupPrompter{answers: []string{"vendor-mixed"}}, Stderr: io.Discard}
+	if got, err := pickClaudeModelsPlain(
+		deps,
+		newPresenter(config.Env{}, deps, true),
+		table,
+		offered,
+		nil,
+	); err == nil {
+		t.Errorf("a differently cased id picked %q", got)
 	}
 }

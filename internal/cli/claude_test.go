@@ -5,6 +5,7 @@ package cli_test
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -908,5 +909,34 @@ func TestClaudeLaunchRefusesASymlinkedProjectSettingsFile(t *testing.T) {
 	); r.code != 1 || !strings.Contains(r.stderr, link+" is a symlink") ||
 		len(s.runner.calls) != 0 {
 		t.Errorf("exit %d, calls %d: %s", r.code, len(s.runner.calls), r.stderr)
+	}
+}
+
+// Claude Code's default alias names no catalogue id, so setup and launch resolve it instead of refusing it.
+func TestClaudeNativeDefaultModelAliasPassesSetupAndLaunch(t *testing.T) {
+	s := newSession(t, newGatewayDouble(t)).stdin(keyValid)
+	s.writeUserSettings("settings.json", `{"model":"default"}`)
+	if r := s.run("setup", "--key-stdin", "--yes", "claude"); r.code != 0 {
+		t.Fatalf("setup: exit %d, stderr %q", r.code, r.stderr)
+	}
+	if r := s.run("launch", "claude"); r.code != 0 || len(s.runner.calls) != 1 {
+		t.Fatalf("launch: exit %d, calls %d, stderr %q", r.code, len(s.runner.calls), r.stderr)
+	}
+}
+
+// A project pin overrides the default setup writes, which still has to answer outside that project.
+func TestClaudeSetupChecksTheWrittenDefaultBesideTheProjectPin(t *testing.T) {
+	s := newSession(t, newGatewayDouble(t)).stdin(keyValid)
+	s.writeProjectSettings("settings.json", `{"model":"claude-opus"}`)
+	r := s.run("setup", "--key-stdin", "--yes", "claude")
+	written, _ := readJSON(t, filepath.Join(s.fakeHome, ".claude", "aiven.settings.json"))["model"].(string)
+	written = strings.TrimSuffix(written, "[1m]")
+	if r.code != 0 || written == "claude-opus" || written == "" {
+		t.Fatalf("exit %d, written default %v, stderr %q", r.code, written, r.stderr)
+	}
+	for _, model := range []string{"claude-opus", written} {
+		if want := fmt.Sprintf("Messages with %s: HTTP 200", model); !strings.Contains(r.stderr, want) {
+			t.Errorf("no %q in %q", want, r.stderr)
+		}
 	}
 }
