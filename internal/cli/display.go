@@ -17,7 +17,6 @@ import (
 	"github.com/aiven-open/ai-gateway-cli/internal/harness/omp"
 	"github.com/aiven-open/ai-gateway-cli/internal/harness/opencode"
 	"github.com/aiven-open/ai-gateway-cli/internal/harness/pi"
-	"github.com/aiven-open/ai-gateway-cli/internal/models"
 	"github.com/aiven-open/ai-gateway-cli/internal/redact"
 )
 
@@ -72,99 +71,16 @@ func launcherValue(v string) bool {
 		slices.ContainsFunc(launcherForms, func(re *regexp.Regexp) bool { return re.MatchString(v) })
 }
 
-// shown renders both sides of a config change for its preview. A user's config can hold keys of their own, which a
-// diff would print as context or removed lines, so they are redacted on both sides. Each hidden value is numbered
-// per file, so a changed one still shows as a changed line. In a file listing every gateway model, the aiven
-// provider's list collapses to one summary line; the rest of the file is diffed in full. It collapses after the YAML
-// pass, which parses the text and would read a summary line as a value or reject it.
-func shown(f harness.File, base []byte, table []models.Model) (string, string) {
+// shown renders both sides of a config change for its diff. A user's config can hold keys of their own, which a diff
+// would print as context or removed lines, so they are redacted on both sides. Each hidden value is numbered per
+// file, so a changed one still shows as a changed line.
+func shown(f harness.File, base []byte) (string, string) {
 	old, data := string(base), string(f.Data)
 	r := newRedactor(f.Reference, old, data)
-	collapse := collapseModels
 	if ext := filepath.Ext(f.Path); ext == ".yml" || ext == ".yaml" {
-		old, data, collapse = r.yaml(old), r.yaml(data), collapseYAMLModels
-	}
-	if f.Models {
-		block, collapsed := collapse(data, "["+modelNames(table, 2)+"]")
-		data = collapsed
-		if same, kept := collapse(old, "["+modelNames(table, 2)+"]"); same == block {
-			old = kept
-		} else {
-			_, old = collapse(old, "[the previous model list]")
-		}
+		old, data = r.yaml(old), r.yaml(data)
 	}
 	return r.redact(old), r.redact(data)
-}
-
-// collapseModels replaces the aiven provider's "models" list with summary when it is laid out as harness.JSON writes
-// it, and returns the lines it replaced. A list in any other layout is left in full.
-func collapseModels(text, summary string) (string, string) {
-	lines := strings.SplitAfter(text, "\n")
-	parent := ""
-	for i, l := range lines {
-		if len(l) > 2 && l[:2] == "  " && l[2] != ' ' {
-			parent = strings.TrimSpace(l)
-		}
-		// Only pi's providers.aiven and OpenCode's provider.aiven hold the gateway models.
-		if strings.TrimSuffix(l, "\n") != `    "aiven": {` ||
-			parent != `"providers": {` && parent != `"provider": {` {
-			continue
-		}
-		in := "      "
-		for j := i + 1; j < len(lines) && strings.HasPrefix(lines[j], in); j++ {
-			head := strings.TrimSuffix(lines[j], "\n")
-			if head != in+`"models": [` && head != in+`"models": {` {
-				continue
-			}
-			for k := j + 1; k < len(lines) && strings.HasPrefix(lines[k], in); k++ {
-				switch end := strings.TrimSuffix(lines[k], "\n")[len(in):]; end {
-				case "]", "],", "}", "},":
-					block := strings.Join(lines[j:k+1], "")
-					before, after := strings.Join(lines[:j], ""), strings.Join(lines[k+1:], "")
-					return block, before + in + `"models": ` + summary + end[1:] + "\n" + after
-				}
-			}
-		}
-	}
-	return "", text
-}
-
-// collapseYAMLModels is collapseModels for OMP's providers.aiven, laid out as its models file is written: mappings
-// indented by two and the list's items at the indent of its key. Blank and comment lines between items belong to the
-// list; those after its last item stay.
-func collapseYAMLModels(text, summary string) (string, string) {
-	lines := strings.SplitAfter(text, "\n")
-	top, parent := "", ""
-	for i, l := range lines {
-		head := strings.TrimSuffix(l, "\n")
-		switch {
-		case head != "" && head[0] != ' ' && head[0] != '#':
-			top, parent = head, ""
-		case len(head) > 2 && head[:2] == "  " && head[2] != ' ' && head[2] != '#':
-			parent = head
-		}
-		if head != "    models:" || top != "providers:" || parent != "  aiven:" {
-			continue
-		}
-		end := i
-		for k := i + 1; k < len(lines); k++ {
-			next := strings.TrimSuffix(lines[k], "\n")
-			if strings.HasPrefix(next, "    - ") ||
-				strings.HasPrefix(next, "      ") && strings.TrimSpace(next) != "" {
-				end = k
-			} else if strings.TrimSpace(next) != "" &&
-				!strings.HasPrefix(next, "    #") {
-				break
-			}
-		}
-		if end == i {
-			return "", text
-		}
-		block := strings.Join(lines[i:end+1], "")
-		before, after := strings.Join(lines[:i], ""), strings.Join(lines[end+1:], "")
-		return block, before + "    models: " + summary + "\n" + after
-	}
-	return "", text
 }
 
 // redactor numbers the values it hides, so equal values on both sides of a diff get the same placeholder.

@@ -133,11 +133,7 @@ func reviewAnswer(answer string, acts []reviewAction) (reviewAction, bool) {
 // showChanges prints the full redacted diff of every pending tool, model lists included, then diffNote.
 func showChanges(p presenter, pending []pendingPreview) error {
 	for _, item := range pending {
-		files := slices.Clone(item.files)
-		for i := range files {
-			files[i].Models = false
-		}
-		_, diff, err := changes(files, nil, item.names)
+		_, diff, err := changes(item.files, item.names)
 		if err != nil {
 			return err
 		}

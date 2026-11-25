@@ -160,7 +160,7 @@ func pendingChanges(
 	var pending []pendingPreview
 	for _, t := range targets {
 		names := backupNames{deps.now(), map[string]string{}}
-		write, _, err := changes(t.plan.Files, table, names)
+		write, _, err := changes(t.plan.Files, names)
 		prefAlias, prefChanged := "", false
 		if err == nil {
 			prefAlias, prefChanged, err = launcherPrefUpdate(
@@ -353,7 +353,6 @@ func partialWrite(err error, completed []string) error {
 // with their redacted unified diff preview.
 func changes(
 	files []harness.File,
-	table []models.Model,
 	names backupNames,
 ) ([]harness.File, string, error) {
 	var preview strings.Builder
@@ -381,7 +380,7 @@ func changes(
 			backup = names.name(f.Path)
 		}
 		out = append(out, f)
-		from, to := shown(f, base, table)
+		from, to := shown(f, base)
 		preview.WriteString(udiff.Unified(f.Path, f.Path+fileNote(found, backup), from, to))
 	}
 	return out, preview.String(), nil
@@ -396,21 +395,4 @@ func fileNote(existed bool, backup string) string {
 		return " (previous version: " + backup + ")"
 	}
 	return ""
-}
-
-// modelNames lists the first n aliases in sorted order and counts the rest.
-func modelNames(table []models.Model, n int) string {
-	var names []string
-	for _, m := range models.Sorted(table) {
-		names = append(names, m.Alias)
-	}
-	if len(names) <= n {
-		return fmt.Sprintf("%d models: %s", len(names), strings.Join(names, ", "))
-	}
-	return fmt.Sprintf(
-		"%d models: %s, … +%d more",
-		len(names),
-		strings.Join(names[:n], ", "),
-		len(names)-n,
-	)
 }

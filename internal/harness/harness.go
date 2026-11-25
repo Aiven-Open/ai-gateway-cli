@@ -85,8 +85,6 @@ type File struct {
 	Data []byte
 	// Backup copies a file the user already has to <Path>.aiven-<UTC time>.bak before it is replaced.
 	Backup bool
-	// Models marks a file that lists every gateway model; a preview names a few models instead of diffing it.
-	Models bool
 	// Reference reports whether value, in a field named like a credential (field, lower case), names where a key is
 	// in this file's own syntax rather than holding one, so a preview may show it. Nil means no value does.
 	Reference func(field, value string) bool

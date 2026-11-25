@@ -79,7 +79,7 @@ func Setup(in harness.Input) (harness.Plan, error) {
 	if err != nil {
 		return harness.Plan{}, err
 	}
-	files := []harness.File{{Path: path, Data: data, Backup: true, Models: true, Reference: Reference}}
+	files := []harness.File{{Path: path, Data: data, Backup: true, Reference: Reference}}
 	if stale != nil {
 		files = append(files, *stale)
 	}

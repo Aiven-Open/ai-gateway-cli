@@ -686,7 +686,7 @@ func TestYAMLPreviewRedactsCredentialsOnBothSides(t *testing.T) {
 			before := "providers:\n  unrelated:\n" + tc.body + "    baseUrl: https://example.invalid/v1\n"
 			after := before + "  aiven:\n    apiKey: " + creds.EnvVar + "\n"
 			f := harness.File{Path: "/home/ada/.omp/agent/models.yml", Data: []byte(after)}
-			from, to := shown(f, []byte(before), nil)
+			from, to := shown(f, []byte(before))
 			for _, secret := range tc.secrets {
 				if strings.Contains(from+to, secret) {
 					t.Errorf("credential shown: %q / %q", from, to)
@@ -701,7 +701,6 @@ func TestYAMLPreviewRedactsCredentialsOnBothSides(t *testing.T) {
 	if from, _ := shown(
 		harness.File{Path: "/x/models.yml"},
 		[]byte("a: [b\n"),
-		nil,
 	); from != "<redacted: YAML preview unavailable>\n" {
 		t.Errorf("unparsable YAML shown as %q", from)
 	}
@@ -709,7 +708,6 @@ func TestYAMLPreviewRedactsCredentialsOnBothSides(t *testing.T) {
 	if from, to := shown(
 		harness.File{Path: "/x/models.yml", Data: []byte(later + "x: 1\n")},
 		[]byte(later),
-		nil,
 	); strings.Contains(from+to, "SYNTHETIC") ||
 		!strings.Contains(from, "theme: dark") {
 		t.Errorf("aliased credential in a later document: %q / %q", from, to)
