@@ -68,25 +68,29 @@ layers), interactive `setup` runs three reversible steps before review:
    tool. Single-tool runs prompt directly, keeping existing granted models as
    `Keep current (<alias>)` and defaulting ungranted models to
    `Keep unchanged (refuse setup)`.
-   Claude Code has its own menu instead of presets: `Keep current` when it is
-   already configured, `Recommended defaults` and `Choose models`.
 3. **Default provider:** asks *"Use Aiven AI Gateway as the default?"*,
    defaulting to `Yes` for all selected tools, with options to keep
    launcher-only (`aiven-ai-gateway launch`) or choose per tool (naming
    each config file).
 
-In Claude Code, the menu is `Keep current` when it is already configured,
-`Recommended defaults` and `Choose models`. The other tools keep their preset
-list. `Recommended defaults` stays on Claude models whenever Anthropic models
-are granted and removes any stale `ANTHROPIC_CUSTOM_MODEL_OPTION`. A shared
-vendor preset in the Default model step sets Claude Code's default model only.
+Claude Code has its own menu instead of presets: `Recommended defaults` and
+`Choose models`, plus `Keep current` when the key grants the configured model.
+The other tools keep their preset list. `Recommended defaults` stays on Claude
+models whenever Anthropic models are granted and removes any stale
+`ANTHROPIC_CUSTOM_MODEL_OPTION`. A shared vendor preset in the Default model
+step sets Claude Code's default model, and the custom model option when that
+model is not one of the tier models. The tiers stay on granted Claude models. On
+a key with no Anthropic models every tier takes the chosen model. A single
+custom model replaces any non-blank `env.ANTHROPIC_MODEL`.
 
 `Choose models` lists every granted model by vendor. Tick any number of Claude
-models and up to five models from other vendors; a sixth is refused where you
-tick it. A model counts as a Claude model when the gateway lists it under
+models and up to five models from other vendors; a sixth is refused. The
+arrow-key list refuses it where you tick it, and plain mode refuses the answer
+and asks again. A model counts as a Claude model when the gateway lists it under
 Anthropic, or lists no publisher and its id starts with `claude-`. Then choose
 the default, which setup writes to `model`. A ticked Claude model goes in the
-tier its id names. The other picks fill `ANTHROPIC_CUSTOM_MODEL_OPTION` first,
+tier its id names, and when two ticked models name the same tier the first
+ticked takes it. The other picks fill `ANTHROPIC_CUSTOM_MODEL_OPTION` first,
 then the tier slots `ANTHROPIC_DEFAULT_{FABLE,OPUS,SONNET,HAIKU}_MODEL`: first
 tiers with no granted Claude model, then tiers holding a Claude model you did
 not tick, then tiers holding one you ticked, and the haiku tier last. Order
@@ -96,17 +100,18 @@ the gateway's catalogue and not from pins already in the file. `Keep current`
 and `--yes` keep every slot the key still grants.
 
 Claude Code sends some work to a tier by name, so a non-Claude model in a tier
-slot receives that work. Setup sets `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1`,
-which lists the granted Claude models in `/model` too, including one moved out
-of its tier. Every chosen model gets one basic check request, so several picks
-mean several requests. A chosen model that fails its check fails Claude Code
-only; other selected tools still proceed. To change the picks, run setup again.
-Setup recomputes context-window variables and `[1m]` for each slot.
-In Codex, the choice updates `aiven.config.toml` (and canonical
-`config.toml` when Aiven is set as the default provider). In Pi, OpenCode
-and OMP, the full granted catalogue is written to the provider file, the
-chosen default alias is persisted per gateway in
-`~/.config/aiven/ai-gateway-models.json` (`0600`) for `aiven-ai-gateway
+slot receives that work. Setup sets
+`CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1`, which lists the granted Claude
+models in `/model` too, including one moved out of its tier. This discovery
+behaviour was observed in Claude Code and is not documented. Every chosen model
+gets at least one basic check request, so several picks mean several requests. A
+chosen model that fails its check fails Claude Code only; other selected tools
+still proceed. To change the picks, run setup again. Setup recomputes
+context-window variables and `[1m]` for each slot. In Codex, the choice updates
+`aiven.config.toml` (and canonical `config.toml` when Aiven is set as the
+default provider). In Pi, OpenCode and OMP, the full granted catalogue is
+written to the provider file, the chosen default alias is persisted per gateway
+in `~/.config/aiven/ai-gateway-models.json` (`0600`) for `aiven-ai-gateway
 launch <tool>`, and the native default is updated when Aiven is set as the
 default provider.
 

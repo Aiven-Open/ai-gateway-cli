@@ -189,9 +189,10 @@ func collectProtocolChecks(
 	return plan, false
 }
 
-// checkProtocols sends at most one minimal request for each distinct uncached (protocol, model) concurrently under one
-// stderr owner, memoizing completed results in cache across Back navigation and failing each tool only on its own
-// dependencies (unless authentication fails).
+// checkProtocols sends at least one minimal request for each distinct uncached
+// (protocol, model) concurrently under one stderr owner (a timed-out check is
+// sent once more), memoizing completed results in cache across Back navigation
+// and failing each tool only on its own dependencies (unless authentication fails).
 func checkProtocols(
 	ctx context.Context,
 	gw gateway.Client,
