@@ -307,7 +307,7 @@ Setup shows what it will configure and its backup paths before writing; `Show
 file changes`, or `v` at a numbered prompt, prints the full redacted diff. Both diff sides redact unrelated provider and MCP
 credentials. Redaction goes by field name: it masks the values of fields
 named like a key, token, secret, password, credential, bearer, auth, cookie
-or session, except a token count such as `max_tokens` or `CLAUDE_CODE_MAX_CONTEXT_TOKENS`,
+or session, except the number in a token count such as `max_tokens` or `CLAUDE_CODE_MAX_CONTEXT_TOKENS`,
 comments that mention one, URL user info and key-shaped strings.
 A credential under another name, under an escaped JSON field name, or in a
 TOML table whose header alone names a credential (`[auth]`), is shown.

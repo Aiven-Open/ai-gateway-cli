@@ -14,17 +14,24 @@ const otherWords = `key|secret|passw|credential|bearer|auth|cookie|session|heade
 const words = `token|` + otherWords
 
 var (
-	// tokenCount is a name that sizes something in tokens: a sizing word starts one of its parts and tokens ends it.
+	// tokenCount is a name that sizes something in tokens: a whole part of it is a sizing word and tokens ends it.
 	tokenCount = regexp.MustCompile(
-		`(?i)(?:^|[_.-])(?:max|min|context|window|input|output|budget)[\w.-]*tokens$`,
+		`(?i)(?:^|[_.-])(?:max|min|context|window|input|output|budget)(?:[_.-][\w.-]*[_.-]|[_.-]|)tokens$`,
 	)
-	otherWord = regexp.MustCompile(`(?i)` + otherWords)
+	otherWord = regexp.MustCompile(`(?i)` + otherWords + `|(?:^|[_.-])pat(?:$|[_.-])`)
+	integer   = regexp.MustCompile(`^[0-9]+$`)
 )
 
 // CountName reports whether name, a field name Name matches, counts tokens rather than holding one. A name that also
 // holds another credential word is not a count.
 func CountName(name string) bool {
 	return tokenCount.MatchString(name) && !otherWord.MatchString(name)
+}
+
+// Count reports whether a field called name holds a token count: the name counts tokens and value is a plain
+// non-negative integer. Any other value under such a name may be a credential.
+func Count(name, value string) bool {
+	return CountName(name) && integer.MatchString(value)
 }
 
 // Name matches a field or variable name that may hold a credential: one containing a credential word, or pat as a

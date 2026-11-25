@@ -157,7 +157,7 @@ func (r redactor) redact(text string) string {
 	text = r.lists(text)
 	text = numberField.ReplaceAllStringFunc(text, func(m string) string {
 		sub := numberField.FindStringSubmatch(m)
-		if redact.CountName(strings.TrimRight(sub[1], "\"' \t:=")) {
+		if redact.Count(strings.TrimRight(sub[1], "\"' \t:="), sub[2]) {
 			return m
 		}
 		return sub[1] + r.hide(sub[2])
@@ -331,14 +331,12 @@ func quoted(text string) bool {
 // separator; a JSON value is compared unescaped, since the launcher's helper command holds quotes.
 func (r redactor) keeps(field, quoted string) bool {
 	name := strings.ToLower(strings.TrimRight(field, "\"' \t:="))
-	if redact.CountName(name) {
-		return true
-	}
 	v := quoted[1 : len(quoted)-1]
 	if quoted[0] == '"' {
 		if u, err := strconv.Unquote(quoted); err == nil {
 			v = u
 		}
 	}
-	return v == "" || launcherValue(v) || r.reference != nil && r.reference(name, v)
+	return redact.Count(name, v) || v == "" || launcherValue(v) ||
+		r.reference != nil && r.reference(name, v)
 }

@@ -20,9 +20,9 @@ import (
 
 var yamlCredential = regexp.MustCompile(`(?i)^` + redact.Name + `$`)
 
-// credentialName reports whether a YAML field name may hold a credential; a token count does not.
+// credentialName reports whether a YAML field name may hold a credential.
 func credentialName(name string) bool {
-	return yamlCredential.MatchString(name) && !redact.CountName(name)
+	return yamlCredential.MatchString(name)
 }
 
 // YAML admits unquoted and block values; quoted-string redaction cannot protect its original diff side.
@@ -104,7 +104,7 @@ func (r yamlRedactor) value(name string, node ast.Node) ast.Node {
 		value = node.String()
 	}
 	text := fmt.Sprint(value)
-	if !credentialName(name) && r.seen[text] == 0 {
+	if (!credentialName(name) || redact.Count(strings.ToLower(name), text)) && r.seen[text] == 0 {
 		return node
 	}
 	masked := r.mask(text)

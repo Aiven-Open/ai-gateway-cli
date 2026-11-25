@@ -253,6 +253,66 @@ func TestRedactShowsTokenCountsAndHidesTokens(t *testing.T) {
 	}
 }
 
+func TestRedactHidesNonNumbersUnderTokenCountNames(t *testing.T) {
+	hidden := map[string]string{
+		"MAX_REFRESH_TOKENS":   `"MAX_REFRESH_TOKENS": "opaque09"`,
+		"GITHUB_OUTPUT_TOKENS": `"GITHUB_OUTPUT_TOKENS": "opaque10"`,
+		"MINT_TOKENS":          `"MINT_TOKENS": "opaque11"`,
+		"max_pat_tokens":       `"max_pat_tokens": "opaque12"`,
+		"input_tokens":         `"input_tokens": "opaque16"`,
+		"JSON list":            `"max_tokens": ["opaque13"]`,
+		"JSON object":          `"max_tokens": {"x": "opaque14"}`,
+		"TOML float":           `max_tokens = 1e5opaque`,
+	}
+	for name, line := range hidden {
+		if got := newRedactor(
+			nil,
+		).redact(line); strings.Contains(got, "opaque") ||
+			strings.Contains(got, "1e5") {
+			t.Errorf("%s: redact(%s) = %s, want the value hidden", name, line, got)
+		}
+	}
+	for name, text := range map[string]string{
+		"YAML list":   "max_tokens:\n  - opaque18\n",
+		"YAML scalar": "max_tokens: opaque19\n",
+		"YAML quoted": "MAX_REFRESH_TOKENS: \"opaque20\"\n",
+		"YAML object": "max_tokens:\n  x: opaque21\n",
+	} {
+		if got := newRedactor(nil).yaml(text); strings.Contains(got, "opaque") {
+			t.Errorf("%s: yaml(%q) = %q, want the value hidden", name, text, got)
+		}
+	}
+	for _, line := range []string{
+		`"ANTHROPIC_AUTH_TOKEN": "opaque01"`,
+		`"AWS_BEARER_TOKEN_BEDROCK": "opaque02"`,
+		`"OPENAI_API_KEY": "opaque03"`,
+		`"note": "sk-abcdefgh12345678"`,
+	} {
+		if got := newRedactor(
+			nil,
+		).redact(line); strings.Contains(got, "opaque") ||
+			strings.Contains(got, "sk-abc") {
+			t.Errorf("redact(%s) = %s, want the value hidden", line, got)
+		}
+	}
+}
+
+func TestRedactShowsTokenCountNumbersInYAMLAndJSON(t *testing.T) {
+	for _, line := range []string{
+		`"CLAUDE_CODE_MAX_CONTEXT_TOKENS": "200000"`,
+		`"CLAUDE_CODE_MAX_CONTEXT_TOKENS": 200000`,
+	} {
+		if got := newRedactor(nil).redact(line); got != line {
+			t.Errorf("redact(%s) = %s, want it unchanged", line, got)
+		}
+	}
+	for _, text := range []string{"max_tokens: 200000\n", "max_tokens: \"200000\"\n"} {
+		if got := newRedactor(nil).yaml(text); got != text {
+			t.Errorf("yaml(%q) = %q, want it unchanged", text, got)
+		}
+	}
+}
+
 // Show file changes goes through changes, so the context window a settings file declares is readable there.
 func TestShowChangesKeepsContextWindowAndHidesToken(t *testing.T) {
 	f := harness.File{
