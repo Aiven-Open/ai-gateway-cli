@@ -13,21 +13,19 @@ import (
 )
 
 // MaxOtherModels is how many models from vendors other than Anthropic Claude Code holds: its custom
-// option and
-// its four tiers.
+// option and its four tiers.
 const MaxOtherModels = 5
 
-// IsClaude reports whether the catalogue files alias under Anthropic. A claude- prefix alone is not
-// enough: an
-// Aiven-owned claude-opus-5-5 is Aiven's model, which Claude Code holds in a slot of its own.
+// IsClaude reports whether alias is a granted Anthropic model: filed under Anthropic, or with no
+// owner and a claude- prefix. An Aiven-owned claude-opus-5-5 is Aiven's model, which Claude Code
+// holds in a slot of its own.
 func IsClaude(t []models.Model, alias string) bool {
 	m, ok := models.Find(t, alias)
-	return ok && m.Group() == "Anthropic"
+	return ok && m.IsClaude()
 }
 
 // tierVars are Claude Code's tier slots in the order models from other vendors take them. Haiku
-// goes last, on the
-// assumption that Claude Code sends its background calls there.
+// goes last, on the assumption that Claude Code sends its background calls there.
 var tierVars = []string{
 	"ANTHROPIC_DEFAULT_FABLE_MODEL",
 	"ANTHROPIC_DEFAULT_OPUS_MODEL",
@@ -66,14 +64,10 @@ func (s slots) withTier(v, alias string) slots {
 }
 
 // fillSlots places a Choose models answer. Each ticked Claude model takes the tier its alias names.
-// The first
-// model from another vendor takes the custom option; the rest take the tiers in fillOrder. A tier
-// no pick takes
-// keeps its Claude model, else the defaultSlots tier when Anthropic models are granted, else the
-// default. The
-// tiers come from the catalogue alone, never from pins the settings already hold, so the same picks
-// always give
-// the same slots.
+// The first model from another vendor takes the custom option; the rest take the tiers in
+// fillOrder. A tier no pick takes keeps its Claude model, else the defaultSlots tier when Anthropic
+// models are granted, else the default. The tiers come from the catalogue alone, never from pins
+// the settings already hold, so the same picks always give the same slots.
 func fillSlots(t []models.Model, sel harness.ModelSelection) (slots, error) {
 	main := bare(cmp.Or(sel.Model, sel.Models[0]))
 	others := otherPicks(t, sel.Models)
@@ -132,12 +126,9 @@ func namedTier(alias string) string {
 }
 
 // withClaudePicks is held with each ticked Anthropic model in the tier its alias names, ahead of
-// the tier's preset
-// model, and the tiers they took. The first pick naming a tier takes it; a later one, or one naming
-// no tier, gets
-// no slot by name and stays reachable through gateway model discovery, though it may remain where a
-// tier's preset
-// model already put it.
+// the tier's preset model, and the tiers they took. The first pick naming a tier takes it; a later
+// one, or one naming no tier, gets no slot by name and stays reachable through gateway model
+// discovery, though it may remain where a tier's preset model already put it.
 func withClaudePicks(t []models.Model, held slots, picks []string) (slots, []string) {
 	var claimed []string
 	for _, p := range picks {
@@ -153,10 +144,8 @@ func withClaudePicks(t []models.Model, held slots, picks []string) (slots, []str
 }
 
 // fillOrder lists the tiers models from other vendors take after the custom option: tiers with no
-// Claude model;
-// then fable, opus and sonnet holding a Claude model nobody ticked; then those holding a ticked
-// one; then haiku,
-// ticked or not. Each group keeps tierVars order.
+// Claude model; then fable, opus and sonnet holding a Claude model nobody ticked; then those
+// holding a ticked one; then haiku, ticked or not. Each group keeps tierVars order.
 func fillOrder(held slots, ticked []string) []string {
 	rank := func(v string) int {
 		switch {

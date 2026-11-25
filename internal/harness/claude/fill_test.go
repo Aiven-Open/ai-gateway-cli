@@ -3,6 +3,7 @@
 package claude
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -10,12 +11,20 @@ import (
 	"github.com/aiven-open/ai-gateway-cli/internal/models"
 )
 
-// catalogue grants aliases; claude- ones are Anthropic's, as the catalogue's owner field says.
+// catalogue grants aliases with no owner, as a gateway relaying a bare listing does.
 func catalogue(aliases ...string) []models.Model {
 	out := make([]models.Model, len(aliases))
 	for i, a := range aliases {
 		out[i] = models.Model{Alias: a}
-		if strings.HasPrefix(a, "claude-") {
+	}
+	return out
+}
+
+// withAnthropicOwner is ms with every claude- alias owned by Anthropic.
+func withAnthropicOwner(ms []models.Model) []models.Model {
+	out := slices.Clone(ms)
+	for i, m := range out {
+		if strings.HasPrefix(m.Alias, "claude-") {
 			out[i].Owner = "anthropic"
 		}
 	}
@@ -85,7 +94,7 @@ func TestResolveSlotsFillsChosenModelsByTheRule(t *testing.T) {
 				opus: "claude-opus-5-5", sonnet: "claude-sonnet-5-5", haiku: "claude-haiku-5-5"},
 		},
 		{
-			name:  "a tier the settings pin to another model takes the preset model",
+			name:  "pins in the existing settings do not change the tiers",
 			table: catalogue("claude-sonnet-5-5", "claude-sonnet-4-5", "glm-5"),
 			env:   map[string]any{"ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-5"},
 			sel:   picks("glm-5", "glm-5"),
@@ -93,7 +102,7 @@ func TestResolveSlotsFillsChosenModelsByTheRule(t *testing.T) {
 				opus: "claude-sonnet-5-5", sonnet: "claude-sonnet-5-5", haiku: "claude-sonnet-5-5"},
 		},
 		{
-			name:  "a pin that is not a Claude model leaves its tier open",
+			name:  "a pin to another vendor's model in the settings is ignored",
 			table: catalogue("claude-opus-5-5", "claude-haiku-5-5", "glm-5", "gpt-6.2-astra"),
 			env:   map[string]any{"ANTHROPIC_DEFAULT_SONNET_MODEL": "gpt-6.2-astra"},
 			sel:   picks("glm-5", "glm-5", "gpt-6.2-astra"),
@@ -228,5 +237,47 @@ func TestAnAivenOwnedClaudeAliasCountsTowardTheLimit(t *testing.T) {
 		IsClaude(table, "glm-5") ||
 		IsClaude(table, "claude-not-granted") {
 		t.Error("IsClaude must hold only for the catalogue's Anthropic models")
+	}
+}
+
+func TestTheSpecExampleHoldsWithAnAnthropicOwnerAndWithNone(t *testing.T) {
+	t.Parallel()
+	bare := catalogue("claude-fable-5-2", "claude-haiku-5-5", "gemini-4-neon", "gpt-6.2-astra",
+		"deepseek-v4.1-flash")
+	sel := picks("gemini-4-neon", "claude-fable-5-2", "claude-haiku-5-5", "gemini-4-neon",
+		"gpt-6.2-astra", "deepseek-v4.1-flash")
+	want := slots{main: "gemini-4-neon", custom: "gemini-4-neon", fable: "claude-fable-5-2",
+		opus: "gpt-6.2-astra", sonnet: "deepseek-v4.1-flash", haiku: "claude-haiku-5-5"}
+	for name, table := range map[string][]models.Model{
+		"no owner": bare, "Anthropic owner": withAnthropicOwner(bare),
+	} {
+		got, _, err := resolveSlots(table, sel, nil)
+		if err != nil || got != want {
+			t.Errorf("%s: slots = %+v, %v; want %+v", name, got, err, want)
+		}
+	}
+}
+
+func TestIsClaudeTakesAnUnownedClaudeAliasButNotAnotherVendors(t *testing.T) {
+	t.Parallel()
+	table := append(catalogue("claude-fable-5-2", "claude-next", "glm-5", "mystery"),
+		models.Model{Alias: "claude-opus-5-5", Owner: "Aiven"})
+	for alias, want := range map[string]bool{
+		"claude-fable-5-2": true, "claude-next": true, "glm-5": false, "mystery": false,
+		"claude-opus-5-5": false,
+	} {
+		if got := IsClaude(table, alias); got != want {
+			t.Errorf("IsClaude(%s) = %v, want %v", alias, got, want)
+		}
+	}
+}
+
+func TestKeepGrantedClaudeTierKeepsAnUnownedClaudePin(t *testing.T) {
+	t.Parallel()
+	const key = "ANTHROPIC_DEFAULT_FABLE_MODEL"
+	got := keepGrantedClaudeTier(catalogue("claude-fable-5-2"),
+		map[string]any{key: "claude-fable-5-2"}, key, "fallback")
+	if got != "claude-fable-5-2" {
+		t.Errorf("pin = %q, want claude-fable-5-2", got)
 	}
 }

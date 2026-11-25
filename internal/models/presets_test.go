@@ -219,6 +219,16 @@ func TestAnthropicTiersLeavesATierWithoutItsOwnModelEmpty(t *testing.T) {
 	}
 }
 
+func TestAnthropicTiersRanksFableVersionsNumericallyWithOrWithoutAnOwner(t *testing.T) {
+	t.Parallel()
+	got := models.AnthropicTiers([]models.Model{
+		{Alias: "claude-fable-5-9"}, {Alias: "claude-fable-5-10"}, {Alias: "claude-fable-5-2"},
+	})
+	if got.Fable != "claude-fable-5-10" {
+		t.Errorf("fable = %q, want claude-fable-5-10", got.Fable)
+	}
+}
+
 func TestAnthropicTiersPrefersTheNewestGrantedFableAndSkipsAnotherVendorsClaude(t *testing.T) {
 	t.Parallel()
 	anthropic := func(a string) models.Model { return models.Model{Alias: a, Owner: "anthropic"} }

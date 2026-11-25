@@ -5,6 +5,7 @@ package models
 import (
 	"cmp"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -74,8 +75,7 @@ func Presets(ms []Model) []Preset {
 	return out
 }
 
-// FindPreset resolves id against ms, returning false when ms grants none of that preset's primary
-// models.
+// FindPreset resolves id against ms, returning false when ms grants none of that preset's primary models.
 func FindPreset(ms []Model, id PresetID) (Preset, bool) {
 	switch id {
 	case PresetAnthropic:
@@ -180,8 +180,7 @@ func geminiMain(ms []Model) string {
 	return ""
 }
 
-// OpenWeightOrFirst returns the first granted Open-weight model in preference order, else
-// FirstAlias.
+// OpenWeightOrFirst returns the first granted Open-weight model in preference order, else FirstAlias.
 func OpenWeightOrFirst(ms []Model) string {
 	if a := FirstGranted(ms, openWeightMainOrder...); a != "" {
 		return a
@@ -192,23 +191,31 @@ func OpenWeightOrFirst(ms []Model) string {
 	return FirstAlias(ms)
 }
 
+// IsClaude reports whether m is an Anthropic model: the catalogue files it under Anthropic, or
+// names no owner the reviewed list knows and the alias starts with claude-. A model another vendor
+// owns, such as an Aiven-owned claude-opus-5-5, is not.
+func (m Model) IsClaude() bool {
+	switch m.Group() {
+	case "Anthropic":
+		return true
+	case UnknownGroup:
+		return strings.HasPrefix(m.Alias, "claude-")
+	}
+	return false
+}
+
 // AnthropicTiers returns the first granted Anthropic model of each Claude tier's own order. A model
-// the catalogue
-// files under another vendor (an Aiven-owned claude-opus-5-5) is no Anthropic model. A tier the key
-// grants none of
-// stays empty, where FindPreset would fill it from another tier. The fable tier prefers the newest
-// granted
-// claude-fable model ahead of its preset order.
+// the catalogue files under another vendor (an Aiven-owned claude-opus-5-5) is no Anthropic model.
+// A tier the key grants none of stays empty, where FindPreset would fill it from another tier. The
+// fable tier takes the highest-versioned granted claude-fable model.
 func AnthropicTiers(ms []Model) Preset {
-	own := slices.DeleteFunc(slices.Clone(ms), func(m Model) bool { return m.Group() != "Anthropic" })
+	own := slices.DeleteFunc(slices.Clone(ms), func(m Model) bool { return !m.IsClaude() })
 	var fables []string
 	for _, m := range own {
 		if strings.Contains(m.Alias, "claude-fable") {
 			fables = append(fables, m.Alias)
 		}
 	}
-	slices.Sort(fables)
-	slices.Reverse(fables)
 	return Preset{
 		ID:     PresetAnthropic,
 		Name:   "Anthropic",
@@ -216,8 +223,22 @@ func AnthropicTiers(ms []Model) Preset {
 		Sonnet: FirstGranted(own, anthropicSonnetOrder...),
 		Haiku:  FirstGranted(own, anthropicHaikuOrder...),
 		Fable: cmp.Or(
-			FirstGranted(own, fables...),
-			FirstGranted(own, "claude-opus-5-5", "claude-fable"),
+			slices.MaxFunc(append([]string{""}, fables...), compareVersions),
+			FirstGranted(own, "claude-opus-5-5"),
 		),
 	}
+}
+
+// compareVersions orders aliases by the numbers in them, part by part, so 5-10 ranks above 5-9.
+func compareVersions(a, b string) int {
+	isNotDigit := func(r rune) bool { return r < '0' || r > '9' }
+	pa, pb := strings.FieldsFunc(a, isNotDigit), strings.FieldsFunc(b, isNotDigit)
+	for i := 0; i < min(len(pa), len(pb)); i++ {
+		x, _ := strconv.Atoi(pa[i])
+		y, _ := strconv.Atoi(pb[i])
+		if c := cmp.Compare(x, y); c != 0 {
+			return c
+		}
+	}
+	return cmp.Compare(len(pa), len(pb))
 }
