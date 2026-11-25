@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-func TestSetupOMPRedactsAcceptedYAMLValuesInBothPreviewViews(t *testing.T) {
+func TestSetupOMPRedactsAcceptedYAMLValuesInFileChanges(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name, body string
@@ -47,7 +47,7 @@ func TestSetupOMPRedactsAcceptedYAMLValuesInBothPreviewViews(t *testing.T) {
 					args = []string{"setup", "omp"}
 				}
 				r := s.run(args...)
-				if r.code != 0 || !strings.Contains(r.stderr, "--- "+path) {
+				if r.code != 0 || full && !strings.Contains(r.stderr, "--- "+path) {
 					t.Fatalf("full=%v: setup did not reach preview: %s", full, r.stderr)
 				}
 				for _, secret := range tc.secrets {
@@ -55,7 +55,7 @@ func TestSetupOMPRedactsAcceptedYAMLValuesInBothPreviewViews(t *testing.T) {
 						t.Fatalf("full=%v: existing YAML credential appeared in output", full)
 					}
 				}
-				if full && strings.Count(r.stderr, "--- "+path) != 2 {
+				if full && strings.Count(r.stderr, "--- "+path) != 1 {
 					t.Fatal("full diff was not displayed")
 				}
 				data, err := os.ReadFile(path)

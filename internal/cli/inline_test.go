@@ -70,9 +70,9 @@ func TestInlineApprovalAppliesOnlyOnAnExplicitApply(t *testing.T) {
 	}{
 		{name: "apply", answers: []selectAnswer{{picked: []int{0}}}, ok: true, outcome: reviewApproved},
 		{name: "decline/cancel", answers: []selectAnswer{{picked: []int{2}}}, outcome: reviewApproved},
-		{name: "full diff then apply", answers: []selectAnswer{{picked: []int{1}}, {picked: []int{0}}}, ok: true, outcome: reviewApproved, diffs: 1},
+		{name: "file changes then apply", answers: []selectAnswer{{picked: []int{1}}, {picked: []int{0}}}, ok: true, outcome: reviewApproved, diffs: 1},
 		{name: "esc", answers: []selectAnswer{{err: errCancelled}}, outcome: reviewCancelled},
-		{name: "full diff then ctrl-c", answers: []selectAnswer{{picked: []int{1}}, {err: errCancelled}}, outcome: reviewCancelled, diffs: 1},
+		{name: "file changes then ctrl-c", answers: []selectAnswer{{picked: []int{1}}, {err: errCancelled}}, outcome: reviewCancelled, diffs: 1},
 		{name: "end of input", outcome: reviewCancelled},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -84,13 +84,12 @@ func TestInlineApprovalAppliesOnlyOnAnExplicitApply(t *testing.T) {
 				t.Fatal("inline list not offered on a terminal")
 			}
 			item := pendingPreview{
-				target:  &setupTarget{out: &targetOutcome{tool: "pi"}},
-				files:   files,
-				write:   files,
-				preview: "preview",
-				names:   backupNames{time.Unix(0, 0), map[string]string{}},
+				target: &setupTarget{out: &targetOutcome{tool: "pi"}},
+				files:  files,
+				write:  files,
+				names:  backupNames{time.Unix(0, 0), map[string]string{}},
 			}
-			approved, outcome := approveSingleInteractive(deps, p, item, nil, false)
+			approved, outcome := approveInteractive(deps, p, []pendingPreview{item}, false)
 			if (len(approved) == 1) != tc.ok || outcome != tc.outcome || sel.lines != 0 {
 				t.Errorf(
 					"approved %d, outcome %v, ReadLine calls %d; want ok=%v, outcome=%v, 0",

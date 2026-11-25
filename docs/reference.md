@@ -141,10 +141,12 @@ and pins name, are accepted. A refusal fails only the tools depending on
 that model; authentication failure cancels remaining checks and prevents
 saving any key or configuration.
 
-Finally, `setup` closes the vertical rail (`└`) and presents a rail-free
-review table (for multiple tools: `Apply all`, `Inspect redacted diffs`,
-`Back`, `Cancel`) or diff preview (for one tool: `Apply`, `Show full
-redacted diff`, `Back`, `Cancel`). Only after explicit approval (or `--yes`)
+Finally, `setup` closes the vertical rail (`└`) and shows, for each tool, the
+default model, the other models Claude Code's `/model` will list, the default
+provider and the files it will write, then asks `Apply` (`Apply all` for several
+tools), `Show file changes`, `Back` or `Cancel`. `Show file changes` prints the
+full redacted diff, model lists included, and asks again; `--yes` and runs
+without a terminal print the same table and no diff. Only after explicit approval (or `--yes`)
 does `setup` write approved files atomically with timestamped `.bak` backups
 and persist launcher model preferences for approved Pi, OpenCode and OMP
 targets. With changes to write, the key is saved
@@ -300,9 +302,8 @@ and `PI_CONFIG_DIR`.
 
 ## Diff Previews, Redaction and File Replacement
 
-Setup shows configuration changes and their backup paths before writing. Pi,
-OpenCode and OMP catalogue previews show two model names; `v` displays the
-full redacted diff. Both diff sides redact unrelated provider and MCP
+Setup shows what it will configure and its backup paths before writing; `Show
+file changes`, or `v` at a numbered prompt, prints the full redacted diff. Both diff sides redact unrelated provider and MCP
 credentials. Redaction goes by field name: it masks the values of fields
 named like a key, token, secret, password, credential, bearer, auth, cookie
 or session, comments that mention one, URL user info and key-shaped strings.
