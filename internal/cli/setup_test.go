@@ -987,3 +987,62 @@ func TestSetupPutsThePreviousKeyBackWhenNoToolIsConfigured(t *testing.T) {
 		})
 	}
 }
+
+// Rollback touches the key file only while it still holds the key this run saved.
+func TestSetupRollbackLeavesAKeyFileAnotherProcessChanged(t *testing.T) {
+	for name, change := range map[string]func(path string){
+		"another login": func(path string) { _ = fsutil.WriteAtomic(path, []byte(keyShort+"\n"), 0o600) },
+		"a logout":      func(path string) { _ = os.Remove(path) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := newSession(t, newGatewayDouble(t)).loggedIn(keyFlash)
+			fail := filepath.Join(s.fakeHome, claude.SettingsFile)
+			s.deps.WriteFile = func(path string, data []byte, perm os.FileMode) error {
+				if path == fail {
+					change(s.keyPath())
+					return errors.New("disk full")
+				}
+				return fsutil.WriteAtomic(path, data, perm)
+			}
+			r := s.stdin(keyValid).run("setup", "--key-stdin", "--yes", "claude")
+			want := keyShort + "\n"
+			if name == "a logout" {
+				want = ""
+			}
+			if got := readOrEmpty(t, s.keyPath()); r.code != 1 || got != want {
+				t.Errorf("exit %d, key file = %q, want %q", r.code, got, want)
+			}
+			if !strings.Contains(r.stderr, "the key file changed during setup so it was left alone") {
+				t.Errorf("summary does not say the key file was left alone: %q", r.stderr)
+			}
+		})
+	}
+}
+
+// A tool that wrote a file keeps the new key, so the file it wrote can still be used.
+func TestSetupKeepsTheNewKeyAfterAPartialWrite(t *testing.T) {
+	s := newSession(t, newGatewayDouble(t)).loggedIn(keyFlash)
+	s.deps.WriteFile = failNth(filepath.Join(s.fakeHome, ".codex", "aiven.config.toml"), 1)
+	r := s.stdin(keyValid).run("setup", "--key-stdin", "--yes", "codex")
+	if r.code != 1 || !strings.Contains(r.stderr, "partially configured") {
+		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
+	}
+	if got := readOrEmpty(t, s.keyPath()); got != keyValid+"\n" {
+		t.Errorf("key file = %q, want %q", got, keyValid+"\n")
+	}
+}
+
+// A rotation that cannot be saved is a failed run, not a completed one.
+func TestSetupFailedRotationIsNotReportedAsComplete(t *testing.T) {
+	s := newSession(t, newGatewayDouble(t))
+	if r := s.stdin(keyShort).run("setup", "--key-stdin", "--yes", "claude"); r.code != 0 {
+		t.Fatalf("first setup: exit %d, stderr %q", r.code, r.stderr)
+	}
+	s.deps.WriteFile = failNth(s.keyPath(), 1)
+	r := s.stdin(keyBare).run("setup", "--key-stdin", "--yes", "claude")
+	if r.code != 1 || strings.Contains(r.stderr, "Setup complete") ||
+		strings.Contains(r.stderr, "Start a session") ||
+		!strings.Contains(r.stderr, "Setup finished with errors") {
+		t.Errorf("exit %d, stderr %q", r.code, r.stderr)
+	}
+}

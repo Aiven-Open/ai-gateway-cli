@@ -4,6 +4,7 @@ package cli
 
 import (
 	"slices"
+	"strings"
 
 	"github.com/aiven-open/ai-gateway-cli/internal/config"
 )
@@ -41,13 +42,30 @@ func (s *setupSession) commitApproved(approved []approvedWrite) int {
 	return s.run.finish()
 }
 
-// restoreKeyIfNothingReady puts back the key file the run found when no selected tool ended up configured or
-// unchanged: no tool reads the new key, and other tools keep the old one.
+// wroteNothing reports whether no target is ready and none wrote a file, so no tool reads the key this run saved.
+func (r *setupRun) wroteNothing() bool {
+	return !slices.ContainsFunc(r.targets, func(o *targetOutcome) bool {
+		return o.ready() || len(o.written) > 0
+	})
+}
+
+// restoreKeyIfNothingReady puts back the key file the run found when no tool read or wrote anything: no tool uses the
+// new key, and other tools keep the old one. It touches the file only while it still holds the key this run saved,
+// so a login or logout by another process in between is left alone.
 func (s *setupSession) restoreKeyIfNothingReady(prev keyFile) {
-	if slices.ContainsFunc(s.run.targets, func(o *targetOutcome) bool { return o.ready() }) {
+	if !s.run.wroteNothing() {
 		return
 	}
-	if err := restoreKey(s.env, s.deps, prev); err != nil {
+	cur, err := readKeyFile(s.env)
+	if err == nil && (!cur.existed || strings.TrimSpace(string(cur.data)) != s.key) {
+		s.run.credential = "not saved by this run; " +
+			"the key file changed during setup so it was left alone"
+		return
+	}
+	if err == nil {
+		err = restoreKey(s.env, s.deps, prev)
+	}
+	if err != nil {
 		_ = fail(s.deps, "putting back the previous key: "+err.Error())
 		s.run.credential += "; putting back the previous key failed: " + err.Error()
 		return
@@ -61,28 +79,41 @@ func (s *setupSession) restoreKeyIfNothingReady(prev keyFile) {
 }
 
 // commitNoWrites ends a run with no file to write. A new key is still saved when a selected tool is already up to
-// date, since that tool reads the key file. A declined change never reaches here with an unchanged tool.
+// date, since that tool reads the key file, unless another selected tool's change was declined.
 func (s *setupSession) commitNoWrites() int {
-	unchanged := slices.ContainsFunc(s.run.targets, func(o *targetOutcome) bool {
-		return o.status == statusUnchanged
-	})
-	if !unchanged {
+	has := func(status targetStatus) bool {
+		return slices.ContainsFunc(
+			s.run.targets,
+			func(o *targetOutcome) bool { return o.status == status },
+		)
+	}
+	if !has(statusUnchanged) || has(statusDeclined) {
 		s.run.credential = "not saved by this run; existing key files unchanged; " +
 			"no configuration changes were approved"
 		return s.run.finish()
 	}
 	saved, err := storedKey(s.env)
 	if err != nil {
-		return s.run.sharedFailure(s.deps, "reading the saved key", err)
+		return s.failRotation("reading the saved key", err)
 	}
 	if saved == s.key {
 		s.run.credential = "unchanged; existing key files unchanged"
 		return s.run.finish()
 	}
 	if err := s.saveRunKey(); err != nil {
-		return s.run.sharedFailure(s.deps, "saving the key", err)
+		return s.failRotation("saving the key", err)
 	}
 	return s.run.finish()
+}
+
+// failRotation ends a run whose key rotation failed: tools that were up to date are not reported as ready.
+func (s *setupSession) failRotation(stage string, err error) int {
+	for _, o := range s.run.targets {
+		if o.status == statusUnchanged {
+			o.status, o.reason = statusFailed, "the key was not updated: "+stage+" failed"
+		}
+	}
+	return s.run.sharedFailure(s.deps, stage, err)
 }
 
 // saveRunKey saves the run's key and records where in the summary.
