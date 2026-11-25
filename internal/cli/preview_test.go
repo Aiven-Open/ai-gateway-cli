@@ -129,7 +129,8 @@ func TestConfigureToolNamesItsBackup(t *testing.T) {
 		true,
 		false,
 	); out.status != statusUnchanged ||
-		!strings.Contains(stderr, "Already configured") {
+		!strings.Contains(stderr, "\n"+toolLabel("pi")+"\n  Already configured") ||
+		strings.Contains(stderr, "configuration") {
 		t.Errorf("rerun: outcome %+v, stderr %q", out, stderr)
 	}
 }
@@ -215,6 +216,30 @@ func TestConfigureToolKeepsComments(t *testing.T) {
 		"{\n  // local models\n  \"providers\": {\n    \"local\": {\"baseUrl\": \"http://localhost\"}, // mine\n    \"aiven\": {\n",
 	) {
 		t.Errorf("models.json = %q", got)
+	}
+}
+
+func TestConfigureToolWritesOMPModelsKeepingComments(t *testing.T) {
+	env := previewEnv(t)
+	path := filepath.Join(env.UserHome, ".omp/agent/models.yml")
+	writeTestFile(t, path, "# local models\nproviders:\n  local:\n    baseUrl: http://localhost\n")
+	plan, err := preparePlanForTest(env, previewTable, "omp", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stderr strings.Builder
+	deps := Deps{Stderr: &stderr, Now: func() time.Time { return previewNow }}
+	out := targetOutcome{tool: "omp"}
+	configureToolForTest(deps, newPresenter(env, deps, true), true, &out, plan.Files, previewTable)
+	got := readTestFile(t, path)
+	if out.status != statusConfigured || !strings.HasPrefix(got, "# local models\n") ||
+		!strings.Contains(got, "baseUrl: http://localhost") {
+		t.Fatalf("outcome %+v, models.yml %q", out, got)
+	}
+	for _, m := range previewTable {
+		if !strings.Contains(got, "id: "+m.Alias) {
+			t.Errorf("models.yml = %q, want model %s", got, m.Alias)
+		}
 	}
 }
 

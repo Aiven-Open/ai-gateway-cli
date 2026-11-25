@@ -55,7 +55,7 @@ func approveInteractive(
 	pending []pendingPreview,
 	allowBack bool,
 ) ([]approvedWrite, reviewOutcome) {
-	for range 10 {
+	for {
 		act, err := askReview(deps, p, pending, allowBack)
 		switch {
 		case errors.Is(err, errBack), err == nil && act == actBack:
@@ -71,7 +71,6 @@ func approveInteractive(
 			return nil, failReview(deps, pending, err)
 		}
 	}
-	return nil, failReview(deps, pending, errors.New("no answer: expected apply or cancel"))
 }
 
 func askReview(

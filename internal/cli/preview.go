@@ -172,11 +172,11 @@ func pendingChanges(
 		}
 		switch {
 		case err != nil:
-			p.ui.heading(toolLabel(t.out.tool) + " configuration")
+			p.ui.heading(toolLabel(t.out.tool))
 			t.out.status, t.out.reason = statusFailed, err.Error()
 			_ = fail(deps, t.out.tool+": "+err.Error())
 		case len(write) == 0 && !prefChanged:
-			p.ui.heading(toolLabel(t.out.tool) + " configuration")
+			p.ui.heading(toolLabel(t.out.tool))
 			p.ui.line(2, "Already configured; no file needs a change.")
 			t.out.status = statusUnchanged
 		default:

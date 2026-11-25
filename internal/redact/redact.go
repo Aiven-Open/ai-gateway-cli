@@ -16,7 +16,8 @@ const words = `token|` + otherWords
 var (
 	// tokenCount is a name that sizes something in tokens: a whole part of it is a sizing word and tokens ends it.
 	tokenCount = regexp.MustCompile(
-		`(?i)(?:^|[_.-])(?:max|min|context|window|input|output|budget)(?:[_.-][\w.-]*[_.-]|[_.-]|)tokens$`,
+		`(?i)(?:^|[_.-])(?:max|min|context|window|input|output|budget)` +
+			`(?:[_.-][\w.-]*[_.-]|[_.-]|)tokens$`,
 	)
 	otherWord = regexp.MustCompile(`(?i)` + otherWords + `|(?:^|[_.-])pat(?:$|[_.-])`)
 	integer   = regexp.MustCompile(`^[0-9]+$`)

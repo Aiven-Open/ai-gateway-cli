@@ -303,8 +303,8 @@ and `PI_CONFIG_DIR`.
 
 ## Diff Previews, Redaction and File Replacement
 
-Setup shows what it will configure and its backup paths before writing; `Show
-file changes`, or `v` at a numbered prompt, prints the full redacted diff. Both diff sides redact unrelated provider and MCP
+Setup shows what it will configure before writing, and its table says that a previous version is kept beside each changed file; `Show
+file changes`, or `v` at a numbered prompt, prints the full redacted diff with the backup paths. Both diff sides redact unrelated provider and MCP
 credentials. Redaction goes by field name: it masks the values of fields
 named like a key, token, secret, password, credential, bearer, auth, cookie
 or session, except the number in a token count such as `max_tokens` or `CLAUDE_CODE_MAX_CONTEXT_TOKENS`,
