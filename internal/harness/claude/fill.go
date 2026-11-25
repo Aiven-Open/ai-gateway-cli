@@ -66,7 +66,7 @@ func (s slots) withTier(v, alias string) slots {
 // fillSlots places a Choose models answer. Each ticked Claude model takes the tier its alias names.
 // The first model from another vendor takes the custom option; the rest take the tiers in
 // fillOrder. A tier no pick takes keeps its Claude model, else the defaultSlots tier when Anthropic
-// models are granted, else the default. The tiers come from the catalogue alone, never from pins
+// models are granted, else the default pick; no tier is left empty. The tiers come from the catalogue alone, never from pins
 // the settings already hold, so the same picks always give the same slots.
 func fillSlots(t []models.Model, sel harness.ModelSelection) (slots, error) {
 	main := bare(cmp.Or(sel.Model, sel.Models[0]))
@@ -86,7 +86,7 @@ func fillSlots(t []models.Model, sel harness.ModelSelection) (slots, error) {
 		s.custom, queue = queue[0], queue[1:]
 	}
 	for _, v := range fillOrder(held, ticked) {
-		alias := cmp.Or(held.tier(v), spare.tier(v))
+		alias := cmp.Or(held.tier(v), spare.tier(v), main)
 		if len(queue) > 0 {
 			alias, queue = queue[0], queue[1:]
 		}

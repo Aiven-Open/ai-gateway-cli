@@ -42,6 +42,17 @@ func TestResolveSlotsFillsChosenModelsByRule(t *testing.T) {
 		"glm-5", "kimi-k3", "qwen3-coder-480b")
 	aivenOpus := append(catalogue("claude-sonnet-5-5", "claude-haiku-4-5", "glm-5"),
 		models.Model{Alias: "claude-opus-5-5", Owner: "Aiven"})
+	realTiers := append(
+		catalogue(
+			"claude-fable-5-2",
+			"claude-opus-4-8",
+			"claude-sonnet-5-5",
+			"claude-haiku-4-5",
+			"glm-5",
+		),
+		models.Model{Alias: "claude-opus-5-5", Owner: "Aiven"},
+	)
+	noClaude := append(catalogue("glm-5"), models.Model{Alias: "claude-opus-5-5", Owner: "Aiven"})
 	for _, tc := range []struct {
 		name  string
 		table []models.Model
@@ -175,14 +186,28 @@ func TestResolveSlotsFillsChosenModelsByRule(t *testing.T) {
 			table: aivenOpus,
 			sel:   picks("claude-opus-5-5", "claude-opus-5-5", "glm-5"),
 			want: slots{main: "claude-opus-5-5", custom: "claude-opus-5-5", fable: "glm-5",
-				sonnet: "claude-sonnet-5-5", haiku: "claude-haiku-4-5"},
+				opus: "claude-opus-5-5", sonnet: "claude-sonnet-5-5", haiku: "claude-haiku-4-5"},
 		},
 		{
 			name:  "an Aiven-owned claude- alias picked alone fills one slot and no tier default",
 			table: aivenOpus,
 			sel:   picks("claude-opus-5-5", "claude-opus-5-5"),
-			want: slots{main: "claude-opus-5-5", custom: "claude-opus-5-5",
-				sonnet: "claude-sonnet-5-5", haiku: "claude-haiku-4-5"},
+			want: slots{main: "claude-opus-5-5", custom: "claude-opus-5-5", fable: "claude-opus-5-5",
+				opus: "claude-opus-5-5", sonnet: "claude-sonnet-5-5", haiku: "claude-haiku-4-5"},
+		},
+		{
+			name:  "an Aiven-owned claude- alias picked alone sits in the custom slot on a key with every Claude tier",
+			table: realTiers,
+			sel:   picks("claude-opus-5-5", "claude-opus-5-5"),
+			want: slots{main: "claude-opus-5-5", custom: "claude-opus-5-5", fable: "claude-fable-5-2",
+				opus: "claude-opus-4-8", sonnet: "claude-sonnet-5-5", haiku: "claude-haiku-4-5"},
+		},
+		{
+			name:  "an Aiven-owned claude- alias picked alone gives every tier the default pick on a key with no Claude",
+			table: noClaude,
+			sel:   picks("claude-opus-5-5", "claude-opus-5-5"),
+			want: slots{main: "claude-opus-5-5", custom: "claude-opus-5-5", fable: "claude-opus-5-5",
+				opus: "claude-opus-5-5", sonnet: "claude-opus-5-5", haiku: "claude-opus-5-5"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -190,6 +215,11 @@ func TestResolveSlotsFillsChosenModelsByRule(t *testing.T) {
 			got, explicit, err := resolveSlots(tc.table, tc.sel, tc.env)
 			if err != nil || !explicit || got != tc.want {
 				t.Errorf("resolveSlots = %+v, %v, %v; want %+v", got, explicit, err, tc.want)
+			}
+			for _, v := range tierVars {
+				if got.tier(v) == "" {
+					t.Errorf("tier slot %s is empty in %+v", v, got)
+				}
 			}
 		})
 	}
