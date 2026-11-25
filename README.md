@@ -67,7 +67,7 @@ motion. Non-UTF-8 locales (`LC_ALL=C`/`POSIX`) fall back to ASCII markers.
 
 | Command | Summary |
 | --- | --- |
-| `setup [harness] [--key-stdin] [-y\|--yes] [--plain]` | Discover installed harnesses, validate a key, choose a model or curated preset (resolving ungranted configured models), probe each configured protocol and model concurrently (1 output token each, which may incur usage; a timed-out check is sent once more), review redacted diffs, save the key (`0600`) and launcher model preferences, and write harness configuration with timestamped `.bak` backups. Never starts a session. |
+| `setup [harness] [--key-stdin] [-y\|--yes] [--plain]` | Discover installed harnesses, validate a key, choose a model or curated preset (resolving ungranted configured models), probe each configured protocol and model concurrently (1 output token each, which may incur usage; a check that times out before any response is sent once more, so a model can receive two one-token requests), review redacted diffs, save the key (`0600`) and launcher model preferences, and write harness configuration with timestamped `.bak` backups. Never starts a session. |
 | `launch [--plain] [harness] [--] [native args]` | Start one configured harness against the selected gateway without modifying persistent configuration. Arguments after the harness name (or after `--` when picking a harness) are forwarded literally to the native tool; an optional `--` after the harness name is also accepted. |
 | `login` | Check that an explicitly supplied key can list models, save it (`0600`), and list granted models. Sends no inference request and configures no harness. |
 | `logout` | Remove the saved key file for the selected gateway, leaving other gateways' key files and harness configurations intact. Does not revoke the server key or unset environment variables. |
@@ -128,9 +128,9 @@ default gateway (`https://ai.aiven.io`), and under
 valid saved key automatically; run `aiven-ai-gateway login` or pass
 `--key-stdin` to replace it. With changes to write, the key is saved before the
 approved changes. With nothing to write, a new key is saved only when every
-selected tool is already up to date. If no tool ends up ready or with a file
+selected tool is already up to date, also in unattended runs without `--yes`. If no tool ends up ready or with a file
 written, the previous key is put back unless another process changed the key
-file meanwhile.
+file meanwhile. Putting it back is best effort: a login or logout running at the same moment can still be overwritten.
 
 ## Environment
 

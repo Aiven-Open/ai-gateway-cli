@@ -130,10 +130,12 @@ layers) fail before probes or writes, naming any derived gateway alias.
 
 Next, `setup` prints one dimmed usage notice and probes each distinct
 uncached `(protocol, model)` concurrently (Chat Completions, Messages or
-Responses, 1 output token each, and a check that times out is sent once more) with a live spinner on styled terminals and
+Responses, 1 output token each) with a live spinner on styled terminals and
 deterministic sorted status rows with elapsed latency. Completed probe
 results are memoized across `Back` navigation so stepping back and forward
-never re-sends already-verified probes. These basic checks may incur usage.
+never re-sends already-verified probes. A check that times out before any response is sent once more, so a
+model can receive two one-token requests; a timeout after the response has started is reported and not sent again.
+These basic checks may incur usage.
 They do not show that a tool's own requests, or the models its other slots
 and pins name, are accepted. A refusal fails only the tools depending on
 that model; authentication failure cancels remaining checks and prevents
@@ -147,9 +149,9 @@ does `setup` write approved files atomically with timestamped `.bak` backups
 and persist launcher model preferences for approved Pi, OpenCode and OMP
 targets. With changes to write, the key is saved
 before the approved changes. With nothing to write, a new key is saved only when
-every selected tool is already up to date. If no tool ends up ready or with a
+every selected tool is already up to date, also in unattended runs without `--yes`. If no tool ends up ready or with a
 file written, the previous key is put back unless another process changed the
-key file meanwhile. When no configuration change is approved,
+key file meanwhile. Putting it back is best effort: a login or logout running at the same moment can still be overwritten. When no configuration change is approved,
 `ai-gateway-models.json` is not written.
 
 Ready tools end with a compact launch table (`COMMAND` / `MODEL`, without
@@ -207,7 +209,8 @@ does not answer this question.
 For unattended setup without a working saved key, provide the key with
 `--key-stdin`, even when `AIVEN_AI_GATEWAY_KEY` is set. Add `--yes` to apply
 configuration without further prompts. Without a terminal or `--yes`,
-configuration is skipped and no key is saved. Never put a key in command
+configuration is skipped and no key is saved, unless every selected tool is already up to date: then a new key from
+`--key-stdin` is saved even without `--yes`. Never put a key in command
 arguments; clipboard input is not supported.
 
 ```text
