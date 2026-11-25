@@ -960,6 +960,51 @@ func TestSetupSavesARotatedKeyWhenNothingElseChanges(t *testing.T) {
 	}
 }
 
+// A tool whose checks failed may still need the old key, so the new one is not saved beside an up-to-date tool.
+func TestSetupKeepsOldKeyWhenAnotherToolFailsItsChecks(t *testing.T) {
+	g := newGatewayDouble(t)
+	g.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet:
+			_, _ = w.Write([]byte(`{"data":[{"id":"claude-sonnet"},{"id":"gpt-6.1-sol"}]}`))
+		case r.URL.Path == "/v1/chat/completions":
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":{"message":"chat failed"}}`))
+		default:
+			_, _ = w.Write([]byte(`{"type":"message","object":"response","content":[],"output":[]}`))
+		}
+	})
+	s := newSession(t, g)
+	if r := s.stdin(keyShort).run("setup", "--key-stdin", "--yes", "claude"); r.code != 0 {
+		t.Fatalf("first setup: exit %d, stderr %q", r.code, r.stderr)
+	}
+	s.deps.Prompter = &scriptedPrompter{answers: []string{"claude,opencode"}}
+	r := s.stdin(keyBare).run("setup", "--key-stdin", "--yes")
+	if got := readOrEmpty(t, s.keyPath()); got != keyShort+"\n" {
+		t.Errorf("key file = %q, want %q; exit %d, stderr %q", got, keyShort+"\n", r.code, r.stderr)
+	}
+	if !strings.Contains(r.stderr, "not saved by this run") {
+		t.Errorf("summary does not say the key was not saved: %q", r.stderr)
+	}
+}
+
+// An up-to-date tool reads the key file, so a failed write beside it keeps the new key.
+func TestSetupKeepsNewKeyWhenUnchangedToolSitsBesideFailedWrite(t *testing.T) {
+	s := newSession(t, newGatewayDouble(t))
+	if r := s.stdin(keyShort).run("setup", "--key-stdin", "--yes", "claude"); r.code != 0 {
+		t.Fatalf("first setup: exit %d, stderr %q", r.code, r.stderr)
+	}
+	s.deps.WriteFile = failNth(filepath.Join(s.fakeHome, ".codex", "config.toml"), 1)
+	s.deps.Prompter = &scriptedPrompter{answers: []string{"claude,codex"}}
+	r := s.stdin(keyBare).run("setup", "--key-stdin", "--yes")
+	if r.code != 1 {
+		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
+	}
+	if got := readOrEmpty(t, s.keyPath()); got != keyBare+"\n" {
+		t.Errorf("key file = %q, want %q", got, keyBare+"\n")
+	}
+}
+
 // A run that configures no tool leaves the key file as it was before the run.
 func TestSetupPutsThePreviousKeyBackWhenNoToolIsConfigured(t *testing.T) {
 	for name, saved := range map[string]string{"replacing a key": keyFlash, "first key": ""} {

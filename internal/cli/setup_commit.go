@@ -79,7 +79,7 @@ func (s *setupSession) restoreKeyIfNothingReady(prev keyFile) {
 }
 
 // commitNoWrites ends a run with no file to write. A new key is still saved when a selected tool is already up to
-// date, since that tool reads the key file, unless another selected tool's change was declined.
+// date, since that tool reads the key file. Any declined, skipped, failed or pending tool means the key is not saved.
 func (s *setupSession) commitNoWrites() int {
 	has := func(status targetStatus) bool {
 		return slices.ContainsFunc(
@@ -87,7 +87,8 @@ func (s *setupSession) commitNoWrites() int {
 			func(o *targetOutcome) bool { return o.status == status },
 		)
 	}
-	if !has(statusUnchanged) || has(statusDeclined) {
+	if !has(statusUnchanged) || has(statusDeclined) || has(statusSkipped) ||
+		has(statusFailed) || has(statusPending) {
 		s.run.credential = "not saved by this run; existing key files unchanged; " +
 			"no configuration changes were approved"
 		return s.run.finish()
