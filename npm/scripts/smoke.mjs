@@ -8,6 +8,7 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync,
 import { createServer } from "node:https";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import { inspectArtifacts } from "./artifacts.mjs";
 import { packageName, selectTarget } from "../lib/platforms.mjs";
 
@@ -168,10 +169,10 @@ const expected = {
       return parsed.env?.ANTHROPIC_BASE_URL === toolEnv.AIVEN_AI_GATEWAY_BASE_URL && typeof parsed.apiKeyHelper === "string";
     },
   },
-  codex: { files: [".codex/aiven.config.toml", ".codex/config.toml"], argv: (a) => a.join(" ") === "-p aiven" },
-  pi: { files: [".pi/agent/models.json"], argv: (a) => a.join(" ") === "--model aiven/claude-sonnet" },
-  opencode: { files: [".config/opencode/opencode.json"], argv: (a) => a.join(" ") === "-m aiven/claude-sonnet" },
-  omp: { files: [".omp/agent/models.yml"], argv: (a) => a.join(" ") === "--model aiven/claude-sonnet" },
+  codex: { files: [".codex/aiven.config.toml", ".codex/config.toml"], argv: (a) => isDeepStrictEqual(a, ["-p", "aiven"]) },
+  pi: { files: [".pi/agent/models.json"], argv: (a) => isDeepStrictEqual(a, ["--model", "aiven/claude-sonnet"]) },
+  opencode: { files: [".config/opencode/opencode.json"], argv: (a) => isDeepStrictEqual(a, ["-m", "aiven/claude-sonnet"]) },
+  omp: { files: [".omp/agent/models.yml"], argv: (a) => isDeepStrictEqual(a, ["--model", "aiven/claude-sonnet"]) },
 };
 const launches = {};
 for (const name of names) {
