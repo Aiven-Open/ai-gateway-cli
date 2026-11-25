@@ -65,7 +65,7 @@ func DefaultAlias(ms []Model, prefix string) string {
 // Gemini or Open-weight preference order, else FirstAlias.
 func SonnetOrFirst(ms []Model) string {
 	if a := FirstGranted(
-		ms,
+		claudeModels(ms),
 		"claude-sonnet-5-5",
 		"claude-sonnet",
 		"claude-sonnet-5",

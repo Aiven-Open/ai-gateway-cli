@@ -44,6 +44,10 @@ const (
 	keyMidContext = "sk-test-mid-context"
 	keyFable      = "sk-test-fable"
 	keyProduction = "sk-test-production"
+	// An Anthropic model outside the curated lists beside an OpenAI one.
+	keyOwnedFable = "sk-test-owned-fable"
+	// A privately owned id with a familiar Claude name beside a real Anthropic model.
+	keyPrivateSonnet = "sk-test-private-sonnet"
 	// Production ids minus each ladder's first choice.
 	keyProductionFallback = "sk-test-production-fallback"
 	// ai.aiven.io names beside historical aliases for the same models.
@@ -112,6 +116,14 @@ const (
 )
 
 var keyModels = map[string][]string{
+	keyOwnedFable: {
+		`{"id":"claude-fable-5-2","object":"model","created":0,"owned_by":"anthropic"}`,
+		`{"id":"gpt-5.4","object":"model","created":0,"owned_by":"OpenAI"}`,
+	},
+	keyPrivateSonnet: {
+		`{"id":"claude-sonnet-5-5","object":"model","created":0,"owned_by":"Aiven"}`,
+		`{"id":"claude-haiku-5-5","object":"model","created":0,"owned_by":"anthropic"}`,
+	},
 	keyValid:      {routerEntry, sonnetEntry, opusEntry, solEntry, glmEntry},
 	keyEmpty:      {},
 	keyPercent:    {`{"id":"glm%PATH%","object":"model","created":0,"owned_by":"zai"}`},
