@@ -112,7 +112,7 @@ func (s *setupSession) commitNoWrites() int {
 	if err != nil {
 		return s.failRotation("reading the saved key", err)
 	}
-	if saved == s.key {
+	if saved == s.key && keyFileIsPrivate(s.env) {
 		s.run.credential = "unchanged; existing key files unchanged"
 		return s.run.finish()
 	}

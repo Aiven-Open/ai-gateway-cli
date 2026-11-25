@@ -4,8 +4,12 @@ package cli
 
 import (
 	"bytes"
+	"os"
+	"runtime"
 	"strings"
 
+	"github.com/aiven-open/ai-gateway-cli/internal/config"
+	"github.com/aiven-open/ai-gateway-cli/internal/creds"
 	"github.com/aiven-open/ai-gateway-cli/internal/models"
 )
 
@@ -22,6 +26,16 @@ func (s *setupSession) obtainRunKey() (string, []models.Model, error) {
 		s.run.reusedKey = &before
 	}
 	return key, table, err
+}
+
+// keyFileIsPrivate reports whether the key file has the mode 0600 the docs promise. Windows has no such bits, so a
+// file there always counts; a file that cannot be inspected does not, and is rewritten.
+func keyFileIsPrivate(env config.Env) bool {
+	if runtime.GOOS == "windows" {
+		return true
+	}
+	info, err := os.Stat(creds.Path(env.UserHome, env.BaseURL))
+	return err == nil && info.Mode().Perm() == 0o600
 }
 
 // reusedKeyChanged reports whether the run reused the saved key and the key file no longer holds it.
