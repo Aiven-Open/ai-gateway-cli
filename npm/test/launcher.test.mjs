@@ -59,10 +59,23 @@ test("full literal argv, empty/bare invocation, streams, environment and statuse
       env: { ...env, AIVEN_NPM_TEST_ENV: "synthetic-env", AIVEN_NPM_TEST_STATUS: String(status) },
     });
     assert.equal(result.status, status, result.stderr);
-    assert.deepEqual(JSON.parse(result.stdout), { Argv: argv, Input: "literal stdin", Env: "synthetic-env" });
+    assert.deepEqual(JSON.parse(result.stdout), { Argv: argv, Input: "literal stdin", Env: "synthetic-env", InvokedAs: "avn-aig" });
     assert.equal(result.stderr, "fixture stderr");
   }
   assert.deepEqual(JSON.parse(run(process.execPath, [wrapper]).stdout).Argv, []);
+});
+
+test("tool is told how it was invoked", () => {
+  const { wrapper } = installation();
+  const invoked = (extra) => JSON.parse(run(process.execPath, [wrapper], { env: { ...env, ...extra } }).stdout).InvokedAs;
+  assert.equal(invoked({}), "avn-aig");
+  assert.equal(invoked({ npm_command: "exec" }), "npx");
+  assert.equal(invoked({ npm_command: "run-script" }), "npx");
+  assert.equal(invoked({ AIVEN_AI_GATEWAY_INVOKED_AS: "forged" }), "avn-aig");
+  assert.deepEqual(metadata.bin, {
+    "aiven-ai-gateway": "./bin/aiven-ai-gateway.mjs",
+    "avn-aig": "./bin/aiven-ai-gateway.mjs",
+  });
 });
 
 test("resolution ignores PATH", () => {

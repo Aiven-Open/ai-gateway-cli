@@ -9,7 +9,8 @@
   },
   "type": "module",
   "bin": {
-    "aiven-ai-gateway": "./bin/aiven-ai-gateway.mjs"
+    "aiven-ai-gateway": "./bin/aiven-ai-gateway.mjs",
+    "avn-aig": "./bin/aiven-ai-gateway.mjs"
   },
   "files": [
     "bin/",
