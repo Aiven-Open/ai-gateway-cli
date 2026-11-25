@@ -46,6 +46,7 @@ type ui struct {
 	// width is the terminal's width in cells, or 0 when the stream is not a terminal: layout never follows COLUMNS
 	// or a guess there, so redirected output is the same everywhere.
 	width int
+	cmd   string // the invoked command, which runnable hints are rewritten to
 }
 
 func newUI(w io.Writer, tty bool, width func() int, plain bool) ui {
@@ -67,7 +68,9 @@ func newUIWithEnv(w io.Writer, tty bool, width func() int, plain bool, environ [
 
 func (u ui) paint(code, s string) string { return u.th.paint(code, s) }
 
-func (u ui) printf(format string, args ...any) { _, _ = fmt.Fprintf(u.w, format, args...) }
+func (u ui) printf(format string, args ...any) {
+	_, _ = fmt.Fprint(u.w, rewriteHints(fmt.Sprintf(format, args...), u.cmd))
+}
 
 // heading starts a section after a blank line.
 func (u ui) heading(s string) { u.printf("\n%s\n", u.th.bold(safe(s))) }

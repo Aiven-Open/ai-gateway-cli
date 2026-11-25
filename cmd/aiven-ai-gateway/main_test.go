@@ -150,6 +150,31 @@ func TestVersionAndHelpAnswerDespiteBrokenConfig(t *testing.T) {
 	}
 }
 
+// Homebrew links avn-aig to the binary and the npm wrapper names its form, so help names what the user typed.
+func TestShortNameBinaryNamesItself(t *testing.T) {
+	long := binary(t)
+	data, err := os.ReadFile(long)
+	if err != nil {
+		t.Fatal(err)
+	}
+	short := filepath.Join(t.TempDir(), "avn-aig"+filepath.Ext(long))
+	if err := os.WriteFile(short, data, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ bin, invokedAs, want string }{
+		{short, "", "usage: avn-aig "},
+		{long, "npx", "usage: npx @aivenio/ai-gateway "},
+		{long, "", "usage: aiven-ai-gateway "},
+	} {
+		cmd := exec.Command(tc.bin, "--help")
+		cmd.Env = []string{"PATH=" + os.Getenv("PATH"), cli.InvokedAsVar + "=" + tc.invokedAs}
+		out, err := cmd.Output()
+		if err != nil || !strings.HasPrefix(string(out), tc.want) {
+			t.Errorf("%s with %q: err %v, stdout %q", filepath.Base(tc.bin), tc.invokedAs, err, out)
+		}
+	}
+}
+
 func TestBinaryRejectsHTTPBeforeCredentialsOrNetwork(t *testing.T) {
 	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

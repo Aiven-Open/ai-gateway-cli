@@ -72,7 +72,7 @@ func Informational(args, environ []string, deps Deps) (bool, int) {
 	if slices.Contains(toolNames, cmd) {
 		return true, fail(deps, "session shortcut removed. Run: aiven-ai-gateway launch "+cmd)
 	}
-	if !slices.Contains([]string{"launch", "setup", "login", "logout", "models"}, cmd) {
+	if !slices.Contains(commandNames, cmd) {
 		return true, fail(deps, "unknown command. Run: aiven-ai-gateway --help")
 	}
 	var before []string

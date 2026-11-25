@@ -254,7 +254,7 @@ func launch(plan harness.Plan, env config.Env, deps Deps, p presenter) int {
 	childEnv := make([]string, 0, len(env.Environ))
 	for _, kv := range env.Environ {
 		name, _, _ := strings.Cut(kv, "=")
-		if !config.SameVar(name, creds.EnvVar) {
+		if !config.SameVar(name, creds.EnvVar) && !config.SameVar(name, InvokedAsVar) {
 			childEnv = append(childEnv, kv)
 		}
 	}

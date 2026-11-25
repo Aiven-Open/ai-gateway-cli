@@ -40,8 +40,12 @@ func newPresenter(env config.Env, deps Deps, plain bool) presenter {
 	p := presenter{
 		ui: newUIWithEnv(deps.Stderr, deps.Term.StderrTTY, deps.Term.StderrWidth, plain, env.Environ),
 	}
+	p.ui.cmd = deps.command()
 	if sel, ok := deps.Prompter.(selector); ok && !plain && deps.Term.StdinTTY && deps.Term.StderrTTY {
 		p.inline = sel
+		if p.ui.cmd != longName {
+			p.inline = hintSelector{selector: sel, cmd: p.ui.cmd}
+		}
 	}
 	return p
 }
