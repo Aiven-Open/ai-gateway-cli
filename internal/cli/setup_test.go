@@ -934,3 +934,28 @@ func TestUnrecognisedAnswerIsAskedAgain(t *testing.T) {
 		t.Fatalf("exit %d, prompts %q, stderr %q", r.code, p.prompts, r.stderr)
 	}
 }
+
+// A new key for a tool that is already up to date is saved: the tool reads the key file, so keeping the old key would
+// leave it on a key the user replaced.
+func TestSetupSavesARotatedKeyWhenNothingElseChanges(t *testing.T) {
+	s := newSession(t, newGatewayDouble(t))
+	if r := s.stdin(keyShort).run("setup", "--key-stdin", "--yes", "claude"); r.code != 0 {
+		t.Fatalf("first setup: exit %d, stderr %q", r.code, r.stderr)
+	}
+	r := s.stdin(keyBare).run("setup", "--key-stdin", "--yes", "claude")
+	if r.code != 0 || !strings.Contains(r.stderr, "Already configured; no file needs a change.") {
+		t.Fatalf("rotation: exit %d, stderr %q", r.code, r.stderr)
+	}
+	if got := readOrEmpty(t, s.keyPath()); got != keyBare+"\n" {
+		t.Errorf("key file = %q, want %q", got, keyBare+"\n")
+	}
+	if !strings.Contains(r.stderr, "saved to "+s.keyPath()) {
+		t.Errorf("summary does not report the save: %q", r.stderr)
+	}
+	// The same key again writes nothing.
+	r = s.stdin(keyBare).run("setup", "--key-stdin", "--yes", "claude")
+	if r.code != 0 || strings.Contains(r.stderr, "Saving the key") ||
+		!strings.Contains(r.stderr, "unchanged; existing key files unchanged") {
+		t.Errorf("same key: exit %d, stderr %q", r.code, r.stderr)
+	}
+}
