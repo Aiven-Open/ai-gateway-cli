@@ -4,6 +4,7 @@ package models
 
 import (
 	"cmp"
+	"slices"
 	"strings"
 )
 
@@ -73,7 +74,8 @@ func Presets(ms []Model) []Preset {
 	return out
 }
 
-// FindPreset resolves id against ms, returning false when ms grants none of that preset's primary models.
+// FindPreset resolves id against ms, returning false when ms grants none of that preset's primary
+// models.
 func FindPreset(ms []Model, id PresetID) (Preset, bool) {
 	switch id {
 	case PresetAnthropic:
@@ -178,7 +180,8 @@ func geminiMain(ms []Model) string {
 	return ""
 }
 
-// OpenWeightOrFirst returns the first granted Open-weight model in preference order, else FirstAlias.
+// OpenWeightOrFirst returns the first granted Open-weight model in preference order, else
+// FirstAlias.
 func OpenWeightOrFirst(ms []Model) string {
 	if a := FirstGranted(ms, openWeightMainOrder...); a != "" {
 		return a
@@ -187,4 +190,34 @@ func OpenWeightOrFirst(ms []Model) string {
 		return a
 	}
 	return FirstAlias(ms)
+}
+
+// AnthropicTiers returns the first granted Anthropic model of each Claude tier's own order. A model
+// the catalogue
+// files under another vendor (an Aiven-owned claude-opus-5-5) is no Anthropic model. A tier the key
+// grants none of
+// stays empty, where FindPreset would fill it from another tier. The fable tier prefers the newest
+// granted
+// claude-fable model ahead of its preset order.
+func AnthropicTiers(ms []Model) Preset {
+	own := slices.DeleteFunc(slices.Clone(ms), func(m Model) bool { return m.Group() != "Anthropic" })
+	var fables []string
+	for _, m := range own {
+		if strings.Contains(m.Alias, "claude-fable") {
+			fables = append(fables, m.Alias)
+		}
+	}
+	slices.Sort(fables)
+	slices.Reverse(fables)
+	return Preset{
+		ID:     PresetAnthropic,
+		Name:   "Anthropic",
+		Opus:   FirstGranted(own, anthropicOpusOrder...),
+		Sonnet: FirstGranted(own, anthropicSonnetOrder...),
+		Haiku:  FirstGranted(own, anthropicHaikuOrder...),
+		Fable: cmp.Or(
+			FirstGranted(own, fables...),
+			FirstGranted(own, "claude-opus-5-5", "claude-fable"),
+		),
+	}
 }

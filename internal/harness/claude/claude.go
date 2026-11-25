@@ -322,8 +322,7 @@ func defaultSlots(t []models.Model) slots {
 func keepGrantedClaudeTier(t []models.Model, env map[string]any, key, fallback string) string {
 	if v, ok := env[key].(string); ok {
 		alias := bare(v)
-		if m, granted := models.Find(t, alias); granted &&
-			(strings.HasPrefix(alias, "claude-") || m.Group() == "Anthropic") {
+		if IsClaude(t, alias) {
 			return alias
 		}
 	}
@@ -337,6 +336,10 @@ func resolveSlots(
 ) (slots, bool, error) {
 	if sel.IsZero() || len(t) == 0 {
 		return defaultSlots(t), false, nil
+	}
+	if len(sel.Models) > 0 {
+		s, err := fillSlots(t, sel)
+		return s, err == nil, err
 	}
 	if sel.Model != "" {
 		chosen := bare(sel.Model)
