@@ -227,28 +227,11 @@ func (r *setupRun) finish() int {
 	}
 	if len(ready) > 0 {
 		u.heading("Start a session")
-		cmdWidth := len("COMMAND")
-		hasModels := false
 		for _, o := range ready {
-			cmdWidth = max(cmdWidth, len("aiven-ai-gateway launch "+o.tool))
+			u.command(2, "aiven-ai-gateway launch "+o.tool)
+			// The model goes on a line of its own: a copied command line must not pass it to the tool.
 			if o.resolvedModel != "" && safe(o.resolvedModel) == o.resolvedModel {
-				hasModels = true
-			}
-		}
-		if hasModels {
-			u.printf("  %s  %s\n", u.th.dim(pad("COMMAND", cmdWidth)), u.th.dim("MODEL"))
-		}
-		for _, o := range ready {
-			cmd := "aiven-ai-gateway launch " + o.tool
-			if hasModels && o.resolvedModel != "" && safe(o.resolvedModel) == o.resolvedModel {
-				u.printf(
-					"  %s%s  %s\n",
-					u.th.cyan(cmd),
-					strings.Repeat(" ", cmdWidth-len(cmd)),
-					u.th.dim(o.resolvedModel),
-				)
-			} else {
-				u.command(2, cmd)
+				u.note(4, "Default model: "+o.resolvedModel)
 			}
 		}
 		type directEntry struct {
