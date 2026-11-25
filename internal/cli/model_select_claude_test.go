@@ -43,7 +43,7 @@ func refusingGateway(t *testing.T, catalogue, refused string) *httptest.Server {
 	return srv
 }
 
-func TestSetupBlocksApplyWhenAChosenModelFailsItsCheck(t *testing.T) {
+func TestSetupBlocksApplyWhenChosenModelFailsItsCheck(t *testing.T) {
 	t.Parallel()
 	srv := refusingGateway(t, claudeMixCatalogue, "gpt-6-astra")
 	env, home := inlineSetupEnv(t, srv.URL)
@@ -215,7 +215,7 @@ func TestSetupChoosesSeveralModelsForClaudeCode(t *testing.T) {
 	}
 }
 
-func TestClaudeDefaultListBackKeepsThePicks(t *testing.T) {
+func TestClaudeDefaultListBackKeepsPicks(t *testing.T) {
 	t.Parallel()
 	srv, _ := inlineGateway(t, claudeMixCatalogue)
 	env, home := inlineSetupEnv(t, srv.URL)
@@ -246,7 +246,7 @@ func TestClaudeDefaultListBackKeepsThePicks(t *testing.T) {
 	}
 }
 
-func TestClaudeModelListRefusesASixthModelFromAnotherVendor(t *testing.T) {
+func TestClaudeModelListRefusesSixthModelFromAnotherVendor(t *testing.T) {
 	t.Parallel()
 	srv, _ := inlineGateway(t, claudeWideCatalogue)
 	env, _ := inlineSetupEnv(t, srv.URL)
@@ -318,7 +318,7 @@ const claudeFableCatalogue = `[
 ]`
 
 // A ticked Claude model lands in the tier its alias names, ahead of that tier's preset model.
-func TestSetupPlacesATickedClaudeModelInItsTier(t *testing.T) {
+func TestSetupPlacesTickedClaudeModelInItsTier(t *testing.T) {
 	t.Parallel()
 	srv, _ := inlineGateway(t, claudeFableCatalogue)
 	env, home := inlineSetupEnv(t, srv.URL)
@@ -355,7 +355,7 @@ func TestSetupPlacesATickedClaudeModelInItsTier(t *testing.T) {
 	}
 }
 
-func TestClaudeMenuNamesAnUngrantedCurrentModelLikeTheOtherTools(t *testing.T) {
+func TestClaudeMenuNamesUngrantedCurrentModelLikeOtherTools(t *testing.T) {
 	t.Parallel()
 	srv, _ := inlineGateway(t, claudeMixCatalogue)
 	env, home := inlineSetupEnv(t, srv.URL)
@@ -383,7 +383,7 @@ func TestClaudeMenuNamesAnUngrantedCurrentModelLikeTheOtherTools(t *testing.T) {
 }
 
 // An Aiven-owned claude-opus-5-5 is Aiven's model: shown under Aiven and counted toward the five.
-func TestClaudeModelListCountsAnAivenOwnedClaudeAliasAsAnotherVendor(t *testing.T) {
+func TestClaudeModelListCountsAivenOwnedClaudeAliasAsAnotherVendor(t *testing.T) {
 	t.Parallel()
 	srv, _ := inlineGateway(t, `[
 		{"id":"claude-opus-5-5","owned_by":"Aiven"},
@@ -416,7 +416,7 @@ func TestClaudeModelListCountsAnAivenOwnedClaudeAliasAsAnotherVendor(t *testing.
 	}
 }
 
-func TestClaudeModelListOffersTheRoutingAlias(t *testing.T) {
+func TestClaudeModelListOffersRoutingAlias(t *testing.T) {
 	t.Parallel()
 	srv, _ := inlineGateway(t, `[
 		{"id":"claude-sonnet-5-5","owned_by":"Anthropic"},
@@ -443,7 +443,7 @@ func TestClaudeModelListOffersTheRoutingAlias(t *testing.T) {
 }
 
 // Typed ids are model ids, never harness names, and Back from the default list keeps them.
-func TestPlainClaudeModelListTakesIdsAndBackKeepsThePicks(t *testing.T) {
+func TestPlainClaudeModelListTakesIdsAndBackKeepsPicks(t *testing.T) {
 	t.Parallel()
 	srv, _ := inlineGateway(t, claudeMixCatalogue)
 	env, home := inlineSetupEnv(t, srv.URL)
@@ -485,7 +485,7 @@ func TestPlainClaudeModelListTakesIdsAndBackKeepsThePicks(t *testing.T) {
 	}
 }
 
-func TestParsePickOfferedTakesAnOfferedIdWhateverItIsCalled(t *testing.T) {
+func TestParsePickOfferedTakesOfferedIdWhateverItIsCalled(t *testing.T) {
 	t.Parallel()
 	offered := []string{"gemini-4-neon", "gpt-6-astra", "pi"}
 	got, ok := parsePickOffered("gemini-4-neon, 2,pi", offered)
@@ -542,7 +542,7 @@ func TestSharedVendorPresetSetsClaudeCodeDefaultOnly(t *testing.T) {
 	}
 }
 
-func TestSharedVendorPresetKeepsAGrantedFableInItsTier(t *testing.T) {
+func TestSharedVendorPresetKeepsGrantedFableInItsTier(t *testing.T) {
 	t.Parallel()
 	const catalogue = `[
 	{"id":"claude-sonnet-5-5","owned_by":"Anthropic"},

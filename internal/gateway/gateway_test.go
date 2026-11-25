@@ -232,7 +232,7 @@ func TestModelsDecodesOwnerAndDisplayNameWithoutControlCharacters(t *testing.T) 
 	}
 }
 
-func TestProbeTimeoutNamesTheLimit(t *testing.T) {
+func TestProbeTimeoutNamesLimit(t *testing.T) {
 	release := make(chan struct{}) // the handler never reads the body, so it learns of no hang-up
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))
 	defer srv.Close()

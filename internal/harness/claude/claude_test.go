@@ -1327,7 +1327,7 @@ func TestSetupPresetClearsInheritedUserCustomModelOptionOnLaunch(t *testing.T) {
 
 const discoveryVar = "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"
 
-func TestSetupTurnsOnGatewayModelDiscoveryForAChoiceOrAFreshFile(t *testing.T) {
+func TestSetupTurnsOnGatewayModelDiscoveryForChoiceOrFreshFile(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name, existing string
@@ -1403,7 +1403,7 @@ func TestLaunchCarriesChosenModelsOnceAndGatewayModelDiscovery(t *testing.T) {
 	}
 }
 
-func TestLaunchKeepsAChosenModelOverTierPinsInTheUsersOwnSettings(t *testing.T) {
+func TestLaunchKeepsChosenModelOverTierPinsInUsersOwnSettings(t *testing.T) {
 	t.Parallel()
 	in := input(t)
 	in.Table = []models.Model{
@@ -1461,7 +1461,7 @@ func fileEnv(t *testing.T, path string) map[string]any {
 	return env
 }
 
-func TestKeepCurrentKeepsEveryGrantedSlotAndTheCustomOption(t *testing.T) {
+func TestKeepCurrentKeepsEveryGrantedSlotAndCustomOption(t *testing.T) {
 	t.Parallel()
 	in := input(t)
 	in.Table = mixTable
@@ -1479,7 +1479,7 @@ func TestKeepCurrentKeepsEveryGrantedSlotAndTheCustomOption(t *testing.T) {
 	}
 }
 
-func TestKeepCurrentLeavesABlankCustomOptionBlank(t *testing.T) {
+func TestKeepCurrentLeavesBlankCustomOptionBlank(t *testing.T) {
 	t.Parallel()
 	in := input(t)
 	in.Table = []models.Model{{Alias: "claude-sonnet-5-5"}}
@@ -1495,7 +1495,7 @@ func TestKeepCurrentLeavesABlankCustomOptionBlank(t *testing.T) {
 	}
 }
 
-func TestKeepCurrentWithTheNativeDefaultCopiesTheMixToBothFiles(t *testing.T) {
+func TestKeepCurrentWithNativeDefaultCopiesMixToBothFiles(t *testing.T) {
 	t.Parallel()
 	in := input(t)
 	in.Table = mixTable
@@ -1520,7 +1520,7 @@ func TestKeepCurrentWithTheNativeDefaultCopiesTheMixToBothFiles(t *testing.T) {
 	}
 }
 
-func TestKeepCurrentWithTheNativeDefaultGivesTheNativeFileTheDedicatedSlotsAsASet(t *testing.T) {
+func TestKeepCurrentWithNativeDefaultGivesNativeFileDedicatedSlotsAsSet(t *testing.T) {
 	t.Parallel()
 	in := input(t)
 	in.Table = mixTable
@@ -1562,7 +1562,7 @@ func TestKeepCurrentWithTheNativeDefaultGivesTheNativeFileTheDedicatedSlotsAsASe
 	}
 }
 
-func TestKeepCurrentDropsSlotsPinnedToAModelTheKeyNoLongerGrants(t *testing.T) {
+func TestKeepCurrentDropsSlotsPinnedToModelKeyNoLongerGrants(t *testing.T) {
 	t.Parallel()
 	in := input(t)
 	in.Table = mixTable
@@ -1580,7 +1580,7 @@ func TestKeepCurrentDropsSlotsPinnedToAModelTheKeyNoLongerGrants(t *testing.T) {
 	}
 }
 
-func TestKeepCurrentWithTheNativeDefaultKeepsATierAliasAsTheNativeModel(t *testing.T) {
+func TestKeepCurrentWithNativeDefaultKeepsTierAliasAsNativeModel(t *testing.T) {
 	t.Parallel()
 	for model, want := range map[string]string{
 		"opus": "opus", "sonnet[1m]": "sonnet[1m]", "default": "default", "retired-model": "gemini-4-neon[1m]",
@@ -1601,7 +1601,7 @@ func TestKeepCurrentWithTheNativeDefaultKeepsATierAliasAsTheNativeModel(t *testi
 	}
 }
 
-func TestKeepCurrentWithTheNativeDefaultLeavesANonStringNativeModelAlone(t *testing.T) {
+func TestKeepCurrentWithNativeDefaultLeavesNonStringNativeModelAlone(t *testing.T) {
 	t.Parallel()
 	for name, raw := range map[string]string{"number": `5`, "object": `{"id":"retired-model"}`, "list": `["opus"]`} {
 		in := input(t)
@@ -1625,7 +1625,7 @@ func TestKeepCurrentWithTheNativeDefaultLeavesANonStringNativeModelAlone(t *test
 	}
 }
 
-func TestChoosingModelsDropsABlankCustomOptionKeepCurrentLeft(t *testing.T) {
+func TestChoosingModelsDropsBlankCustomOptionKeepCurrentLeft(t *testing.T) {
 	t.Parallel()
 	in := input(t)
 	in.Table = []models.Model{{Alias: "claude-sonnet-5-5"}}

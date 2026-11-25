@@ -160,7 +160,7 @@ func TestModelSelectionResolveMain(t *testing.T) {
 	}
 }
 
-func TestModelSelectionWithModelsIsAChoiceWhoseDefaultIsItsModel(t *testing.T) {
+func TestModelSelectionWithModelsIsChoiceWhoseDefaultIsItsModel(t *testing.T) {
 	t.Parallel()
 	picks := harness.ModelSelection{Models: []string{"glm-5", "gpt-6-sol"}}
 	if picks.IsZero() {

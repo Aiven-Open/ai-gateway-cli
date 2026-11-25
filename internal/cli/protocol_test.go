@@ -741,7 +741,7 @@ func TestConcurrentProbesDeterministicOrderAndPartialFailure(t *testing.T) {
 }
 
 // A check that times out is sent once more; a second timeout is reported as one, with the limit.
-func TestSetupRetriesATimedOutCheckOnceAndReportsTheTimeout(t *testing.T) {
+func TestSetupRetriesTimedOutCheckOnceAndReportsTimeout(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name string

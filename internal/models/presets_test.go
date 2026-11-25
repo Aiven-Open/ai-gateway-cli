@@ -211,7 +211,7 @@ func TestGeminiPresetPrefersNeonThenCarbonThenArgon(t *testing.T) {
 	}
 }
 
-func TestAnthropicTiersLeavesATierWithoutItsOwnModelEmpty(t *testing.T) {
+func TestAnthropicTiersLeavesTierWithoutItsOwnModelEmpty(t *testing.T) {
 	t.Parallel()
 	got := models.AnthropicTiers([]models.Model{{Alias: "claude-sonnet-5-5"}, {Alias: "glm-5"}})
 	if got.Sonnet != "claude-sonnet-5-5" || got.Opus != "" || got.Haiku != "" || got.Fable != "" {
@@ -219,7 +219,7 @@ func TestAnthropicTiersLeavesATierWithoutItsOwnModelEmpty(t *testing.T) {
 	}
 }
 
-func TestAnthropicTiersRanksFableVersionsNumericallyWithOrWithoutAnOwner(t *testing.T) {
+func TestAnthropicTiersRanksFableVersionsNumericallyWithOrWithoutOwner(t *testing.T) {
 	t.Parallel()
 	got := models.AnthropicTiers([]models.Model{
 		{Alias: "claude-fable-5-9"}, {Alias: "claude-fable-5-10"}, {Alias: "claude-fable-5-2"},
@@ -229,7 +229,7 @@ func TestAnthropicTiersRanksFableVersionsNumericallyWithOrWithoutAnOwner(t *test
 	}
 }
 
-func TestAnthropicTiersPrefersTheNewestGrantedFableAndSkipsAnotherVendorsClaude(t *testing.T) {
+func TestAnthropicTiersPrefersNewestGrantedFableAndSkipsAnotherVendorsClaude(t *testing.T) {
 	t.Parallel()
 	anthropic := func(a string) models.Model { return models.Model{Alias: a, Owner: "anthropic"} }
 	got := models.AnthropicTiers([]models.Model{

@@ -659,7 +659,7 @@ func TestSetupAlignsNativeDefaultAndProbeWithPersistedLauncherPreference(t *test
 }
 
 // Choosing models takes the tiers from the catalogue, never from a pin the settings already hold.
-func TestSetupClaudeChoosingModelsTakesTiersFromTheCatalogue(t *testing.T) {
+func TestSetupClaudeChoosingModelsTakesTiersFromCatalogue(t *testing.T) {
 	t.Parallel()
 	srv, _ := inlineGateway(t, `[
 		{"id":"claude-sonnet-4-5","owned_by":"Anthropic"},
@@ -911,7 +911,7 @@ func TestUnattendedSetupPreservesAndValidatesCanonicalUserEnvModel(t *testing.T)
 	})
 }
 
-func TestLauncherOnlyChoosingModelsTakesTiersFromTheCatalogue(t *testing.T) {
+func TestLauncherOnlyChoosingModelsTakesTiersFromCatalogue(t *testing.T) {
 	t.Parallel()
 	srv, probes := inlineGateway(t, `[
 		{"id":"claude-opus-5-5","owned_by":"Anthropic"},
@@ -1189,7 +1189,7 @@ func (p *plainSetupPrompter) ReadLine(prompt string) (string, error) {
 }
 
 // A change declined at review saves nothing, even when another selected tool is already up to date.
-func TestSetupDeclinedChangeLeavesTheSavedKeyAlone(t *testing.T) {
+func TestSetupDeclinedChangeLeavesSavedKeyAlone(t *testing.T) {
 	srv, _ := inlineGateway(t, multiModelTestCatalogue)
 	env, home := inlineSetupEnv(t, srv.URL)
 	run := func(secret string, answers ...selectAnswer) string {

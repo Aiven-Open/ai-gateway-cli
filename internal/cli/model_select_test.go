@@ -424,7 +424,7 @@ func TestRepeatSetupProbesPersistedLauncherModel(t *testing.T) {
 	}
 }
 
-func TestSetupPlainChoosesAGeminiModelForClaudeCode(t *testing.T) {
+func TestSetupPlainChoosesGeminiModelForClaudeCode(t *testing.T) {
 	t.Parallel()
 	g := newGatewayDouble(t)
 	probes := recordProbes(t, g)

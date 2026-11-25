@@ -35,7 +35,7 @@ func picks(main string, aliases ...string) harness.ModelSelection {
 	return harness.ModelSelection{Model: main, Models: aliases}
 }
 
-func TestResolveSlotsFillsChosenModelsByTheRule(t *testing.T) {
+func TestResolveSlotsFillsChosenModelsByRule(t *testing.T) {
 	t.Parallel()
 	full := catalogue("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5",
 		"claude-fable-5-2", "gemini-4-neon", "gpt-6.2-astra", "deepseek-v4.1-flash",
@@ -195,7 +195,7 @@ func TestResolveSlotsFillsChosenModelsByTheRule(t *testing.T) {
 	}
 }
 
-func TestResolveSlotsGivesTheSameSlotsWhenFedItsOwnResult(t *testing.T) {
+func TestResolveSlotsGivesSameSlotsWhenFedItsOwnResult(t *testing.T) {
 	t.Parallel()
 	table := catalogue("claude-sonnet-5-5", "glm-5", "gpt-6.2-astra", "kimi-k3", "gemini-4-neon")
 	sel := picks("glm-5", "glm-5", "gpt-6.2-astra", "kimi-k3", "gemini-4-neon")
@@ -215,7 +215,7 @@ func TestResolveSlotsGivesTheSameSlotsWhenFedItsOwnResult(t *testing.T) {
 	}
 }
 
-func TestResolveSlotsRefusesASixthModelFromAnotherVendor(t *testing.T) {
+func TestResolveSlotsRefusesSixthModelFromAnotherVendor(t *testing.T) {
 	t.Parallel()
 	table := catalogue("claude-sonnet-5-5", "gemini-4-neon", "gpt-6.2-astra",
 		"deepseek-v4.1-flash", "glm-5", "kimi-k3", "qwen3-coder-480b")
@@ -227,7 +227,7 @@ func TestResolveSlotsRefusesASixthModelFromAnotherVendor(t *testing.T) {
 	}
 }
 
-func TestAnAivenOwnedClaudeAliasCountsTowardTheLimit(t *testing.T) {
+func TestAivenOwnedClaudeAliasCountsTowardLimit(t *testing.T) {
 	t.Parallel()
 	table := append(
 		catalogue("gemini-4-neon", "gpt-6.2-astra", "deepseek-v4.1-flash", "glm-5", "kimi-k3"),
@@ -247,7 +247,7 @@ func TestAnAivenOwnedClaudeAliasCountsTowardTheLimit(t *testing.T) {
 	}
 }
 
-func TestTheSpecExampleHoldsWithAnAnthropicOwnerAndWithNone(t *testing.T) {
+func TestSpecExampleHoldsWithAnthropicOwnerAndWithNone(t *testing.T) {
 	t.Parallel()
 	bare := catalogue("claude-fable-5-2", "claude-haiku-5-5", "gemini-4-neon", "gpt-6.2-astra",
 		"deepseek-v4.1-flash")
@@ -265,7 +265,7 @@ func TestTheSpecExampleHoldsWithAnAnthropicOwnerAndWithNone(t *testing.T) {
 	}
 }
 
-func TestIsClaudeTakesAnUnownedClaudeAliasButNotAnotherVendors(t *testing.T) {
+func TestIsClaudeTakesUnownedClaudeAliasButNotAnotherVendors(t *testing.T) {
 	t.Parallel()
 	table := append(catalogue("claude-fable-5-2", "claude-next", "glm-5", "mystery"),
 		models.Model{Alias: "claude-opus-5-5", Owner: "Aiven"})
@@ -279,7 +279,7 @@ func TestIsClaudeTakesAnUnownedClaudeAliasButNotAnotherVendors(t *testing.T) {
 	}
 }
 
-func TestKeepGrantedClaudeTierFallsBackFromAGrantedNonClaudePin(t *testing.T) {
+func TestKeepGrantedClaudeTierFallsBackFromGrantedNonClaudePin(t *testing.T) {
 	t.Parallel()
 	const key = "ANTHROPIC_DEFAULT_FABLE_MODEL"
 	got := keepGrantedClaudeTier(catalogue("claude-fable-5-2", "glm-5"),
@@ -289,7 +289,7 @@ func TestKeepGrantedClaudeTierFallsBackFromAGrantedNonClaudePin(t *testing.T) {
 	}
 }
 
-func TestKeepGrantedClaudeTierKeepsAnUnownedClaudePin(t *testing.T) {
+func TestKeepGrantedClaudeTierKeepsUnownedClaudePin(t *testing.T) {
 	t.Parallel()
 	const key = "ANTHROPIC_DEFAULT_FABLE_MODEL"
 	got := keepGrantedClaudeTier(catalogue("claude-fable-5-2"),
