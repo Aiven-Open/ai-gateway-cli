@@ -104,6 +104,7 @@ func TestSetupWritesTheGatewaySettingsBesideTheUsersOwn(t *testing.T) {
 	data := plan.Files[0].Data
 	got := decode(t, data)
 	wantEnv := map[string]any{
+		"CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1",
 		"FOO":                             "bar",
 		"ANTHROPIC_BASE_URL":              baseURL,
 		"ANTHROPIC_DEFAULT_OPUS_MODEL":    "claude-opus[1m]",
@@ -1321,5 +1322,120 @@ func TestSetupPresetClearsInheritedUserCustomModelOptionOnLaunch(t *testing.T) {
 	}
 	if !slices.Contains(lp.Env, "ANTHROPIC_CUSTOM_MODEL_OPTION=") {
 		t.Errorf("launch missing cleared custom option: %v", lp.Env)
+	}
+}
+
+const discoveryVar = "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"
+
+func TestSetupTurnsOnGatewayModelDiscoveryForAChoiceOrAFreshFile(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, existing string
+		sel            harness.ModelSelection
+		want           any
+	}{
+		{name: "fresh file", want: "1"},
+		{name: "keep current", existing: `{"model":"glm"}`, want: nil},
+		{
+			name:     "chosen models",
+			existing: `{"model":"glm"}`,
+			sel:      harness.ModelSelection{Model: "glm", Models: []string{"glm", "gpt-sol"}},
+			want:     "1",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			in := input(t)
+			if tc.existing != "" {
+				write(t, filepath.Join(in.UserHome, claude.SettingsFile), tc.existing)
+			}
+			in.Selection = tc.sel
+			plan, err := claude.Setup(in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			env, _ := decode(t, plan.Files[0].Data)["env"].(map[string]any)
+			if got := env[discoveryVar]; got != tc.want {
+				t.Errorf("%s = %v, want %v", discoveryVar, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestLaunchCarriesChosenModelsOnceAndGatewayModelDiscovery(t *testing.T) {
+	t.Parallel()
+	in := input(t)
+	in.Table = []models.Model{
+		{Alias: "claude-opus-5-5"}, {Alias: "claude-sonnet-5-5"}, {Alias: "claude-haiku-5-5"},
+		{Alias: "gemini-4-neon", Context: ptr(1_000_000)}, {Alias: "gpt-6-astra"},
+		{Alias: "deepseek-v4.1-flash"},
+	}
+	in.Selection = harness.ModelSelection{
+		Model:  "gemini-4-neon",
+		Models: []string{"gemini-4-neon", "gpt-6-astra", "deepseek-v4.1-flash"},
+	}
+	setUp(t, in)
+	in.Selection = harness.ModelSelection{}
+	plan, err := claude.Launch(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(plan.Env, discoveryVar+"=1") {
+		t.Errorf("child env lacks %s=1: %q", discoveryVar, plan.Env)
+	}
+	if env, _ := decode(t, []byte(plan.Argv[2]))["env"].(map[string]any); env[discoveryVar] != "1" {
+		t.Errorf("inline settings env = %v", env)
+	}
+	slotVars := []string{
+		"ANTHROPIC_CUSTOM_MODEL_OPTION", "ANTHROPIC_DEFAULT_FABLE_MODEL",
+		"ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+	}
+	for _, id := range []string{"gemini-4-neon[1m]", "gpt-6-astra", "deepseek-v4.1-flash"} {
+		n := 0
+		for _, v := range slotVars {
+			if slices.Contains(plan.Env, v+"="+id) {
+				n++
+			}
+		}
+		if n != 1 {
+			t.Errorf("%s is in %d slots, want 1: %q", id, n, plan.Env)
+		}
+	}
+}
+
+func TestLaunchKeepsAChosenModelOverTierPinsInTheUsersOwnSettings(t *testing.T) {
+	t.Parallel()
+	in := input(t)
+	in.Table = []models.Model{
+		{Alias: "claude-opus-5-5"}, {Alias: "claude-sonnet-5-5"}, {Alias: "claude-haiku-5-5"},
+		{Alias: "gemini-4-neon", Context: ptr(1_000_000)}, {Alias: "gpt-6-astra"},
+	}
+	in.Selection = harness.ModelSelection{
+		Model:  "gpt-6-astra",
+		Models: []string{"gpt-6-astra", "gemini-4-neon"},
+	}
+	write(t, filepath.Join(in.UserHome, ".claude", "settings.json"), `{"env":{
+		"ANTHROPIC_DEFAULT_FABLE_MODEL":"claude-opus-5-5","ANTHROPIC_DEFAULT_OPUS_MODEL":"claude-opus-5-5",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL":"claude-sonnet-5-5","ANTHROPIC_DEFAULT_HAIKU_MODEL":"claude-haiku-5-5",
+		"ANTHROPIC_CUSTOM_MODEL_OPTION":"claude-haiku-5-5"}}`)
+	setUp(t, in)
+	in.Selection = harness.ModelSelection{}
+	plan, err := claude.Launch(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(plan.Env, "ANTHROPIC_MODEL=gpt-6-astra") {
+		t.Errorf("chosen model did not reach the session: %q", plan.Env)
+	}
+	for _, id := range []string{"gpt-6-astra", "gemini-4-neon[1m]"} {
+		n := 0
+		for _, e := range plan.Env {
+			if strings.HasSuffix(e, "="+id) && !strings.HasPrefix(e, "ANTHROPIC_MODEL=") {
+				n++
+			}
+		}
+		if n != 1 {
+			t.Errorf("%s is in %d slots, want 1: %q", id, n, plan.Env)
+		}
 	}
 }

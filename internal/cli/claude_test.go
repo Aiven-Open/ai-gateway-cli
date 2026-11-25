@@ -80,21 +80,22 @@ func TestClaudeOverlayCarriesModelAndEnvButNotKey(t *testing.T) {
 	s.setupAndLaunch("claude")
 	overlay := launchSettings(t, s.launched())
 	wantEnv := map[string]any{
-		"ANTHROPIC_BASE_URL":              g.URL,
-		"ANTHROPIC_MODEL":                 "claude-sonnet[1m]",
-		"ANTHROPIC_DEFAULT_OPUS_MODEL":    "claude-opus[1m]",
-		"ANTHROPIC_DEFAULT_SONNET_MODEL":  "claude-sonnet[1m]",
-		"ANTHROPIC_DEFAULT_HAIKU_MODEL":   "claude-sonnet[1m]",
-		"ANTHROPIC_DEFAULT_FABLE_MODEL":   "claude-opus[1m]",
-		"ANTHROPIC_CUSTOM_MODEL_OPTION":   "",
-		"ANTHROPIC_API_KEY":               "",
-		"CLAUDE_CODE_USE_BEDROCK":         "",
-		"CLAUDE_CODE_USE_VERTEX":          "",
-		"CLAUDE_CODE_USE_FOUNDRY":         "",
-		"AWS_BEARER_TOKEN_BEDROCK":        "",
-		"ANTHROPIC_CUSTOM_HEADERS":        "",
-		"CLAUDE_CODE_MAX_CONTEXT_TOKENS":  "",
-		"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "",
+		"CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1",
+		"ANTHROPIC_BASE_URL":                         g.URL,
+		"ANTHROPIC_MODEL":                            "claude-sonnet[1m]",
+		"ANTHROPIC_DEFAULT_OPUS_MODEL":               "claude-opus[1m]",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL":             "claude-sonnet[1m]",
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL":              "claude-sonnet[1m]",
+		"ANTHROPIC_DEFAULT_FABLE_MODEL":              "claude-opus[1m]",
+		"ANTHROPIC_CUSTOM_MODEL_OPTION":              "",
+		"ANTHROPIC_API_KEY":                          "",
+		"CLAUDE_CODE_USE_BEDROCK":                    "",
+		"CLAUDE_CODE_USE_VERTEX":                     "",
+		"CLAUDE_CODE_USE_FOUNDRY":                    "",
+		"AWS_BEARER_TOKEN_BEDROCK":                   "",
+		"ANTHROPIC_CUSTOM_HEADERS":                   "",
+		"CLAUDE_CODE_MAX_CONTEXT_TOKENS":             "",
+		"CLAUDE_CODE_AUTO_COMPACT_WINDOW":            "",
 	}
 	wantEnv["ANTHROPIC_AUTH_TOKEN"] = ""
 	if overlay["model"] != "claude-sonnet[1m]" || !reflect.DeepEqual(overlay["env"], wantEnv) {
@@ -743,6 +744,7 @@ func TestClaudeConnectWritesGatewaySettingsBesideTheUsersOwn(t *testing.T) {
 	}
 	got := readJSON(t, path)
 	wantEnv := map[string]any{
+		"CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1",
 		"FOO":                             "bar",
 		"ANTHROPIC_BASE_URL":              g.URL,
 		"ANTHROPIC_DEFAULT_OPUS_MODEL":    "claude-opus[1m]",

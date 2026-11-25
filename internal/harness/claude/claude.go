@@ -133,6 +133,16 @@ func APIKeyHelper(baseURL string) string { return creds.CommandLine(baseURL, run
 // SettingsFile is the dedicated setup destination; claude --settings adds it to a session.
 const SettingsFile = ".claude/aiven.settings.json"
 
+// discoveryVar makes Claude Code list the gateway's Claude models in /model, including one a pick moved out of its
+// tier. Observed in Claude Code, not documented.
+const discoveryVar = "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"
+
+// discoveryOn reports whether settings cfg turn gateway model discovery on.
+func discoveryOn(cfg map[string]any) bool {
+	env, _ := cfg["env"].(map[string]any)
+	return env[discoveryVar] == "1"
+}
+
 // Setup merges the gateway wiring into ~/.claude/aiven.settings.json, keeping every other setting and env entry.
 // The user's own settings.json is left alone, so only sessions started with --settings use the gateway, unless
 // in.Default asks to wire it the same way.
@@ -192,10 +202,13 @@ func wire(in Input, path string) (harness.File, error) {
 	}
 	main, ids := wiring(in.Table, s)
 	cfg["apiKeyHelper"] = APIKeyHelper(in.BaseURL)
+	fresh := false
 	if explicit {
 		cfg["model"] = main
-		if !in.Default && layerSelectsModel(userSettings) {
-			// Signal explicit launcher-only override with a blank ANTHROPIC_MODEL so aiven.settings.json wins over user settings.
+		if !in.Default && (layerSelectsModel(userSettings) || layerPinsTier(userSettings) ||
+			layerHasCustomOption(userSettings)) {
+			// Signal explicit launcher-only override with a blank ANTHROPIC_MODEL so aiven.settings.json wins over user
+			// settings, including their model and slot pins.
 			env["ANTHROPIC_MODEL"] = ""
 		} else if v, ok := env["ANTHROPIC_MODEL"].(string); ok && bare(v) != "" {
 			env["ANTHROPIC_MODEL"] = main
@@ -208,6 +221,10 @@ func wire(in Input, path string) (harness.File, error) {
 		// A model the user chose in this file stays, and so does an ANTHROPIC_MODEL, which Claude Code runs over it. Setup
 		// never sets ANTHROPIC_MODEL, since it would outrank the user's choice. A blank one chooses nothing.
 		cfg["model"] = main
+		fresh = true
+	}
+	if explicit || fresh {
+		env[discoveryVar] = "1"
 	}
 	for k, v := range map[string]string{
 		"ANTHROPIC_BASE_URL":             in.BaseURL,
@@ -378,7 +395,12 @@ func resolveSlots(
 }
 
 // overlayJSON outranks native settings only for launcher-owned fields; it never holds the key.
-func overlayJSON(baseURL, main string, ids map[string]string, name, window string) []byte {
+func overlayJSON(
+	baseURL, main string,
+	ids map[string]string,
+	name, window string,
+	discovery bool,
+) []byte {
 	env := map[string]string{
 		"ANTHROPIC_BASE_URL":             baseURL,
 		"ANTHROPIC_MODEL":                main,
@@ -396,6 +418,9 @@ func overlayJSON(baseURL, main string, ids map[string]string, name, window strin
 		"ANTHROPIC_CUSTOM_HEADERS":       "",
 	}
 	maps.Copy(env, windowEnv(name, window))
+	if discovery {
+		env[discoveryVar] = "1"
+	}
 	return harness.JSON(map[string]any{"model": main, "env": env})
 }
 
@@ -477,8 +502,15 @@ func Launch(in Input) (harness.Plan, error) {
 	child = append(child, slot(in.Table, "ANTHROPIC_DEFAULT_HAIKU_MODEL", s.haiku, ids["HAIKU"])...)
 	child = append(child, slot(in.Table, "ANTHROPIC_DEFAULT_FABLE_MODEL", s.fable, ids["FABLE"])...)
 	child = append(child, slot(in.Table, "ANTHROPIC_CUSTOM_MODEL_OPTION", s.custom, ids["CUSTOM"])...)
+	discovery := discoveryOn(cfg)
+	if discovery {
+		child = append(child, discoveryVar+"=1")
+	}
 	var inline map[string]any
-	if err := json.Unmarshal(overlayJSON(in.BaseURL, main, ids, name, window), &inline); err != nil {
+	if err := json.Unmarshal(
+		overlayJSON(in.BaseURL, main, ids, name, window, discovery),
+		&inline,
+	); err != nil {
 		return harness.Plan{}, err
 	}
 	inline["apiKeyHelper"] = APIKeyHelper(in.BaseURL)
