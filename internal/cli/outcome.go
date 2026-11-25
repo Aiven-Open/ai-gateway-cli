@@ -325,25 +325,23 @@ func windowsSharedQuote(s string) (string, bool) {
 }
 
 // shellQuote makes s one literal word for bash, zsh, sh and fish, and avoids leaving '%' unquoted.
-func shellQuote(s string) string { return shellQuoteForOS(s, "unix") }
-
-// shellQuoteForOS quotes s for the target OS shell. Plainly safe words stay unquoted; on Windows plain paths with
-// spaces and no expansion characters use double quotes (valid in both PowerShell and cmd.exe), while values holding
-// expansion characters (%, $, backticks or quotes) use PowerShell single-quote escaping so neither %VAR% nor $VAR
-// expands. Unix/fish use POSIX single quotes.
-func shellQuoteForOS(s, goos string) string {
-	safeChars := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@+:,./-"
-	if goos == "windows" {
-		safeChars += "\\"
-	}
+func shellQuote(s string) string {
+	const safeChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@+:,./-"
 	if s != "" && strings.Trim(s, safeChars) == "" {
 		return s
 	}
-	if goos == "windows" {
-		if s != "" && !strings.ContainsAny(s, "%$`\"'\r\n") {
-			return `"` + s + `"`
-		}
-		return "'" + strings.ReplaceAll(s, "'", "''") + "'"
-	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// modelCommand is prefix and model as one command to paste, or "" on Windows when no spelling of model reads the same
+// in cmd.exe and PowerShell.
+func modelCommand(goos, prefix, model string) string {
+	if goos != "windows" {
+		return prefix + shellQuote(model)
+	}
+	quoted, ok := windowsSharedQuote(model)
+	if !ok {
+		return ""
+	}
+	return prefix + quoted
 }

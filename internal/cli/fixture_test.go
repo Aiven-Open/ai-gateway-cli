@@ -55,6 +55,8 @@ const (
 	keyNoInfer    = "sk-test-no-inference"
 	// Grants an alias holding a double quote.
 	keyQuoted = "sk-test-quoted"
+	// Grants an id holding %, which cmd.exe expands.
+	keyPercent = "sk-test-percent"
 )
 
 // fixedNow is every session's first clock reading; each later one is a second on, as a real clock would be, so the
@@ -112,6 +114,7 @@ const (
 var keyModels = map[string][]string{
 	keyValid:      {routerEntry, sonnetEntry, opusEntry, solEntry, glmEntry},
 	keyEmpty:      {},
+	keyPercent:    {`{"id":"glm%PATH%","object":"model","created":0,"owned_by":"zai"}`},
 	keyClaudeOnly: {opusEntry, sonnetEntry, haikuEntry},
 	keyFlash:      {routerEntry, opusEntry, flashEntry},
 	keyRouterOnly: {routerEntry},

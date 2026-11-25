@@ -37,7 +37,7 @@ var setupTools = map[string]struct {
 	"pi": {
 		userConfig(pi.Setup),
 		func(_ config.Env, t []models.Model, sel harness.ModelSelection) string {
-			return "pi --model " + shellQuoteForOS(pi.ModelFor(t, sel), runtime.GOOS)
+			return modelCommand(runtime.GOOS, "pi --model ", pi.ModelFor(t, sel))
 		},
 		"pi",
 		[]string{"PI_CODING_AGENT_DIR"},
@@ -45,7 +45,7 @@ var setupTools = map[string]struct {
 	"opencode": {
 		userConfig(opencode.Setup),
 		func(_ config.Env, t []models.Model, sel harness.ModelSelection) string {
-			return "opencode -m " + shellQuoteForOS(opencode.ModelFor(t, sel), runtime.GOOS)
+			return modelCommand(runtime.GOOS, "opencode -m ", opencode.ModelFor(t, sel))
 		},
 		"opencode",
 		[]string{"OPENCODE_CONFIG", "OPENCODE_CONFIG_DIR"},
@@ -67,7 +67,7 @@ var setupTools = map[string]struct {
 	"omp": {
 		userConfig(omp.Setup),
 		func(_ config.Env, t []models.Model, sel harness.ModelSelection) string {
-			return "omp --model " + shellQuoteForOS(omp.ModelFor(t, sel), runtime.GOOS)
+			return modelCommand(runtime.GOOS, "omp --model ", omp.ModelFor(t, sel))
 		},
 		"omp",
 		[]string{"PI_CODING_AGENT_DIR", "OMP_PROFILE", "PI_PROFILE", "PI_CONFIG_DIR"},
