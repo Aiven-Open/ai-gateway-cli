@@ -80,27 +80,8 @@ func FindPreset(ms []Model, id PresetID) (Preset, bool) {
 	switch id {
 	case PresetAnthropic:
 		own := claudeModels(ms)
-		sonnet := FirstGranted(own, anthropicSonnetOrder...)
-		opus := FirstGranted(own, anthropicOpusOrder...)
-		haiku := FirstGranted(own, anthropicHaikuOrder...)
 		// A granted Claude model outside the curated orders still keeps Claude Code on Claude.
-		main := cmp.Or(sonnet, opus, haiku, FirstAlias(own))
-		if main == "" {
-			return Preset{}, false
-		}
-		opus = cmp.Or(opus, main)
-		sonnet = cmp.Or(sonnet, main)
-		haiku = cmp.Or(haiku, main)
-		fable := cmp.Or(FirstGranted(own, "claude-opus-5-5", "claude-fable"), opus, main)
-		return Preset{
-			ID:     PresetAnthropic,
-			Name:   "Anthropic",
-			Main:   main,
-			Opus:   opus,
-			Sonnet: sonnet,
-			Haiku:  haiku,
-			Fable:  fable,
-		}, true
+		return anthropicPreset(own, FirstAlias(own))
 	case PresetOpenAI:
 		main := openAIMain(ms)
 		if main == "" {
@@ -192,6 +173,35 @@ func OpenWeightOrFirst(ms []Model) string {
 	}
 	return FirstAlias(ms)
 }
+
+// anthropicPreset is the Anthropic preset from the curated orders over ms, with fallback as the main model when
+// none of them is granted; false when there is no main model.
+func anthropicPreset(ms []Model, fallback string) (Preset, bool) {
+	sonnet := FirstGranted(ms, anthropicSonnetOrder...)
+	opus := FirstGranted(ms, anthropicOpusOrder...)
+	haiku := FirstGranted(ms, anthropicHaikuOrder...)
+	main := cmp.Or(sonnet, opus, haiku, fallback)
+	if main == "" {
+		return Preset{}, false
+	}
+	opus = cmp.Or(opus, main)
+	sonnet = cmp.Or(sonnet, main)
+	haiku = cmp.Or(haiku, main)
+	fable := cmp.Or(FirstGranted(ms, "claude-opus-5-5", "claude-fable"), opus, main)
+	return Preset{
+		ID:     PresetAnthropic,
+		Name:   "Anthropic",
+		Main:   main,
+		Opus:   opus,
+		Sonnet: sonnet,
+		Haiku:  haiku,
+		Fable:  fable,
+	}, true
+}
+
+// CuratedAnthropic is the Anthropic preset from the curated orders alone, whoever owns the models, for fills that
+// drop a model another vendor owns themselves. A model outside the orders never becomes its main.
+func CuratedAnthropic(ms []Model) (Preset, bool) { return anthropicPreset(ms, "") }
 
 // IsClaude reports whether m is an Anthropic model: the catalogue files it under Anthropic, or its publisher is missing
 // or not one the CLI has reviewed and the alias starts with claude-. A model a known vendor owns, such as an

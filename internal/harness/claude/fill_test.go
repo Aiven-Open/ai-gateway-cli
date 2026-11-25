@@ -175,27 +175,25 @@ func TestResolveSlotsFillsChosenModelsByRule(t *testing.T) {
 				opus: "gemini-4-neon", sonnet: "gpt-6.2-astra", haiku: "claude-haiku-5-5"},
 		},
 		{
-			name:  "a granted fable fills every tier when only another vendor's model is ticked",
+			name:  "a granted fable keeps its tier when only another vendor's model is ticked",
 			table: catalogue("claude-fable-5-2", "gemini-4-neon"),
 			sel:   picks("gemini-4-neon", "gemini-4-neon"),
-			// A granted Claude model outside the curated orders keeps Claude Code on Claude.
 			want: slots{main: "gemini-4-neon", custom: "gemini-4-neon", fable: "claude-fable-5-2",
-				opus: "claude-fable-5-2", sonnet: "claude-fable-5-2", haiku: "claude-fable-5-2"},
+				opus: "gemini-4-neon", sonnet: "gemini-4-neon", haiku: "gemini-4-neon"},
 		},
 		{
 			name:  "an Aiven-owned claude- alias is another vendor's model and is not placed by tier name",
 			table: aivenOpus,
 			sel:   picks("claude-opus-5-5", "claude-opus-5-5", "glm-5"),
-			// IsClaude follows catalogue ownership, so the preset fills opus from the owned Claude sonnet.
 			want: slots{main: "claude-opus-5-5", custom: "claude-opus-5-5", fable: "glm-5",
-				opus: "claude-sonnet-5-5", sonnet: "claude-sonnet-5-5", haiku: "claude-haiku-4-5"},
+				opus: "claude-opus-5-5", sonnet: "claude-sonnet-5-5", haiku: "claude-haiku-4-5"},
 		},
 		{
-			name:  "an Aiven-owned claude- alias picked alone fills one slot and tiers take Anthropic models",
+			name:  "an Aiven-owned claude- alias picked alone fills one slot and no tier default",
 			table: aivenOpus,
 			sel:   picks("claude-opus-5-5", "claude-opus-5-5"),
-			want: slots{main: "claude-opus-5-5", custom: "claude-opus-5-5", fable: "claude-sonnet-5-5",
-				opus: "claude-sonnet-5-5", sonnet: "claude-sonnet-5-5", haiku: "claude-haiku-4-5"},
+			want: slots{main: "claude-opus-5-5", custom: "claude-opus-5-5", fable: "claude-opus-5-5",
+				opus: "claude-opus-5-5", sonnet: "claude-sonnet-5-5", haiku: "claude-haiku-4-5"},
 		},
 		{
 			name:  "an Aiven-owned claude- alias picked alone sits in the custom slot on a key with every Claude tier",
