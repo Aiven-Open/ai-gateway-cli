@@ -1519,3 +1519,77 @@ func TestKeepCurrentWithTheNativeDefaultCopiesTheMixToBothFiles(t *testing.T) {
 		t.Errorf("native model = %v", decode(t, m)["model"])
 	}
 }
+
+func TestKeepCurrentWithTheNativeDefaultGivesTheNativeFileTheDedicatedSlotsAsASet(t *testing.T) {
+	t.Parallel()
+	in := input(t)
+	in.Table = mixTable
+	dedicated := filepath.Join(in.UserHome, claude.SettingsFile)
+	native := filepath.Join(in.UserHome, ".claude", "settings.json")
+	in.Default = true
+	setUp(t, in) // an earlier native-default run: default Claude tier pins in both files
+	in.Default = false
+	in.Selection = mixSelection
+	setUp(t, in)
+	data, err := os.ReadFile(dedicated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := decode(t, data)
+	cfg["permissions"] = map[string]any{"allow": []any{"Bash"}}
+	cfg["env"].(map[string]any)["UNRELATED_KEY"] = "x"
+	out, _ := json.Marshal(cfg)
+	write(t, dedicated, string(out))
+	in.Selection = harness.ModelSelection{}
+	in.Default = true
+	setUp(t, in)
+	want, got := fileEnv(t, dedicated), fileEnv(t, native)
+	for _, k := range []string{
+		"ANTHROPIC_CUSTOM_MODEL_OPTION", "ANTHROPIC_DEFAULT_FABLE_MODEL",
+		"ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+	} {
+		if got[k] != want[k] {
+			t.Errorf("native %s = %v, dedicated %v", k, got[k], want[k])
+		}
+	}
+	if want["ANTHROPIC_DEFAULT_OPUS_MODEL"] != "deepseek-v4.1-flash" {
+		t.Fatalf("dedicated lost the mix: %v", want)
+	}
+	nativeData, _ := os.ReadFile(native)
+	nativeCfg := decode(t, nativeData)
+	if _, leaked := got["UNRELATED_KEY"]; leaked || nativeCfg["permissions"] != nil {
+		t.Errorf("unrelated dedicated settings reached the native file: %s", nativeData)
+	}
+}
+
+func TestKeepCurrentDropsSlotsPinnedToAModelTheKeyNoLongerGrants(t *testing.T) {
+	t.Parallel()
+	in := input(t)
+	in.Table = mixTable
+	path := filepath.Join(in.UserHome, claude.SettingsFile)
+	write(t, path, `{"env":{"ANTHROPIC_DEFAULT_OPUS_MODEL":"retired-model",`+
+		`"ANTHROPIC_DEFAULT_SONNET_MODEL":"gpt-6-astra","ANTHROPIC_CUSTOM_MODEL_OPTION":"retired-custom"}}`)
+	setUp(t, in)
+	env := fileEnv(t, path)
+	if env["ANTHROPIC_DEFAULT_OPUS_MODEL"] != "claude-opus-5-5" ||
+		env["ANTHROPIC_DEFAULT_SONNET_MODEL"] != "gpt-6-astra" {
+		t.Errorf("tier pins = %v", env)
+	}
+	if v, ok := env["ANTHROPIC_CUSTOM_MODEL_OPTION"]; ok {
+		t.Errorf("custom option = %v, want dropped", v)
+	}
+}
+
+func TestChoosingModelsDropsABlankCustomOptionKeepCurrentLeft(t *testing.T) {
+	t.Parallel()
+	in := input(t)
+	in.Table = []models.Model{{Alias: "claude-sonnet-5-5"}}
+	path := filepath.Join(in.UserHome, claude.SettingsFile)
+	write(t, path, `{"env":{"ANTHROPIC_CUSTOM_MODEL_OPTION":""}}`)
+	in.Selection = harness.ModelSelection{Preset: models.PresetAnthropic}
+	setUp(t, in)
+	env := fileEnv(t, path)
+	if v, ok := env["ANTHROPIC_CUSTOM_MODEL_OPTION"]; ok {
+		t.Errorf("custom option = %q, want dropped on a chosen selection", v)
+	}
+}

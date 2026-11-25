@@ -174,24 +174,47 @@ func Setup(in Input) (harness.Plan, error) {
 	return plan, nil
 }
 
-// dedicatedLayer is the settings of the dedicated file when path is the native one being wired beside it, else nil.
+// dedicatedLayer is the settings of the dedicated file when path is the native one wired beside it on Keep current
+// (or --yes), else nil. Only the native path is wired beside the dedicated file, and only with the native default.
 func dedicatedLayer(in Input, path string) map[string]any {
 	own := filepath.Join(in.UserHome, SettingsFile)
-	if !in.Default || path == own {
+	if !in.Selection.IsZero() || path == own {
 		return nil
 	}
+	// Setup wires the dedicated file first and fails on one that is unreadable, so an error here cannot occur.
 	cfg, _ := harness.ReadObject(own)
 	return cfg
 }
 
-// mergedEnv is the env of settings base overlaid with env.
-func mergedEnv(base, env map[string]any) map[string]any {
-	merged := map[string]any{}
-	if baseEnv, ok := base["env"].(map[string]any); ok {
-		maps.Copy(merged, baseEnv)
+// siblingSlots is env with its tier pins and custom option replaced, as a set, by those of the dedicated file's
+// settings: the native file's own pins do not win, and nothing else crosses.
+func siblingSlots(sibling, env map[string]any) map[string]any {
+	merged := maps.Clone(env)
+	siblingEnv, _ := sibling["env"].(map[string]any)
+	for _, k := range append([]string{"ANTHROPIC_CUSTOM_MODEL_OPTION"}, tierVars...) {
+		delete(merged, k)
+		if v, ok := siblingEnv[k]; ok {
+			merged[k] = v
+		}
 	}
-	maps.Copy(merged, env)
 	return merged
+}
+
+// siblingModel is the model the native file runs on Keep current: its own when the key grants it, else the dedicated
+// file's. It reports the model to wire, and drops an ungranted one from cfg so that the fresh path sets it.
+func siblingModel(t []models.Model, sibling, cfg map[string]any, s slots) slots {
+	if grantedPin(t, cfg, "model", "") == "" {
+		delete(cfg, "model")
+	}
+	s.main = cmp.Or(grantedPin(t, sibling, "model", ""), s.main)
+	return s
+}
+
+// keepsBlankCustomOption is whether env holds a blank custom option that stays, as it suppresses one inherited from
+// the user's settings, on Keep current.
+func keepsBlankCustomOption(in Input, env map[string]any) bool {
+	v, ok := env["ANTHROPIC_CUSTOM_MODEL_OPTION"].(string)
+	return ok && v == "" && in.Selection.IsZero()
 }
 
 func wire(in Input, path string) (harness.File, error) {
@@ -209,9 +232,8 @@ func wire(in Input, path string) (harness.File, error) {
 	}
 	tierEnv := env
 	sibling := dedicatedLayer(in, path)
-	if in.Selection.IsZero() && sibling != nil {
-		// Keep current with the native default: the native file starts from the mix the dedicated file holds.
-		tierEnv = mergedEnv(sibling, env)
+	if sibling != nil {
+		tierEnv = siblingSlots(sibling, env)
 	}
 	if in.Selection.Model != "" && !in.Default && userSettings != nil {
 		if userEnv, ok := userSettings["env"].(map[string]any); ok && len(userEnv) > 0 {
@@ -225,8 +247,8 @@ func wire(in Input, path string) (harness.File, error) {
 	if err != nil {
 		return harness.File{}, err
 	}
-	if in.Selection.IsZero() && sibling != nil {
-		s.main = cmp.Or(grantedPin(in.Table, map[string]any{"m": sibling["model"]}, "m", ""), s.main)
+	if sibling != nil {
+		s = siblingModel(in.Table, sibling, cfg, s)
 	}
 	main, ids := wiring(in.Table, s)
 	cfg["apiKeyHelper"] = APIKeyHelper(in.BaseURL)
@@ -275,8 +297,7 @@ func wire(in Input, path string) (harness.File, error) {
 	} else if explicit && !in.Default && layerHasCustomOption(userSettings) {
 		// Blank an inherited user-level custom option so launcher-only preset/tier picks do not re-import it.
 		env["ANTHROPIC_CUSTOM_MODEL_OPTION"] = ""
-	} else if v, ok := env["ANTHROPIC_CUSTOM_MODEL_OPTION"].(string); !ok || v != "" || !in.Selection.IsZero() {
-		// A blank one stays on Keep current: it suppresses an option inherited from the user's settings.
+	} else if !keepsBlankCustomOption(in, env) {
 		delete(env, "ANTHROPIC_CUSTOM_MODEL_OPTION")
 	}
 	for _, chosen := range []struct {

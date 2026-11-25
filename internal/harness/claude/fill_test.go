@@ -272,6 +272,16 @@ func TestIsClaudeTakesAnUnownedClaudeAliasButNotAnotherVendors(t *testing.T) {
 	}
 }
 
+func TestKeepGrantedClaudeTierFallsBackFromAGrantedNonClaudePin(t *testing.T) {
+	t.Parallel()
+	const key = "ANTHROPIC_DEFAULT_FABLE_MODEL"
+	got := keepGrantedClaudeTier(catalogue("claude-fable-5-2", "glm-5"),
+		map[string]any{key: "glm-5"}, key, "fallback")
+	if got != "fallback" {
+		t.Errorf("pin = %q, want the fallback, not a non-Claude model", got)
+	}
+}
+
 func TestKeepGrantedClaudeTierKeepsAnUnownedClaudePin(t *testing.T) {
 	t.Parallel()
 	const key = "ANTHROPIC_DEFAULT_FABLE_MODEL"
