@@ -959,3 +959,31 @@ func TestSetupSavesARotatedKeyWhenNothingElseChanges(t *testing.T) {
 		t.Errorf("same key: exit %d, stderr %q", r.code, r.stderr)
 	}
 }
+
+// A run that configures no tool leaves the key file as it was before the run.
+func TestSetupPutsThePreviousKeyBackWhenNoToolIsConfigured(t *testing.T) {
+	for name, saved := range map[string]string{"replacing a key": keyFlash, "first key": ""} {
+		t.Run(name, func(t *testing.T) {
+			s := newSession(t, newGatewayDouble(t))
+			if saved != "" {
+				s.loggedIn(saved)
+			}
+			s.deps.WriteFile = failNth(filepath.Join(s.fakeHome, claude.SettingsFile), 1)
+			r := s.stdin(keyValid).run("setup", "--key-stdin", "--yes", "claude")
+			if r.code != 1 {
+				t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
+			}
+			want, note := "", "the new key was removed because no tool was configured"
+			if saved != "" {
+				want = saved + "\n"
+				note = "the previous key was put back because no tool was configured"
+			}
+			if got := readOrEmpty(t, s.keyPath()); got != want {
+				t.Errorf("key file = %q, want %q", got, want)
+			}
+			if !strings.Contains(r.stderr, "not saved by this run; "+note) {
+				t.Errorf("summary does not say what happened to the key: %q", r.stderr)
+			}
+		})
+	}
+}

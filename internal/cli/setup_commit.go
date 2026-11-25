@@ -22,6 +22,10 @@ func (s *setupSession) commitApproved(approved []approvedWrite) int {
 	if len(approved) == 0 {
 		return s.commitNoWrites()
 	}
+	prev, err := readKeyFile(s.env)
+	if err != nil {
+		return s.run.sharedFailure(s.deps, "reading the saved key", err)
+	}
 	if err := s.saveRunKey(); err != nil {
 		for _, item := range approved {
 			item.target.out.status = statusPending
@@ -33,7 +37,27 @@ func (s *setupSession) commitApproved(approved []approvedWrite) int {
 		writeApproved(s.deps, item)
 	}
 	s.saveLauncherPrefs(approved)
+	s.restoreKeyIfNothingReady(prev)
 	return s.run.finish()
+}
+
+// restoreKeyIfNothingReady puts back the key file the run found when no selected tool ended up configured or
+// unchanged: no tool reads the new key, and other tools keep the old one.
+func (s *setupSession) restoreKeyIfNothingReady(prev keyFile) {
+	if slices.ContainsFunc(s.run.targets, func(o *targetOutcome) bool { return o.ready() }) {
+		return
+	}
+	if err := restoreKey(s.env, s.deps, prev); err != nil {
+		_ = fail(s.deps, "putting back the previous key: "+err.Error())
+		s.run.credential += "; putting back the previous key failed: " + err.Error()
+		return
+	}
+	s.run.credential = "not saved by this run; " +
+		"the new key was removed because no tool was configured"
+	if prev.existed {
+		s.run.credential = "not saved by this run; " +
+			"the previous key was put back because no tool was configured"
+	}
 }
 
 // commitNoWrites ends a run with no file to write. A new key is still saved when a selected tool is already up to
