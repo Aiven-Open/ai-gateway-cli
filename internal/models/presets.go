@@ -43,7 +43,7 @@ var (
 		"gpt-6.1-sol", "gpt-6-sol", "gpt-5.4", "gpt-5.5",
 	}
 	geminiMainOrder = []string{
-		"gemini-4-carbon", "gemini-4-argon", "gemini-4-neon",
+		"gemini-4-neon", "gemini-4-carbon", "gemini-4-argon",
 		"gemini-3.8-pro", "gemini-3.5-pro", "gemini-2.5-pro",
 	}
 	geminiFastOrder = []string{
