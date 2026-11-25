@@ -239,6 +239,7 @@ func setup(ctx context.Context, args []string, env config.Env, deps Deps) int {
 			"setup: a harness is required without a terminal; use login for credential-only input",
 		)
 	}
+	printIntro(p.ui)
 	s := &setupSession{
 		ctx:        ctx,
 		env:        env,
