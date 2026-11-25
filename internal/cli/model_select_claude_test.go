@@ -4,7 +4,9 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -15,6 +17,96 @@ import (
 	"github.com/aiven-open/ai-gateway-cli/internal/config"
 	"github.com/aiven-open/ai-gateway-cli/internal/harness/claude"
 )
+
+// refusingGateway serves catalogue and answers the basic check for refused with HTTP 400.
+func refusingGateway(t *testing.T, catalogue, refused string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/v1/models" {
+			_, _ = w.Write([]byte(`{"object":"list","data":` + catalogue + `}`))
+			return
+		}
+		var body struct {
+			Model string `json:"model"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if body.Model == refused {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":{"message":"model not served"}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"id":"synthetic","content":[],"choices":[],"output":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestSetupBlocksApplyWhenAChosenModelFailsItsCheck(t *testing.T) {
+	t.Parallel()
+	srv := refusingGateway(t, claudeMixCatalogue, "gpt-6-astra")
+	env, home := inlineSetupEnv(t, srv.URL)
+	p := &inlineSetupPrompter{secret: "synthetic-key", scriptedSelector: scriptedSelector{
+		answers: []selectAnswer{
+			{picked: []int{1}},    // Choose models
+			{picked: []int{4, 5}}, // gemini-4-neon, gpt-6-astra
+			{picked: []int{0}},    // default gemini-4-neon
+			{picked: []int{1}},    // launch only
+			{picked: []int{0}},    // Apply, which must not be offered
+		},
+	}}
+	var stderr strings.Builder
+	deps := inlineDeps(p, &stderr)
+	deps.HTTP = srv.Client()
+	if code := Run(t.Context(), []string{"setup", "claude"}, env, deps); code != 1 {
+		t.Fatalf("setup exit %d: %s", code, stderr.String())
+	}
+	if out := stderr.String(); !strings.Contains(out, "gpt-6-astra") ||
+		!strings.Contains(out, "model not served") {
+		t.Errorf("failure does not name the model:\n%s", out)
+	}
+	if len(p.answers) != 1 {
+		t.Errorf("Apply was offered: %d answers left, want 1", len(p.answers))
+	}
+	if _, err := os.Stat(filepath.Join(home, claude.SettingsFile)); !os.IsNotExist(err) {
+		t.Errorf("settings written after a failed check: %v", err)
+	}
+}
+
+func TestSetupFailsOnlyClaudeCodeWhenItsPickIsRefused(t *testing.T) {
+	t.Parallel()
+	srv := refusingGateway(t, claudeMixCatalogue, "gpt-6-astra")
+	env, home := inlineSetupEnv(t, srv.URL)
+	p := &inlineSetupPrompter{secret: "synthetic-key", scriptedSelector: scriptedSelector{
+		answers: []selectAnswer{
+			{picked: []int{1, 3}}, // Tools: opencode and Claude Code
+			{picked: []int{5}},    // Customize per tool
+			{picked: []int{1}},    // hub: Claude Code
+			{picked: []int{1}},    // Claude Code: Choose models
+			{picked: []int{4, 5}}, // gemini-4-neon, gpt-6-astra
+			{picked: []int{0}},    // default gemini-4-neon
+			{picked: []int{3}},    // hub: Done
+			{picked: []int{1}},    // launch only
+			{picked: []int{0}},    // Review: Apply, still offered for OpenCode
+		},
+	}}
+	var stderr strings.Builder
+	deps := inlineDeps(p, &stderr)
+	deps.HTTP = srv.Client()
+	code := Run(t.Context(), []string{"setup"}, env, deps)
+	out := stderr.String()
+	if code != 1 || len(p.answers) != 0 {
+		t.Fatalf("exit %d, %d answers left, want 1 and 0:\n%s", code, len(p.answers), out)
+	}
+	if !strings.Contains(out, "gpt-6-astra") || !strings.Contains(out, "model not served") {
+		t.Errorf("failure does not name the model:\n%s", out)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".config", "opencode", "opencode.json")); err != nil {
+		t.Errorf("OpenCode, whose check passed, was not written: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, claude.SettingsFile)); !os.IsNotExist(err) {
+		t.Errorf("Claude Code settings written after a failed check: %v", err)
+	}
+}
 
 // claudeMixCatalogue grants three Claude tiers and three models from other vendors. The model list shows them as
 // Anthropic 0 haiku, 1 opus, 2 sonnet; DeepSeek 3; Google 4; OpenAI 5.
@@ -114,6 +206,10 @@ func TestSetupChoosesSeveralModelsForClaudeCode(t *testing.T) {
 		if env[k] != want {
 			t.Errorf("%s = %v, want %s", k, env[k], want)
 		}
+	}
+	got := slices.Sorted(slices.Values(run.probes()["/v1/messages"]))
+	if !slices.Equal(got, []string{"deepseek-v4.1-flash", "gemini-4-neon", "gpt-6-astra"}) {
+		t.Errorf("Messages checks = %v, want one per pick", got)
 	}
 }
 

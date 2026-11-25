@@ -133,7 +133,7 @@ func toolChecks(
 		if _, granted := models.Find(table, alias); !granted {
 			return nil, notGranted(path, alias, table)
 		}
-		return []probeKey{{protocol: models.Messages, model: alias}}, nil
+		return claudePickChecks(table, sel, path, alias)
 	case "opencode":
 		model := cmp.Or(chosen, models.SonnetOrFirst(table))
 		return []probeKey{{protocol: models.ChatCompletions, model: model}}, nil
@@ -349,6 +349,25 @@ func printProtocolResult(u ui, check protocolCheck) {
 	} else {
 		u.status(2, green, "OK", text+"; basic check passed")
 	}
+}
+
+// claudePickChecks is the Messages check of the model Claude Code runs and of every other model
+// chosen with it.
+func claudePickChecks(
+	table []models.Model,
+	sel harness.ModelSelection,
+	path, alias string,
+) ([]probeKey, error) {
+	checks := []probeKey{{protocol: models.Messages, model: alias}}
+	for _, m := range sel.Models {
+		if _, granted := models.Find(table, m); !granted {
+			return nil, notGranted(path, m, table)
+		}
+		if pk := (probeKey{protocol: models.Messages, model: m}); !slices.Contains(checks, pk) {
+			checks = append(checks, pk)
+		}
+	}
+	return checks, nil
 }
 
 // probeWithRetry sends a basic check once more when the first try ran out of time.
