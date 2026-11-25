@@ -3,13 +3,7 @@
 package cli
 
 import (
-	"path/filepath"
-	"slices"
-	"strings"
-
 	"github.com/aiven-open/ai-gateway-cli/internal/config"
-	"github.com/aiven-open/ai-gateway-cli/internal/harness"
-	"github.com/aiven-open/ai-gateway-cli/internal/harness/claude"
 	"github.com/aiven-open/ai-gateway-cli/internal/models"
 )
 
@@ -45,9 +39,7 @@ func summaryRows(item pendingPreview, env config.Env, table []models.Model) []su
 	model := resolvedToolModel(t.out.tool, env, table, t.plan, t.planSel)
 	rows := []summaryRow{{label: "Default model", values: []string{safe(model)}}}
 	if t.out.tool == "claude" {
-		if row, ok := claudeMenuRow(item.files, model); ok {
-			rows = append(rows, row)
-		}
+		rows = claudeRows(item, env, table, model)
 	}
 	provider := "not changed"
 	if t.out.asDefault {
@@ -55,32 +47,6 @@ func summaryRows(item pendingPreview, env config.Env, table []models.Model) []su
 	}
 	rows = append(rows, summaryRow{label: "Default provider", values: []string{provider}})
 	return append(rows, fileRow(item, env))
-}
-
-// claudeMenuRow lists the other models the dedicated settings file puts in /model.
-func claudeMenuRow(files []harness.File, main string) (summaryRow, bool) {
-	i := slices.IndexFunc(files, func(f harness.File) bool {
-		return filepath.Base(f.Path) == filepath.Base(claude.SettingsFile)
-	})
-	if i < 0 {
-		return summaryRow{}, false
-	}
-	menu, err := claude.ReadMenu(files[i].Data)
-	if err != nil {
-		return summaryRow{}, false
-	}
-	others := slices.DeleteFunc(menu.Others, func(m string) bool { return m == main })
-	var values []string
-	if len(others) > 0 {
-		values = append(values, safe(strings.Join(others, ", ")))
-	}
-	switch {
-	case menu.Discovery && len(values) > 0:
-		values = append(values, "and every Claude model your key grants")
-	case menu.Discovery:
-		values = append(values, "every Claude model your key grants")
-	}
-	return summaryRow{label: "Also in /model", values: values}, len(values) > 0
 }
 
 // fileRow names each file setup writes and, under each one it replaces, that a backup is kept.

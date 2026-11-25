@@ -3,6 +3,7 @@
 package cli_test
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -21,6 +22,27 @@ func TestReviewSummaryListsClaudeMenu(t *testing.T) {
 		"  File              ~/.claude/aiven.settings.json\n"
 	if r.code != 0 || !strings.Contains(r.stderr, want) {
 		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
+	}
+}
+
+// A project settings file that pins another model wins when Claude Code runs there, but setup writes its own default:
+// the table shows the written one and names the pin beside it.
+func TestReviewSummaryNamesProjectPinBesideWrittenDefault(t *testing.T) {
+	s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid)
+	writeFile(t, filepath.Join(s.env.WorkDir, ".claude/settings.json"), `{"model":"claude-opus"}`)
+	r := s.run("setup", "claude", "--yes")
+	want := "\nClaude Code\n" +
+		"  Default model     claude-sonnet\n" +
+		"  In this project   claude-opus from .claude/settings.json\n" +
+		"  Also in /model    claude-opus\n" +
+		"                    and every Claude model your key grants\n" +
+		"  Default provider  not changed\n"
+	if r.code != 0 || !strings.Contains(r.stderr, want) {
+		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
+	}
+	written, err := os.ReadFile(filepath.Join(s.fakeHome, ".claude/aiven.settings.json"))
+	if err != nil || !strings.Contains(string(written), `"model": "claude-sonnet[1m]"`) {
+		t.Errorf("written file %q (%v) does not hold the model the table shows", written, err)
 	}
 }
 

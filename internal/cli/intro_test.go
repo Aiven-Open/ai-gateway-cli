@@ -11,7 +11,7 @@ import (
 
 const intro = "Aiven AI Gateway setup\n" +
 	"Connects your coding tools to Aiven AI Gateway. Checks and saves your key,\n" +
-	"then adds an Aiven profile to each tool. Nothing changes until you apply.\n" +
+	"then adds an Aiven profile to each tool. No tool settings change until you apply.\n" +
 	"Source: https://github.com/Aiven-Open/ai-gateway-cli\n\n"
 
 func TestSetupStartsWithIntro(t *testing.T) {
