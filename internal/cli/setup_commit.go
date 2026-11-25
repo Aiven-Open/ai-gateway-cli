@@ -32,6 +32,9 @@ func (s *setupSession) commitApproved(approved []approvedWrite) int {
 	if err != nil {
 		return s.run.sharedFailure(s.deps, "reading the saved key", err)
 	}
+	if s.reusedKeyChanged(prev) {
+		return s.failChangedKey(approved)
+	}
 	if err := s.saveRunKey(); err != nil {
 		for _, item := range approved {
 			item.target.out.status = statusPending
@@ -98,6 +101,13 @@ func (s *setupSession) commitNoWrites() int {
 		return s.failRotation("waiting for the saved key", err)
 	}
 	defer unlock()
+	cur, err := readKeyFile(s.env)
+	if err != nil {
+		return s.failRotation("reading the saved key", err)
+	}
+	if s.reusedKeyChanged(cur) {
+		return s.failChangedKey(nil)
+	}
 	saved, err := storedKey(s.env)
 	if err != nil {
 		return s.failRotation("reading the saved key", err)

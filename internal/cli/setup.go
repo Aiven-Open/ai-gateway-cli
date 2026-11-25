@@ -292,7 +292,7 @@ func (s *setupSession) execute() int {
 	} else {
 		s.p.ui.line(0, "Gateway: "+safe(s.env.BaseURL))
 	}
-	key, table, err := obtainKey(s.ctx, s.env, s.deps, s.p, s.opts)
+	key, table, err := s.obtainRunKey()
 	if err != nil {
 		return s.run.sharedFailure(s.deps, "reading the key", err)
 	}
