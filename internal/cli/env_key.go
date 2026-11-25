@@ -5,6 +5,7 @@ package cli
 import (
 	"errors"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/aiven-open/ai-gateway-cli/internal/config"
@@ -50,26 +51,47 @@ func confirmEnvKeyPlain(deps Deps, p presenter, env config.Env, envKey string) (
 	p.ui.line(2, "Key source: "+creds.EnvVar)
 	p.ui.line(2, "Key: "+maskKey(envKey))
 	p.ui.line(2, "Use this key with "+safe(env.BaseURL)+"?")
-	p.ui.line(4, "1) Use "+creds.EnvVar)
-	p.ui.line(4, "2) Enter a different key (default)")
-	p.ui.line(4, "3) Cancel")
+	for i, label := range []string{"Use " + creds.EnvVar, "Enter a different key", "Cancel"} {
+		if i == envKeyRefuse {
+			label += " (default)"
+		}
+		p.ui.line(4, strconv.Itoa(i+1)+") "+label)
+	}
+	prompt := "Choose key option (Enter for " + strconv.Itoa(envKeyRefuse+1) + "): "
 	for range 3 {
-		answer, err := deps.Prompter.ReadLine("Choose key option (Enter for 2): ")
+		answer, err := deps.Prompter.ReadLine(prompt)
 		if errors.Is(err, io.EOF) || errors.Is(err, errInputEnded) {
 			return false, errInputEnded
 		}
 		if err != nil {
 			return false, err
 		}
-		switch strings.ToLower(strings.TrimSpace(answer)) {
-		case "1", "y", "yes":
+		picked, ok := envKeyAnswer(answer)
+		switch {
+		case !ok:
+			p.ui.line(2, "Choose a number from 1 to 3.")
+		case picked == 0:
 			return true, nil
-		case "", "2", "n", "no":
-			return false, nil
-		case "3", "c", "cancel":
+		case picked == 2:
 			return false, errCancelled
+		default:
+			return false, nil
 		}
-		p.ui.line(2, "Choose a number from 1 to 3.")
 	}
 	return false, errors.New("no answer: expected key option number")
+}
+
+// envKeyAnswer is the option index an answer picks; a blank answer takes envKeyRefuse.
+func envKeyAnswer(answer string) (int, bool) {
+	switch strings.ToLower(strings.TrimSpace(answer)) {
+	case "":
+		return envKeyRefuse, true
+	case "1", "y", "yes":
+		return 0, true
+	case "2", "n", "no":
+		return 1, true
+	case "3", "c", "cancel":
+		return 2, true
+	}
+	return 0, false
 }

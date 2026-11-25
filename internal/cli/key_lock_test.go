@@ -99,6 +99,32 @@ func TestLoginDuringRestoreWaitsForSetup(t *testing.T) {
 	}
 }
 
+// A key saved between logout's look at the key file and its removal must not be removed without the lock, so the
+// lock is held before the file is looked at and while it is removed, also when there is no key file yet.
+// Mutant: take the lock only after Lstat finds a key file.
+func TestLogoutHoldsLockWhenRemovingKey(t *testing.T) {
+	s := newSession(t, newGatewayDouble(t))
+	var removed, held bool
+	s.deps.Remove = func(path string) error {
+		removed = true
+		unlock, err := config.LockState(s.fakeHome, 10*time.Millisecond)
+		held = errors.Is(err, fsutil.ErrLocked)
+		if err == nil {
+			unlock()
+		}
+		return os.Remove(path)
+	}
+	if r := s.run("logout"); r.code != 0 || !removed || !held {
+		t.Fatalf(
+			"exit %d, removed %v, lock held during removal %v, stderr %q",
+			r.code,
+			removed,
+			held,
+			r.stderr,
+		)
+	}
+}
+
 // The key file is written through a symlinked config directory, so the lock that guards the write
 // must open there too.
 // Mutant: open the lock directory with fsutil.OpenDir from the home instead of through the path.
