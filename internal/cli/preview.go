@@ -47,9 +47,15 @@ const (
 )
 
 // prepareSnapshot captures a full read-only baseline of BOTH dedicated and native-default files for tool before Beat 1
-// so toggling direct invocation in Beat 3 selects a subset without ever failing with a mismatched write set.
+// so toggling direct invocation in Beat 3 selects a subset without ever failing with a mismatched write set. When the
+// native default cannot be prepared, the baseline covers the dedicated files only.
 func prepareSnapshot(env config.Env, tool string) (harness.Plan, error) {
 	template, err := setupTools[tool].prepare(env, nil, true, harness.ModelSelection{})
+	if err != nil {
+		// A native default that cannot be edited matters only if Aiven is to become the default; that choice
+		// prepares it again and reports the same error then.
+		template, err = setupTools[tool].prepare(env, nil, false, harness.ModelSelection{})
+	}
 	if err != nil {
 		return harness.Plan{}, err
 	}
