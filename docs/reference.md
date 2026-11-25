@@ -151,7 +151,7 @@ targets. With changes to write, the key is saved
 before the approved changes. With nothing to write, a new key is saved only when
 every selected tool is already up to date, also in unattended runs without `--yes`. If no tool ends up ready or with a
 file written, the previous key is put back unless another process changed the
-key file meanwhile. Putting it back is best effort: a login or logout running at the same moment can still be overwritten. When no configuration change is approved,
+key file meanwhile. Setup, login and logout hold one lock file, `~/.config/aiven/ai-gateway.lock`, while they change a key file or the model preferences, so they never interleave; one that waits more than 10 seconds stops and asks you to retry. When no configuration change is approved,
 `ai-gateway-models.json` is not written.
 
 Ready tools end with one launch command per line, each followed by its default model on a line of its own so that a copied command passes no extra argument, and the direct native command. Tools that need attention or were declined get the

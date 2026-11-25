@@ -179,7 +179,7 @@ for (const name of names) {
   const setup = await runAsync(["setup", name, "--key-stdin", "--yes", "--plain"], `${key}\n`);
   assert.equal(setup.status, 0, `${name} setup: ${setup.stdout}${setup.stderr}`);
   assert(setup.stderr.includes(`Gateway: ${toolEnv.AIVEN_AI_GATEWAY_BASE_URL}\n`), `${name} setup omitted the gateway`);
-  const written = files(home).filter((file) => !before.has(file) && !file.includes("ai-gateway-key"))
+  const written = files(home).filter((file) => !before.has(file) && !file.includes("ai-gateway-key") && !file.endsWith("ai-gateway.lock"))
     .map((file) => file.slice(home.length + 1).replaceAll("\\", "/")).sort();
   assert.deepEqual(written, expected[name].files, `${name} setup wrote ${written}`);
   for (const file of written) {

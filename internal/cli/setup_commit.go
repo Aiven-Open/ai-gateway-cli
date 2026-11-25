@@ -23,6 +23,11 @@ func (s *setupSession) commitApproved(approved []approvedWrite) int {
 	if len(approved) == 0 {
 		return s.commitNoWrites()
 	}
+	unlock, err := lockState(s.env, s.deps)
+	if err != nil {
+		return s.run.sharedFailure(s.deps, "waiting for the saved key", err)
+	}
+	defer unlock()
 	prev, err := readKeyFile(s.env)
 	if err != nil {
 		return s.run.sharedFailure(s.deps, "reading the saved key", err)
@@ -49,9 +54,10 @@ func (r *setupRun) wroteNothing() bool {
 	})
 }
 
-// restoreKeyIfNothingReady puts back the key file the run found when no tool read or wrote anything: no tool uses the
-// new key, and other tools keep the old one. It touches the file only while it still holds the key this run saved,
-// so a login or logout by another process in between is left alone.
+// restoreKeyIfNothingReady puts back the key file the run found when no tool read or wrote
+// anything: no tool uses the new key, and other tools keep the old one. The caller holds
+// config.LockFile, so no login or logout of this version runs in between; the file is still
+// compared first, for an older launcher that takes no lock.
 func (s *setupSession) restoreKeyIfNothingReady(prev keyFile) {
 	if !s.run.wroteNothing() {
 		return
@@ -87,6 +93,11 @@ func (s *setupSession) commitNoWrites() int {
 		s.holdUnchangedToolsWithoutUsableKey()
 		return s.run.finish()
 	}
+	unlock, err := lockState(s.env, s.deps)
+	if err != nil {
+		return s.failRotation("waiting for the saved key", err)
+	}
+	defer unlock()
 	saved, err := storedKey(s.env)
 	if err != nil {
 		return s.failRotation("reading the saved key", err)

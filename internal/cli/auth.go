@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/aiven-open/ai-gateway-cli/internal/config"
@@ -32,6 +33,11 @@ func login(ctx context.Context, env config.Env, deps Deps) int {
 	if err != nil {
 		return failGateway(deps, err)
 	}
+	unlock, err := lockState(env, deps)
+	if err != nil {
+		return fail(deps, err.Error())
+	}
+	defer unlock()
 	p.begin("Saving the key")
 	where, err := saveKey(env, deps, key)
 	if err != nil {
@@ -76,7 +82,15 @@ func listModels(ctx context.Context, env config.Env, deps Deps) int {
 	return 0
 }
 
+// logout removes the key file under config.LockFile; with no key file there is nothing to serialise.
 func logout(env config.Env, deps Deps) int {
+	if _, err := os.Lstat(creds.Path(env.UserHome, env.BaseURL)); err == nil {
+		unlock, err := lockState(env, deps)
+		if err != nil {
+			return fail(deps, err.Error())
+		}
+		defer unlock()
+	}
 	if err := removeKey(env, deps); err != nil {
 		return fail(deps, err.Error())
 	}

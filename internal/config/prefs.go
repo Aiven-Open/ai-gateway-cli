@@ -82,6 +82,7 @@ func LoadModelPref(userHome, origin, tool string) (string, error) {
 
 // SaveModelPrefs atomically merges updates (tool -> alias) for origin into userHome's
 // model preference file with mode 0600, refusing symlinked parent directories. An empty alias removes that tool.
+// Callers hold LockFile; the read, merge and rename are not atomic on their own.
 func SaveModelPrefs(
 	userHome, origin string,
 	updates map[string]string,

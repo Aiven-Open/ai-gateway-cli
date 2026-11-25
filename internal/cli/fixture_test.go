@@ -407,7 +407,8 @@ func (s *session) homeFiles() []string {
 	var files []string
 	for _, root := range []string{s.fakeHome, s.env.WorkDir} {
 		_ = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
-			if err == nil && !d.IsDir() && p != s.keyPath() {
+			if err == nil && !d.IsDir() && p != s.keyPath() &&
+				p != filepath.Join(s.fakeHome, filepath.FromSlash(config.LockFile)) {
 				files = append(files, p)
 			}
 			return nil
