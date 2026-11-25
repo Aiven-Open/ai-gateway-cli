@@ -132,3 +132,32 @@ func TestModelPrefsErrors(t *testing.T) {
 		t.Errorf("SaveModelPrefs created files outside home: %v", entries)
 	}
 }
+
+// Only a missing file means no preferences; anything present that is not a map of non-empty aliases
+// is refused. Mutant: drop the raw == nil or alias == nil check in decodePrefs.
+func TestMalformedPreferencesAreRefused(t *testing.T) {
+	for name, data := range map[string]string{
+		"empty file":     "",
+		"blank file":     " \n",
+		"null":           "null",
+		"null gateway":   `{"https://gw.example": null}`,
+		"null tool":      `{"https://gw.example": {"pi": null}}`,
+		"empty alias":    `{"https://gw.example": {"pi": ""}}`,
+		"number alias":   `{"https://gw.example": {"pi": 7}}`,
+		"trailing value": `{} {}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			home := t.TempDir()
+			path := config.ModelPrefsPath(home)
+			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := config.LoadModelPrefs(home); err == nil {
+				t.Fatalf("LoadModelPrefs(%q) accepted malformed state", data)
+			}
+		})
+	}
+}
