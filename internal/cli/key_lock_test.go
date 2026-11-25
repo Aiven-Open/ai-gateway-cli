@@ -98,3 +98,39 @@ func TestLoginDuringRestoreWaitsForSetup(t *testing.T) {
 		t.Errorf("key file %q after a run that configured nothing", got)
 	}
 }
+
+// The key file is written through a symlinked config directory, so the lock that guards the write
+// must open there too.
+// Mutant: open the lock directory with fsutil.OpenDir from the home instead of through the path.
+func TestKeyWritersWorkThroughSymlinkedConfigDirectory(t *testing.T) {
+	linked := func(t *testing.T, s *session) {
+		t.Helper()
+		if err := os.Symlink(t.TempDir(), filepath.Join(s.fakeHome, ".config")); err != nil {
+			t.Skip("no symlink privilege:", err)
+		}
+	}
+	t.Run("login", func(t *testing.T) {
+		s := newSession(t, newGatewayDouble(t)).stdin(keyValid)
+		linked(t, s)
+		if r := s.run("login"); r.code != 0 || readOrEmpty(t, s.keyPath()) != keyValid+"\n" {
+			t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
+		}
+	})
+	t.Run("logout", func(t *testing.T) {
+		s := newSession(t, newGatewayDouble(t))
+		linked(t, s)
+		s.loggedIn(keyValid)
+		if r := s.run("logout"); r.code != 0 || readOrEmpty(t, s.keyPath()) != "" {
+			t.Fatalf("exit %d, key %q, stderr %q", r.code, readOrEmpty(t, s.keyPath()), r.stderr)
+		}
+	})
+	t.Run("setup claude yes", func(t *testing.T) {
+		s := newSession(t, newGatewayDouble(t))
+		linked(t, s)
+		s.loggedIn(keyValid)
+		if r := s.run("setup", "claude", "--yes"); r.code != 0 ||
+			readOrEmpty(t, s.keyPath()) != keyValid+"\n" {
+			t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
+		}
+	})
+}

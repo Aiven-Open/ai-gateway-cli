@@ -4,6 +4,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -20,11 +21,15 @@ func LockState(userHome string, wait time.Duration) (func(), error) {
 	if userHome == "" {
 		return nil, ErrNoHome
 	}
-	dir, err := fsutil.OpenDir(userHome, filepath.Dir(filepath.FromSlash(LockFile)))
+	path := filepath.Join(userHome, filepath.FromSlash(LockFile))
+	// Opened as fsutil.WriteAtomic opens the key file's directory, so a path the key write accepts,
+	// such as a symlinked .config, never refuses the lock.
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, fmt.Errorf("lock %s: %w", path, err)
+	}
+	dir, err := fsutil.OpenDir(filepath.Dir(path), ".")
 	if err != nil {
-		return nil, fmt.Errorf(
-			"lock %s: %w", filepath.Join(userHome, filepath.FromSlash(LockFile)), err,
-		)
+		return nil, fmt.Errorf("lock %s: %w", path, err)
 	}
 	defer func() { _ = dir.Close() }()
 	return dir.Lock(filepath.Base(LockFile), wait)

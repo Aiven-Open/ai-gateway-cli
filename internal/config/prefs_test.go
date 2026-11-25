@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/aiven-open/ai-gateway-cli/internal/config"
@@ -145,6 +146,8 @@ func TestMalformedPreferencesAreRefused(t *testing.T) {
 		"empty alias":    `{"https://gw.example": {"pi": ""}}`,
 		"number alias":   `{"https://gw.example": {"pi": 7}}`,
 		"trailing value": `{} {}`,
+		"empty array":    `[]`,
+		"array gateway":  `{"gw": []}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			home := t.TempDir()
@@ -155,8 +158,10 @@ func TestMalformedPreferencesAreRefused(t *testing.T) {
 			if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := config.LoadModelPrefs(home); err == nil {
-				t.Fatalf("LoadModelPrefs(%q) accepted malformed state", data)
+			_, err := config.LoadModelPrefs(home)
+			if err == nil || !strings.Contains(err.Error(), path) ||
+				!strings.Contains(err.Error(), "is not a valid model preference file") {
+				t.Fatalf("LoadModelPrefs(%q) = %v, want it to name %s and refuse it", data, err, path)
 			}
 		})
 	}
