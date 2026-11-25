@@ -25,6 +25,25 @@ func nativeFileOf(snapshot, launcherOnly harness.Plan) string {
 	return ""
 }
 
+// withholdUneditable drops the tools whose native default cannot be edited, since choosing Aiven as their default
+// would fail, and says why in one line each. It never names the file, which setup will not write.
+func withholdUneditable(p presenter, eligible []*setupTarget) []*setupTarget {
+	var offered []*setupTarget
+	for _, t := range eligible {
+		if t.nativeErr == nil {
+			offered = append(offered, t)
+			continue
+		}
+		p.ui.line(
+			2,
+			toolLabel(
+				t.out.tool,
+			)+" default config cannot be edited, so Aiven is available through the launch command only.",
+		)
+	}
+	return offered
+}
+
 // nativeDefaultFile names t's native default file for the default-provider prompt, with ~ for the home.
 func nativeDefaultFile(t *setupTarget, env config.Env) string {
 	return shortHomePath(env.UserHome, t.nativeFile)

@@ -198,6 +198,7 @@ type setupTarget struct {
 	snapshot     harness.Plan
 	plan         harness.Plan
 	nativeFile   string
+	nativeErr    error
 	planSel      harness.ModelSelection
 	currentPref  string
 	existing     configuredModel
@@ -335,7 +336,7 @@ func (s *setupSession) preflightTool(tool string) *setupTarget {
 		)
 	}
 	if err == nil {
-		t.snapshot, err = prepareSnapshot(s.env, tool)
+		t.snapshot, t.nativeErr, err = prepareSnapshot(s.env, tool)
 	}
 	if err != nil {
 		t.preflightErr = err

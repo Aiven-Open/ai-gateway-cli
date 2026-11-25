@@ -14,6 +14,8 @@ func TestClaudeDefaultFollowsCatalogueOwnership(t *testing.T) {
 	for key, want := range map[string]string{
 		keyOwnedFable:    "claude-fable-5-2",
 		keyPrivateSonnet: "claude-haiku-5-5",
+		// An owner no reviewed list names keeps its Claude id. Mutant: IsClaude refuses unreviewed owners.
+		keyUnreviewedOwner: "claude-sonnet-5-5",
 	} {
 		s := newSession(t, newGatewayDouble(t)).loggedIn(key)
 		if r := s.run("setup", "claude", "--yes"); r.code != 0 {

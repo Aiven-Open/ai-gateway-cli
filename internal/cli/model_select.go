@@ -235,7 +235,8 @@ func toolBadge(
 			shortHomePath(env.UserHome, existing.file),
 		)
 	}
-	if existing.present && existing.granted {
+	// A launcher tool's model is only a saved preference, which says nothing about its files; Ready below does.
+	if existing.present && existing.granted && !isLauncherPrefTool(tool) {
 		return fmt.Sprintf("configured (%s)", safe(existing.model))
 	}
 	switch tool {
@@ -918,7 +919,7 @@ func selectDirectInvocation(
 	env config.Env,
 	eligible []*setupTarget,
 ) (string, error) {
-	if len(eligible) == 0 {
+	if eligible = withholdUneditable(p, eligible); len(eligible) == 0 {
 		return "none", nil
 	}
 	if len(eligible) == 1 {
