@@ -581,3 +581,28 @@ func TestSharedSelectionLeavesRecommendedDefaultsAndOtherToolsAlone(t *testing.T
 		t.Errorf("preset for claude = %+v, want Model glm-5 only", got)
 	}
 }
+
+// A repeat --yes run leaves a chosen mix of models where it is.
+func TestRepeatSetupKeepsChosenClaudeSlots(t *testing.T) {
+	t.Parallel()
+	run := chooseThreeClaudeModels(t)
+	path := filepath.Join(run.home, claude.SettingsFile)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stderr strings.Builder
+	deps := inlineDeps(&inlineSetupPrompter{}, &stderr)
+	deps.HTTP = run.srv.Client()
+	if code := Run(t.Context(), []string{"setup", "claude", "--yes"}, run.env, deps); code != 0 {
+		t.Fatalf("repeat setup exit %d: %s", code, stderr.String())
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) ||
+		!strings.Contains(stderr.String(), "Already configured; no file needs a change.") {
+		t.Errorf("repeat setup changed the slots:\n%s\nstderr:\n%s", after, stderr.String())
+	}
+}

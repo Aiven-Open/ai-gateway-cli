@@ -174,6 +174,26 @@ func Setup(in Input) (harness.Plan, error) {
 	return plan, nil
 }
 
+// dedicatedLayer is the settings of the dedicated file when path is the native one being wired beside it, else nil.
+func dedicatedLayer(in Input, path string) map[string]any {
+	own := filepath.Join(in.UserHome, SettingsFile)
+	if !in.Default || path == own {
+		return nil
+	}
+	cfg, _ := harness.ReadObject(own)
+	return cfg
+}
+
+// mergedEnv is the env of settings base overlaid with env.
+func mergedEnv(base, env map[string]any) map[string]any {
+	merged := map[string]any{}
+	if baseEnv, ok := base["env"].(map[string]any); ok {
+		maps.Copy(merged, baseEnv)
+	}
+	maps.Copy(merged, env)
+	return merged
+}
+
 func wire(in Input, path string) (harness.File, error) {
 	src, cfg, err := harness.ReadJSON(path)
 	var env map[string]any
@@ -188,6 +208,11 @@ func wire(in Input, path string) (harness.File, error) {
 		userSettings, _ = harness.ReadObject(filepath.Join(in.UserHome, ".claude", "settings.json"))
 	}
 	tierEnv := env
+	sibling := dedicatedLayer(in, path)
+	if in.Selection.IsZero() && sibling != nil {
+		// Keep current with the native default: the native file starts from the mix the dedicated file holds.
+		tierEnv = mergedEnv(sibling, env)
+	}
 	if in.Selection.Model != "" && !in.Default && userSettings != nil {
 		if userEnv, ok := userSettings["env"].(map[string]any); ok && len(userEnv) > 0 {
 			merged := make(map[string]any, len(userEnv)+len(env))
@@ -199,6 +224,9 @@ func wire(in Input, path string) (harness.File, error) {
 	s, explicit, err := resolveSlots(in.Table, in.Selection, tierEnv)
 	if err != nil {
 		return harness.File{}, err
+	}
+	if in.Selection.IsZero() && sibling != nil {
+		s.main = cmp.Or(grantedPin(in.Table, map[string]any{"m": sibling["model"]}, "m", ""), s.main)
 	}
 	main, ids := wiring(in.Table, s)
 	cfg["apiKeyHelper"] = APIKeyHelper(in.BaseURL)
@@ -247,7 +275,8 @@ func wire(in Input, path string) (harness.File, error) {
 	} else if explicit && !in.Default && layerHasCustomOption(userSettings) {
 		// Blank an inherited user-level custom option so launcher-only preset/tier picks do not re-import it.
 		env["ANTHROPIC_CUSTOM_MODEL_OPTION"] = ""
-	} else {
+	} else if v, ok := env["ANTHROPIC_CUSTOM_MODEL_OPTION"].(string); !ok || v != "" || !in.Selection.IsZero() {
+		// A blank one stays on Keep current: it suppresses an option inherited from the user's settings.
 		delete(env, "ANTHROPIC_CUSTOM_MODEL_OPTION")
 	}
 	for _, chosen := range []struct {
@@ -334,11 +363,8 @@ func RecommendedSelection(t []models.Model) harness.ModelSelection {
 }
 
 func keepGrantedClaudeTier(t []models.Model, env map[string]any, key, fallback string) string {
-	if v, ok := env[key].(string); ok {
-		alias := bare(v)
-		if IsClaude(t, alias) {
-			return alias
-		}
+	if alias := grantedPin(t, env, key, ""); alias != "" && IsClaude(t, alias) {
+		return alias
 	}
 	return fallback
 }
@@ -349,7 +375,7 @@ func resolveSlots(
 	existingEnv map[string]any,
 ) (slots, bool, error) {
 	if sel.IsZero() || len(t) == 0 {
-		return defaultSlots(t), false, nil
+		return keptSlots(t, existingEnv), false, nil
 	}
 	if len(sel.Models) > 0 {
 		s, err := fillSlots(t, sel)

@@ -162,3 +162,24 @@ func fillOrder(held slots, ticked []string) []string {
 		return cmp.Compare(rank(a), rank(b))
 	})
 }
+
+// keptSlots is defaultSlots with each granted model the settings already pin in a slot, so Keep current and --yes
+// leave a chosen mix of models where it is.
+func keptSlots(t []models.Model, env map[string]any) slots {
+	s := defaultSlots(t)
+	for _, v := range tierVars {
+		s = s.withTier(v, grantedPin(t, env, v, s.tier(v)))
+	}
+	s.custom = grantedPin(t, env, "ANTHROPIC_CUSTOM_MODEL_OPTION", "")
+	return s
+}
+
+// grantedPin is the granted alias env pins under key, without its [1m] suffix, else fallback.
+func grantedPin(t []models.Model, env map[string]any, key, fallback string) string {
+	if v, ok := env[key].(string); ok {
+		if _, granted := models.Find(t, bare(v)); granted {
+			return bare(v)
+		}
+	}
+	return fallback
+}

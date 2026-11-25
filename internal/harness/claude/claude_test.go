@@ -1439,3 +1439,83 @@ func TestLaunchKeepsAChosenModelOverTierPinsInTheUsersOwnSettings(t *testing.T) 
 		}
 	}
 }
+
+var mixTable = []models.Model{
+	{Alias: "claude-opus-5-5"}, {Alias: "claude-sonnet-5-5"}, {Alias: "claude-haiku-5-5"},
+	{Alias: "gemini-4-neon", Context: ptr(1_000_000)}, {Alias: "gpt-6-astra"},
+	{Alias: "deepseek-v4.1-flash"},
+}
+
+var mixSelection = harness.ModelSelection{
+	Model:  "gemini-4-neon",
+	Models: []string{"gemini-4-neon", "gpt-6-astra", "deepseek-v4.1-flash"},
+}
+
+func fileEnv(t *testing.T, path string) map[string]any {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env, _ := decode(t, data)["env"].(map[string]any)
+	return env
+}
+
+func TestKeepCurrentKeepsEveryGrantedSlotAndTheCustomOption(t *testing.T) {
+	t.Parallel()
+	in := input(t)
+	in.Table = mixTable
+	in.Selection = mixSelection
+	setUp(t, in)
+	path := filepath.Join(in.UserHome, claude.SettingsFile)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.Selection = harness.ModelSelection{}
+	setUp(t, in)
+	if after, _ := os.ReadFile(path); string(after) != string(before) {
+		t.Errorf("Keep current changed the slots:\n%s\nwas:\n%s", after, before)
+	}
+}
+
+func TestKeepCurrentLeavesABlankCustomOptionBlank(t *testing.T) {
+	t.Parallel()
+	in := input(t)
+	in.Table = []models.Model{{Alias: "claude-sonnet-5-5"}}
+	write(t, filepath.Join(in.UserHome, ".claude/settings.json"),
+		`{"env":{"ANTHROPIC_CUSTOM_MODEL_OPTION":"retired-model"}}`)
+	in.Selection = harness.ModelSelection{Preset: models.PresetAnthropic}
+	setUp(t, in)
+	in.Selection = harness.ModelSelection{}
+	setUp(t, in)
+	env := fileEnv(t, filepath.Join(in.UserHome, claude.SettingsFile))
+	if v, ok := env["ANTHROPIC_CUSTOM_MODEL_OPTION"]; !ok || v != "" {
+		t.Errorf("custom option = %v (present %v), want blank", v, ok)
+	}
+}
+
+func TestKeepCurrentWithTheNativeDefaultCopiesTheMixToBothFiles(t *testing.T) {
+	t.Parallel()
+	in := input(t)
+	in.Table = mixTable
+	in.Selection = mixSelection
+	setUp(t, in)
+	in.Selection = harness.ModelSelection{}
+	in.Default = true
+	setUp(t, in)
+	dedicated := filepath.Join(in.UserHome, claude.SettingsFile)
+	native := filepath.Join(in.UserHome, ".claude", "settings.json")
+	want, got := fileEnv(t, dedicated), fileEnv(t, native)
+	for _, k := range []string{
+		"ANTHROPIC_CUSTOM_MODEL_OPTION", "ANTHROPIC_DEFAULT_FABLE_MODEL",
+		"ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+	} {
+		if got[k] != want[k] {
+			t.Errorf("native %s = %v, dedicated %v", k, got[k], want[k])
+		}
+	}
+	if m, _ := os.ReadFile(native); decode(t, m)["model"] != "gemini-4-neon[1m]" {
+		t.Errorf("native model = %v", decode(t, m)["model"])
+	}
+}
