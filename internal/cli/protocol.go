@@ -249,7 +249,7 @@ func checkProtocols(
 					return
 				}
 				start := time.Now()
-				status, err := gw.Probe(probeCtx, key, pk.model, pk.protocol)
+				status, err := probeWithRetry(probeCtx, gw, key, pk)
 				dur := time.Since(start)
 				if rejected(err) {
 					authFailed.Store(true)
@@ -349,4 +349,14 @@ func printProtocolResult(u ui, check protocolCheck) {
 	} else {
 		u.status(2, green, "OK", text+"; basic check passed")
 	}
+}
+
+// probeWithRetry sends a basic check once more when the first try ran out of time.
+func probeWithRetry(ctx context.Context, gw gateway.Client, key string, pk probeKey) (int, error) {
+	status, err := gw.Probe(ctx, key, pk.model, pk.protocol)
+	var unreachable *gateway.UnreachableError
+	if errors.As(err, &unreachable) && unreachable.Timeout() && ctx.Err() == nil {
+		return gw.Probe(ctx, key, pk.model, pk.protocol)
+	}
+	return status, err
 }

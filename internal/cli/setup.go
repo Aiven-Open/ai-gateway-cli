@@ -993,6 +993,8 @@ func gatewayCategory(err error) string {
 		return "the gateway rejected the key"
 	case errors.Is(err, gateway.ErrNoModels):
 		return "the key grants no models"
+	case errors.As(err, &unreachable) && unreachable.Timeout():
+		return "the gateway did not answer in time"
 	case errors.As(err, &unreachable):
 		return "the gateway could not be reached"
 	case errors.As(err, &he) && he.Status == 429:
