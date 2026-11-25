@@ -304,36 +304,33 @@ func Selected(data []byte) (string, error) {
 // DefaultModel returns the main model alias that Claude Code setup selects by default for t.
 func DefaultModel(t []models.Model) string { return defaultSlots(t).main }
 
+// defaultPresets are the presets defaultSlots and Recommended defaults try, in order.
+var defaultPresets = []models.PresetID{
+	models.PresetAnthropic, models.PresetOpenAI, models.PresetGemini, models.PresetOpenWeight,
+}
+
 // defaultSlots keeps Claude Code on Claude models whenever Anthropic models are granted, falling back through
 // curated presets (OpenAI, Gemini, Open-weight latest DeepSeek) otherwise. It never injects an unsolicited
 // cross-vendor ANTHROPIC_CUSTOM_MODEL_OPTION.
 func defaultSlots(t []models.Model) slots {
-	if p, ok := models.FindPreset(t, models.PresetAnthropic); ok {
-		return slots{
-			main:   p.Main,
-			opus:   p.Opus,
-			sonnet: p.Sonnet,
-			haiku:  p.Haiku,
-			fable:  p.Fable,
-		}
-	}
-	for _, id := range []models.PresetID{
-		models.PresetOpenAI,
-		models.PresetGemini,
-		models.PresetOpenWeight,
-	} {
+	for _, id := range defaultPresets {
 		if p, ok := models.FindPreset(t, id); ok {
-			return slots{
-				main:   p.Main,
-				opus:   p.Opus,
-				sonnet: p.Sonnet,
-				haiku:  p.Haiku,
-				fable:  p.Fable,
-			}
+			return slots{main: p.Main, opus: p.Opus, sonnet: p.Sonnet, haiku: p.Haiku, fable: p.Fable}
 		}
 	}
 	main := models.SonnetOrFirst(t)
 	return slots{main: main, opus: main, sonnet: main, haiku: main, fable: main}
+}
+
+// RecommendedSelection is Recommended defaults as an explicit choice: the slots defaultSlots gives, replacing a
+// model chosen earlier.
+func RecommendedSelection(t []models.Model) harness.ModelSelection {
+	for _, id := range defaultPresets {
+		if _, ok := models.FindPreset(t, id); ok {
+			return harness.ModelSelection{Preset: id}
+		}
+	}
+	return harness.ModelSelection{Model: models.SonnetOrFirst(t)}
 }
 
 func keepGrantedClaudeTier(t []models.Model, env map[string]any, key, fallback string) string {

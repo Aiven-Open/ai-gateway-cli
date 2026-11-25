@@ -216,8 +216,12 @@ func TestSetupPlainFreshOpenWeightPresetOnLAKey(t *testing.T) {
 			if r.code != 0 {
 				t.Fatalf("exit %d, stderr %s", r.code, r.stderr)
 			}
-			if !strings.Contains(r.stderr, "1) Open-weight (deepseek-v3.2") {
-				t.Fatalf("expected Open-weight as default option 1:\n%s", r.stderr)
+			first := "1) Open-weight (deepseek-v3.2"
+			if tool == "claude" {
+				first = "1) Recommended defaults (deepseek-v3.2)"
+			}
+			if !strings.Contains(r.stderr, first) {
+				t.Fatalf("expected %q as default option 1:\n%s", first, r.stderr)
 			}
 			gotProbes := probes()
 			switch tool {
@@ -344,7 +348,7 @@ func TestClaudeUntouchedUserAndProjectLayerRecoveryBoundaries(t *testing.T) {
 			probes := recordProbes(t, g)
 			s := newSession(t, g).stdin(keyOpenWeightLA)
 			s.writeUserSettings("settings.json", `{"env":{"ANTHROPIC_MODEL":"claude-retired"}}`)
-			// Beat 2: 1=Keep unchanged, 2=Open-weight (deepseek-v3.2); Beat 3: 2=No (direct OFF); Review: 1=Apply.
+			// Beat 2: 1=Keep unchanged, 2=Recommended defaults (Open-weight deepseek-v3.2); Beat 3: 2=No; Review: 1=Apply.
 			s.deps.Prompter = &scriptedPrompter{answers: []string{"2", "2", "1"}}
 			r := s.run("setup", "claude", "--key-stdin", "--plain")
 			if r.code != 0 {
@@ -420,16 +424,16 @@ func TestRepeatSetupProbesPersistedLauncherModel(t *testing.T) {
 	}
 }
 
-func TestSetupPlainSelectsGeminiPreset(t *testing.T) {
+func TestSetupPlainChoosesAGeminiModelForClaudeCode(t *testing.T) {
 	t.Parallel()
 	g := newGatewayDouble(t)
 	probes := recordProbes(t, g)
 	s := newSession(t, g).stdin(keyProductionOwned)
-	// Beat 2: 1=Anthropic, 2=OpenAI, 3=Gemini (gemini-4-argon), 4=Open-weight; Beat 3: 2=No; Review: 1=Apply.
-	s.deps.Prompter = &scriptedPrompter{answers: []string{"3", "2", "1"}}
+	// Beat 2: 2=Choose models, then gemini-4-argon by id; Beat 3: 2=No; Review: 1=Apply.
+	s.deps.Prompter = &scriptedPrompter{answers: []string{"2", "gemini-4-argon", "2", "1"}}
 	r := s.run("setup", "claude", "--key-stdin", "--plain")
 	if r.code != 0 {
-		t.Fatalf("setup claude Gemini exit %d: %s", r.code, r.stderr)
+		t.Fatalf("setup exit %d: %s", r.code, r.stderr)
 	}
 	if got := probes()["/v1/messages"]; !slices.Equal(got, []string{"gemini-4-argon"}) {
 		t.Fatalf("probes = %v, want [gemini-4-argon]", got)
@@ -437,8 +441,9 @@ func TestSetupPlainSelectsGeminiPreset(t *testing.T) {
 	cfg := readJSON(t, filepath.Join(s.fakeHome, claude.SettingsFile))
 	env := cfg["env"].(map[string]any)
 	if cfg["model"] != "gemini-4-argon[1m]" ||
-		env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] != "gemini-3.8-flash[1m]" {
-		t.Fatalf("claude Gemini settings = %v", cfg)
+		env["ANTHROPIC_CUSTOM_MODEL_OPTION"] != "gemini-4-argon[1m]" ||
+		env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] != "claude-haiku-5.5" {
+		t.Fatalf("claude settings = %v", cfg)
 	}
 }
 

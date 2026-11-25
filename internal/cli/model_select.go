@@ -682,9 +682,6 @@ func buildModelMenu(
 		prefix = fmt.Sprintf("[%d/%d] ", index, total)
 	}
 	switch tool {
-	case "claude":
-		title = "Model preset for Claude Code"
-		subtitle = "Sets default model and opus/sonnet/haiku slots"
 	case "codex":
 		title = "Default model for Codex"
 	default:
@@ -694,34 +691,14 @@ func buildModelMenu(
 			len(table),
 		)
 	}
-	if existing.present && !existing.granted {
-		title = fmt.Sprintf("%s%s (current %s is not granted)", prefix, title, safe(existing.model))
+	title, items = ungrantedItems(prefix+title, env, table, existing)
+	if existing.present && existing.granted {
 		items = append(items, modelMenuItem{
 			option: option{
-				label:  "Keep unchanged (refuse setup)",
-				detail: "leave " + safe(shortHomePath(env.UserHome, existing.file)) + " as it is",
+				label:  fmt.Sprintf("Keep current (%s)", safe(existing.model)),
+				detail: "leave current model unchanged",
 			},
-			refuse: true,
 		})
-		if alias := models.ProviderAlias(table, existing.model); alias != "" {
-			items = append(items, modelMenuItem{
-				option: option{
-					label:  fmt.Sprintf("Switch to %s (matches %s)", safe(alias), safe(existing.model)),
-					detail: modelDisplayDetail(table, alias),
-				},
-				sel: harness.ModelSelection{Model: alias},
-			})
-		}
-	} else {
-		title = prefix + title
-		if existing.present && existing.granted {
-			items = append(items, modelMenuItem{
-				option: option{
-					label:  fmt.Sprintf("Keep current (%s)", safe(existing.model)),
-					detail: "leave current model unchanged",
-				},
-			})
-		}
 	}
 	for _, pr := range models.Presets(table) {
 		items = append(items, modelMenuItem{
@@ -775,6 +752,9 @@ func selectToolModel(
 	if existing.present && !existing.granted {
 		p.ui.railWarn(fmt.Sprintf("%s: %s (%s) selects %s, which this key does not grant.",
 			toolLabel(tool), existing.file, existing.setting, existing.model))
+	}
+	if tool == "claude" {
+		return selectClaudeModels(deps, p, env, table, existing, index, total, allowBack)
 	}
 	title, subtitle, items := buildModelMenu(tool, env, table, existing, index, total)
 	if len(items) == 0 {
@@ -920,11 +900,7 @@ func pickSpecificModel(
 		}
 		for _, g := range groups {
 			for _, m := range g.Models {
-				detail := safe(g.Name)
-				if name := safe(m.DisplayName()); name != "" && name != safe(m.Alias) {
-					detail = name + " · " + detail
-				}
-				c.options = append(c.options, option{label: safe(m.Alias), detail: detail})
+				c.options = append(c.options, option{label: safe(m.Alias), detail: modelDetail(m)})
 			}
 		}
 		picked, err := p.inline.Select(c)
@@ -934,18 +910,7 @@ func pickSpecificModel(
 		return flat[picked[0]].Alias, nil
 	}
 	p.ui.line(2, "Select a model for "+toolLabel(tool)+":")
-	idx := 0
-	for _, g := range groups {
-		p.ui.line(4, g.Name)
-		for _, m := range g.Models {
-			idx++
-			entry := fmt.Sprintf("%d) %s", idx, m.Alias)
-			if name := safe(m.DisplayName()); name != "" && name != safe(m.Alias) {
-				entry += " (" + name + ")"
-			}
-			p.ui.line(6, entry)
-		}
-	}
+	printGroupedModels(p, groups)
 	for range 3 {
 		answer, err := deps.Prompter.ReadLine(`Choose model number or id (or "back"): `)
 		if errors.Is(err, io.EOF) || errors.Is(err, errInputEnded) {

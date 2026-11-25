@@ -134,9 +134,8 @@ func parsePickList(answer string, offered []string, offeredOnly bool) ([]string,
 		name := field
 		if n, err := strconv.Atoi(field); err == nil && n >= 1 && n <= len(offered) {
 			name = offered[n-1]
-		} else if offeredOnly && !slices.Contains(offered, field) {
-			return nil, false
-		} else if setupTools[field].prepare == nil {
+		} else if !slices.Contains(offered, field) && (offeredOnly || setupTools[field].prepare == nil) {
+			// an offered id or name stands for itself, whatever it is called elsewhere
 			return nil, false
 		}
 		if !slices.Contains(picked, name) {
