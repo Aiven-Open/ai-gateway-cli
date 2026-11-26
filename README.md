@@ -121,11 +121,13 @@ searchable `Custom model…` picker. Claude Code instead offers `Recommended def
 and `Choose models`, plus `Keep current` when the key grants the configured model.
 `Choose models` takes any granted Claude models plus up to five models from
 other vendors; the reference describes how they fill Claude Code's model slots. When an existing Claude Code (including
-`~/.claude/settings.json` and project `.claude/settings*.json` layers) or
+`~/.claude/settings.json`) or
 Codex configuration selects an ungranted model, `setup` badges the conflict
 and offers the matching gateway alias (when known via provider-ID
 normalization), the other menu items, or a custom model; leaving it unchanged
-or running with `--yes` refuses before probes or writes.
+or running with `--yes` refuses before probes or writes. A project
+`.claude/settings*.json` that selects an ungranted model only produces a warning,
+since setup never writes project files.
 
 Keys are stored with mode `0600` at `~/.config/aiven/ai-gateway-key` for the
 default gateway (`https://ai.aiven.io`), and under

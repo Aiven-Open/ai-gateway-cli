@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/aiven-open/ai-gateway-cli/internal/config"
@@ -69,11 +68,6 @@ func projectLayerPaths(userHome, workDir string) []string {
 		filepath.Join(workDir, ".claude", "settings.json"),
 		filepath.Join(workDir, ".claude", "settings.local.json"),
 	}
-}
-
-// IsProjectPath reports whether path is one of the read-only project .claude/settings*.json layers.
-func IsProjectPath(userHome, workDir, path string) bool {
-	return path != "" && slices.Contains(projectLayerPaths(userHome, workDir), path)
 }
 
 func nativeLayerSpecs(userHome, workDir string) []layerSpec {

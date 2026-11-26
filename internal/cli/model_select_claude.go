@@ -112,7 +112,12 @@ func selectClaudeModels(
 		}
 		it := items[picked]
 		if it.refuse {
-			return harness.ModelSelection{}, "", notGranted(existing.file, existing.model, table)
+			return harness.ModelSelection{}, "", notGranted(
+				env.UserHome,
+				existing.file,
+				existing.model,
+				table,
+			)
 		}
 		if !it.custom {
 			return it.sel, it.option.label, nil
