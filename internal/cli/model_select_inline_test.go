@@ -501,9 +501,9 @@ func TestSetupClaudeLauncherUsesExplicitSetupChoice(t *testing.T) {
 	}
 }
 
-// Unattended `--yes` setup must refuse an ungranted project .claude/settings.json model even when
-// dedicated aiven.settings.json has a granted env.ANTHROPIC_MODEL that would otherwise mask it.
-func TestUnattendedSetupRefusesProjectClaudeConflictMaskedByDedicatedEnv(t *testing.T) {
+// Unattended `--yes` setup carries on past an ungranted project .claude/settings.json model even when
+// dedicated aiven.settings.json has a granted env.ANTHROPIC_MODEL that would otherwise mask it, probing the granted one.
+func TestUnattendedSetupContinuesPastProjectClaudeConflictMaskedByDedicatedEnv(t *testing.T) {
 	t.Parallel()
 	srv, probes := inlineGateway(t, multiModelTestCatalogue)
 	env, home := inlineSetupEnv(t, srv.URL)
@@ -523,13 +523,10 @@ func TestUnattendedSetupRefusesProjectClaudeConflictMaskedByDedicatedEnv(t *test
 	deps.HTTP = srv.Client()
 	code := Run(t.Context(), []string{"setup", "claude", "--yes"}, env, deps)
 	_, keyErr := os.Stat(creds.Path(home, srv.URL))
-	if code == 0 || !os.IsNotExist(keyErr) || len(probes()) != 0 {
-		t.Errorf(
-			"unattended setup exit=%d, keyErr=%v, probes=%v; want refusal with no key or probes",
-			code,
-			keyErr,
-			probes(),
-		)
+	if got := probes()["/v1/messages"]; code != 0 || keyErr != nil ||
+		!slices.Equal(got, []string{"claude-sonnet-5-5"}) {
+		t.Errorf("unattended setup exit=%d, keyErr=%v, probes=%v; want 0, key saved, [claude-sonnet-5-5]",
+			code, keyErr, probes())
 	}
 }
 

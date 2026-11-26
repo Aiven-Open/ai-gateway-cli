@@ -61,12 +61,40 @@ func effectiveToolSelection(
 }
 
 type configuredModel struct {
-	present      bool
-	granted      bool
-	unrepairable bool
-	file         string
-	setting      string
-	model        string
+	present bool
+	granted bool
+	file    string
+	setting string
+	model   string
+	// overrideFile and overrideModel are a project Claude file's ungranted model, which setup never writes.
+	overrideFile  string
+	overrideModel string
+}
+
+func (c configuredModel) overridden() bool { return c.overrideFile != "" }
+
+// projectOverrideWarning is the models-step line for a project file that selects a model the key does not grant.
+func projectOverrideWarning(env config.Env, tool string, c configuredModel) string {
+	return fmt.Sprintf(
+		"%s: this folder has its own settings in %s. They select %s, which this key does not grant. "+
+			"Setup does not change project files.",
+		toolLabel(tool),
+		shortHomePath(env.UserHome, c.overrideFile),
+		safe(c.overrideModel),
+	)
+}
+
+// projectOverrideNote is kept on the tool's outcome line.
+func projectOverrideNote(env config.Env, c configuredModel) string {
+	return fmt.Sprintf("this folder has its own settings in %s that select %s, which this key does "+
+		"not grant; aiven-ai-gateway claude overrides them, plain claude started here uses them",
+		shortHomePath(env.UserHome, c.overrideFile), safe(c.overrideModel))
+}
+
+// claudeWorkDir is the folder whose project Claude files setup lets decide the model: none when they select a
+// model the key does not grant, since setup does not write them and plans and checks the files it does write.
+func claudeWorkDir(env config.Env, table []models.Model) string {
+	return claude.PinWorkDir(table, env.UserHome, env.WorkDir)
 }
 
 func inspectConfiguredModel(
@@ -121,21 +149,17 @@ func inspectConfiguredModel(
 		for _, f := range snapshot.Files {
 			snapByPath[f.Path] = f
 		}
-		// Check read-only project layers first: an ungranted project model cannot be repaired by setup,
-		// even when an ungranted user-level ANTHROPIC_MODEL would otherwise mask it during Effective resolution.
-		if projPath, projAlias, projSetting, bad := claude.ProjectUngranted(
+		// An ungranted project model cannot be repaired by setup: inspect without the project layers and
+		// carry the override alongside, even when an ungranted user-level ANTHROPIC_MODEL would mask it.
+		if projPath, projAlias, _, bad := claude.ProjectUngranted(
 			table,
 			env.UserHome,
 			env.WorkDir,
 		); bad {
-			return configuredModel{
-				present:      true,
-				granted:      false,
-				unrepairable: true,
-				file:         projPath,
-				setting:      projSetting,
-				model:        projAlias,
-			}
+			env.WorkDir = ""
+			c := inspectConfiguredModel(tool, env, table, snapshot, plan0)
+			c.overrideFile, c.overrideModel = projPath, projAlias
+			return c
 		}
 		// Check effective layered model (covers dedicated, ~/.claude/settings.json and project layers).
 		if effPath, effAlias, effSetting, err := claude.Effective(
@@ -148,12 +172,11 @@ func inspectConfiguredModel(
 			_, granted := models.Find(table, effAlias)
 			if !granted {
 				return configuredModel{
-					present:      true,
-					granted:      false,
-					unrepairable: claude.IsProjectPath(env.UserHome, env.WorkDir, effPath),
-					file:         effPath,
-					setting:      cmp.Or(effSetting, "model"),
-					model:        effAlias,
+					present: true,
+					granted: false,
+					file:    effPath,
+					setting: cmp.Or(effSetting, "model"),
+					model:   effAlias,
 				}
 			}
 			if effPath != "" && effSetting != "" {
@@ -235,6 +258,13 @@ func toolBadge(
 			shortHomePath(env.UserHome, existing.file),
 		)
 	}
+	if existing.overridden() {
+		return fmt.Sprintf(
+			"! ungranted: %s in %s",
+			safe(existing.overrideModel),
+			shortHomePath(env.UserHome, existing.overrideFile),
+		)
+	}
 	// A launcher tool's model is only a saved preference, which says nothing about its files; Ready below does.
 	if existing.present && existing.granted && !isLauncherPrefTool(tool) {
 		return fmt.Sprintf("configured (%s)", safe(existing.model))
@@ -286,7 +316,7 @@ func resolvedToolModel(
 		if _, alias, _, err := claude.Effective(
 			table,
 			env.UserHome,
-			env.WorkDir,
+			claudeWorkDir(env, table),
 			planned,
 		); err == nil &&
 			alias != "" {
@@ -429,7 +459,7 @@ func selectMultiToolModels(
 	chosen := items[pickedIdx]
 	if chosen.refuse {
 		c0 := conflicted[0]
-		return multiModelDecision{}, notGranted(c0.existing.file, c0.existing.model, table)
+		return multiModelDecision{}, notGranted(env.UserHome, c0.existing.file, c0.existing.model, table)
 	}
 	if chosen.customize {
 		return multiModelDecision{customize: true}, nil
@@ -747,7 +777,12 @@ func selectToolModel(
 		}
 		chosen := items[pickedIdx]
 		if chosen.refuse {
-			return harness.ModelSelection{}, "", notGranted(existing.file, existing.model, table)
+			return harness.ModelSelection{}, "", notGranted(
+				env.UserHome,
+				existing.file,
+				existing.model,
+				table,
+			)
 		}
 		if !chosen.custom {
 			return chosen.sel, chosen.option.label, nil
@@ -937,7 +972,7 @@ func selectDirectInvocation(
 				detail: yesDetail,
 			},
 			{
-				label:  fmt.Sprintf("No — only via 'aiven-ai-gateway launch %s'", tool),
+				label:  fmt.Sprintf("No — only via 'aiven-ai-gateway %s'", tool),
 				detail: "keeps existing " + nativeFile + " default",
 			},
 		}
@@ -963,7 +998,7 @@ func selectDirectInvocation(
 			detail: "running tools directly uses Aiven automatically",
 		},
 		{
-			label:  "No — only via 'aiven-ai-gateway launch'",
+			label:  "No — only via 'aiven-ai-gateway <tool>'",
 			detail: "keeps your current defaults",
 		},
 		{
@@ -1089,7 +1124,7 @@ func selectDirectPerTool(
 			}
 		}
 		if len(names) == 0 {
-			return "via 'aiven-ai-gateway launch <tool>'", nil
+			return "via 'aiven-ai-gateway <tool>'", nil
 		}
 		return strings.Join(names, ", ") + " directly", nil
 	}
@@ -1129,7 +1164,7 @@ func selectDirectPerTool(
 			}
 		}
 		if len(names) == 0 {
-			return "via 'aiven-ai-gateway launch <tool>'", nil
+			return "via 'aiven-ai-gateway <tool>'", nil
 		}
 		return strings.Join(names, ", ") + " directly", nil
 	}

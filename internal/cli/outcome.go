@@ -82,6 +82,8 @@ type targetOutcome struct {
 	// reason explains a status other than configured or unchanged; written lists files changed with recovery notes.
 	reason  string
 	written []string
+	// note is kept on the outcome line whatever the status.
+	note string
 }
 
 // ready reports whether the harness can launch on what this run left: configured now or already.
@@ -206,6 +208,9 @@ func (r *setupRun) finish() int {
 		if o.reason != "" {
 			u.printf("; %s", safe(o.reason))
 		}
+		if o.note != "" {
+			u.printf("; %s", safe(o.note))
+		}
 		u.printf("\n")
 		indent := 2 + labelWidth + 2
 		for _, w := range o.written {
@@ -269,7 +274,7 @@ func (r *setupRun) finish() int {
 						"contains terminal controls.")
 					u.line(
 						2,
-						"Use aiven-ai-gateway launch "+entry.outcome.tool+" instead; its arguments remain literal.",
+						"Use aiven-ai-gateway "+entry.outcome.tool+" instead; its arguments remain literal.",
 					)
 				} else if entry.outcome.tool == "claude" {
 					showedClaude = true

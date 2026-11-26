@@ -264,6 +264,10 @@ func TestClaudeModelListRefusesSixthModelFromAnotherVendor(t *testing.T) {
 	if got := refuse(five, 6); got != claudeLimitRefusal {
 		t.Errorf("sixth tick: %q, want the refusal", got)
 	}
+	const full = "Up to 5 models from other vendors, 5 chosen. Claude models do not count."
+	if got := p.asked[1].status(five); got != full {
+		t.Errorf("status = %q, want %q", got, full)
+	}
 	if got := refuse(five, 1); got != "" {
 		t.Errorf("Claude tick refused: %q", got)
 	}
