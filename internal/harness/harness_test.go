@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/aiven-open/ai-gateway-cli/internal/harness"
+	"github.com/aiven-open/ai-gateway-cli/internal/harness/pi"
 	"github.com/aiven-open/ai-gateway-cli/internal/models"
 )
 
@@ -29,7 +30,7 @@ func TestModelArgsInjectsUnlessExplicitModelMetaOrSubcommand(t *testing.T) {
 		{[]string{"config", "list"}, []string{"config", "list"}},
 		{[]string{"--", "--model"}, []string{"--", "--model"}},
 	} {
-		if got := harness.ModelArgs(tc.args, "m", "--model"); !slices.Equal(got, tc.want) {
+		if got := harness.ModelArgs(tc.args, "m", "--model", pi.Commands); !slices.Equal(got, tc.want) {
 			t.Errorf("ModelArgs(%q) = %q, want %q", tc.args, got, tc.want)
 		}
 	}

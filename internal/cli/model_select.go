@@ -206,7 +206,7 @@ func inspectConfiguredModel(
 		}
 		return firstGranted
 	}
-	return configuredModel{}
+	return launcherPrefModel(env, table, tool)
 }
 
 // shortHomePath renders path with a leading "~" when it lies under userHome.
@@ -235,7 +235,8 @@ func toolBadge(
 			shortHomePath(env.UserHome, existing.file),
 		)
 	}
-	if existing.present && existing.granted {
+	// A launcher tool's model is only a saved preference, which says nothing about its files; Ready below does.
+	if existing.present && existing.granted && !isLauncherPrefTool(tool) {
 		return fmt.Sprintf("configured (%s)", safe(existing.model))
 	}
 	switch tool {
@@ -310,25 +311,6 @@ func resolvedToolModel(
 		return harness.AliasFor(table, sel)
 	}
 	return models.SonnetOrFirst(table)
-}
-
-func nativeDefaultFile(tool string, env config.Env) string {
-	switch tool {
-	case "claude":
-		return "~/.claude/settings.json"
-	case "codex":
-		return "~/.codex/config.toml"
-	case "pi":
-		return "~/.pi/agent/settings.json"
-	case "opencode":
-		if env.ConfigHome != "" {
-			return filepath.Join(env.ConfigHome, "opencode", "opencode.json")
-		}
-		return "~/.config/opencode/opencode.json"
-	case "omp":
-		return "~/.omp/agent/config.yml"
-	}
-	return ""
 }
 
 type modelMenuItem struct {
@@ -503,7 +485,7 @@ func selectCustomizeHub(
 		switch {
 		case entry.set:
 			customizedAny = true
-			detail = entry.label
+			detail = safe(entry.label)
 		case t.existing.present && !t.existing.granted:
 			hasUnresolved = true
 			if firstUnresolved < 0 {
@@ -937,13 +919,13 @@ func selectDirectInvocation(
 	env config.Env,
 	eligible []*setupTarget,
 ) (string, error) {
-	if len(eligible) == 0 {
+	if eligible = withholdUneditable(p, eligible); len(eligible) == 0 {
 		return "none", nil
 	}
 	if len(eligible) == 1 {
 		t := eligible[0]
 		tool := t.out.tool
-		nativeFile := nativeDefaultFile(tool, env)
+		nativeFile := nativeDefaultFile(t, env)
 		yesDetail := "updates " + nativeFile
 		if tool == "claude" && t.existing.present && !t.existing.granted &&
 			t.existing.file == filepath.Join(env.UserHome, ".claude", "settings.json") {
@@ -1080,7 +1062,7 @@ func selectDirectPerTool(
 			theme:     &p.ui.th,
 		}
 		for _, t := range eligible {
-			detail := nativeDefaultFile(t.out.tool, env)
+			detail := nativeDefaultFile(t, env)
 			if t.out.tool == "claude" && t.existing.present && !t.existing.granted &&
 				t.existing.file == filepath.Join(env.UserHome, ".claude", "settings.json") {
 				detail += " (fixes ungranted model)"
@@ -1118,7 +1100,7 @@ func selectDirectPerTool(
 		offered[i] = t.out.tool
 		p.ui.line(
 			4,
-			fmt.Sprintf("%d) %s (%s)", i+1, toolLabel(t.out.tool), nativeDefaultFile(t.out.tool, env)),
+			fmt.Sprintf("%d) %s (%s)", i+1, toolLabel(t.out.tool), nativeDefaultFile(t, env)),
 		)
 	}
 	for range 3 {

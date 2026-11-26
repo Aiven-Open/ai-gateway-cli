@@ -21,12 +21,6 @@ func TestShellQuoteIsOneLiteralWordInEveryShell(t *testing.T) {
 	if got := shellQuote("%USERPROFILE%"); got != "'%USERPROFILE%'" {
 		t.Errorf("shellQuote(%%USERPROFILE%%) = %q, want '%%USERPROFILE%%'", got)
 	}
-	if got := shellQuoteForOS("aiven/%PATH%", "windows"); got != "'aiven/%PATH%'" {
-		t.Errorf("shellQuoteForOS(windows percent) = %q, want PowerShell single-quoted", got)
-	}
-	if got := shellQuoteForOS("aiven/$env:USERPROFILE", "windows"); got != "'aiven/$env:USERPROFILE'" {
-		t.Errorf("shellQuoteForOS(windows dollar) = %q, want PowerShell single-quoted", got)
-	}
 	if got := shellQuote("aiven/claude-sonnet-5-5"); got != "aiven/claude-sonnet-5-5" {
 		t.Errorf("a plain id is quoted: %q", got)
 	}
@@ -114,5 +108,30 @@ func TestShellQuoteIsOneLiteralWordInEveryShell(t *testing.T) {
 				t.Error("a quoted word ran a statement")
 			}
 		})
+	}
+}
+
+// A Windows direct command exists only when one spelling of the model works in cmd.exe and PowerShell alike.
+func TestWindowsModelCommandNeedsSharedLiteral(t *testing.T) {
+	for _, tc := range []struct{ model, want string }{
+		{"aiven/claude-sonnet", "pi --model aiven/claude-sonnet"},
+		{"aiven/model name", "pi --model \"aiven/model name\""},
+		{"aiven/%PATH%", ""},
+		{"aiven/$env:USERPROFILE", ""},
+		{"aiven/it's", ""},
+		{"aiven/a!b", ""},
+		{"aiven/a\u201d; calc; \u201cb", ""},
+		{"aiven/a\u2019b", ""},
+	} {
+		if got := modelCommand("windows", "pi --model ", tc.model); got != tc.want {
+			t.Errorf("modelCommand(windows, %q) = %q, want %q", tc.model, got, tc.want)
+		}
+	}
+	if got := modelCommand(
+		"linux",
+		"pi --model ",
+		"aiven/%PATH%",
+	); got != "pi --model 'aiven/%PATH%'" {
+		t.Errorf("modelCommand(linux) = %q", got)
 	}
 }

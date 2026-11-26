@@ -175,14 +175,14 @@ func TestResolveSlotsFillsChosenModelsByRule(t *testing.T) {
 				opus: "gemini-4-neon", sonnet: "gpt-6.2-astra", haiku: "claude-haiku-5-5"},
 		},
 		{
-			name:  "a granted fable keeps its tier when only another vendor's model is ticked",
+			name:  "granted fable keeps its tier when only another vendor's model is ticked",
 			table: catalogue("claude-fable-5-2", "gemini-4-neon"),
 			sel:   picks("gemini-4-neon", "gemini-4-neon"),
 			want: slots{main: "gemini-4-neon", custom: "gemini-4-neon", fable: "claude-fable-5-2",
 				opus: "gemini-4-neon", sonnet: "gemini-4-neon", haiku: "gemini-4-neon"},
 		},
 		{
-			name:  "an Aiven-owned claude- alias is another vendor's model and is not placed by tier name",
+			name:  "Aiven-owned claude- alias is another vendor's model and is not placed by tier name",
 			table: aivenOpus,
 			sel:   picks("claude-opus-5-5", "claude-opus-5-5", "glm-5"),
 			want: slots{main: "claude-opus-5-5", custom: "claude-opus-5-5", fable: "glm-5",

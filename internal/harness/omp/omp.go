@@ -20,6 +20,64 @@ import (
 // or on Windows its embedded bash-like shell, and caches its output until a 401.
 func APIKey(baseURL string) string { return "!" + creds.CommandLine(baseURL, runtime.GOOS) }
 
+// Commands are OMP's subcommands, from omp --help (18.18.6). OMP reads a first word that is not one as a message.
+var Commands = []string{
+	"acp",
+	"agents",
+	"anonymize",
+	"auth",
+	"auth-broker",
+	"auth-gateway",
+	"bash",
+	"bench",
+	"browser-relay",
+	"cleanse",
+	"clip",
+	"collab",
+	"commit",
+	"completions",
+	"compress",
+	"config",
+	"dry-balance",
+	"find",
+	"gallery",
+	"gc",
+	"git",
+	"grep",
+	"grievances",
+	"if-bench",
+	"images",
+	"install",
+	"join",
+	"login",
+	"models",
+	"play",
+	"plugin",
+	"predict",
+	"ps",
+	"read",
+	"render",
+	"say",
+	"search",
+	"session",
+	"setup",
+	"sh",
+	"share",
+	"shell",
+	"skill",
+	"ssh",
+	"stats",
+	"stream",
+	"tiny-models",
+	"token",
+	"toks",
+	"ttsr",
+	"update",
+	"usage",
+	"worktree",
+	"zsh",
+}
+
 // ModelFor returns the --model value for sel against table, falling back to SonnetOrFirst.
 func ModelFor(table []models.Model, sel harness.ModelSelection) string {
 	return "aiven/" + harness.AliasFor(table, sel)
@@ -87,7 +145,7 @@ func Setup(in harness.Input) (harness.Plan, error) {
 // args unchanged.
 func Launch(in harness.Input) (harness.Plan, error) {
 	alias := harness.AliasFor(in.Table, in.Selection)
-	args := harness.ModelArgs(in.Args, "aiven/"+alias, "--model")
+	args := harness.ModelArgs(in.Args, "aiven/"+alias, "--model", Commands)
 	if len(args) != len(in.Args) {
 		if in.UserHome == "" {
 			return harness.Plan{}, config.ErrNoHome

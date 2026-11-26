@@ -752,7 +752,7 @@ func preparePlanForTest(
 	tool string,
 	asDefault bool,
 ) (harness.Plan, error) {
-	snap, err := prepareSnapshot(env, tool)
+	snap, _, err := prepareSnapshot(env, tool)
 	if err != nil {
 		return harness.Plan{}, err
 	}

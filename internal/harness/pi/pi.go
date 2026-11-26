@@ -127,6 +127,9 @@ func Setup(in harness.Input) (harness.Plan, error) {
 	return harness.Plan{Files: files}, nil
 }
 
+// Commands are Pi's package subcommands, from pi --help (0.80.3); uninstall is its alias for remove.
+var Commands = []string{"install", "remove", "uninstall", "update", "list", "config"}
+
 // ModelFor returns the --model value for sel against table, falling back to SonnetOrFirst.
 func ModelFor(table []models.Model, sel harness.ModelSelection) string {
 	return "aiven/" + harness.AliasFor(table, sel)
@@ -136,7 +139,7 @@ func ModelFor(table []models.Model, sel harness.ModelSelection) string {
 // native args, and passes native args unchanged.
 func Launch(in harness.Input) (harness.Plan, error) {
 	alias := harness.AliasFor(in.Table, in.Selection)
-	args := harness.ModelArgs(in.Args, "aiven/"+alias, "--model")
+	args := harness.ModelArgs(in.Args, "aiven/"+alias, "--model", Commands)
 	if len(args) != len(in.Args) {
 		if in.UserHome == "" {
 			return harness.Plan{}, config.ErrNoHome

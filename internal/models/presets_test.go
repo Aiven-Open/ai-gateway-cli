@@ -9,6 +9,29 @@ import (
 	"github.com/aiven-open/ai-gateway-cli/internal/models"
 )
 
+// Mutants: drop FirstAlias(own) from main; use ms instead of own for sonnet; drop the knownPublisher case.
+func TestAnthropicPresetUsesOwnership(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		ms   []models.Model
+		main string
+		ok   bool
+	}{
+		{"uncurated anthropic model", []models.Model{
+			{Alias: "claude-fable-5-2", Owner: "anthropic"}, {Alias: "gpt-5.4", Owner: "OpenAI"},
+		}, "claude-fable-5-2", true},
+		{"private familiar name", []models.Model{{Alias: "claude-sonnet-5-5", Owner: "Aiven"}}, "", false},
+		{"unreviewed owner", []models.Model{{Alias: "claude-sonnet-5-5", Owner: "x"}}, "claude-sonnet-5-5", true},
+		{"no owner", []models.Model{{Alias: "claude-opus-4-8"}}, "claude-opus-4-8", true},
+	} {
+		p, ok := models.FindPreset(tc.ms, models.PresetAnthropic)
+		if ok != tc.ok || p.Main != tc.main {
+			t.Errorf("%s: FindPreset = %q, %v; want %q, %v", tc.name, p.Main, ok, tc.main, tc.ok)
+		}
+	}
+}
+
 func TestPresetsFilterAndResolveByGrantedCatalogue(t *testing.T) {
 	t.Parallel()
 
