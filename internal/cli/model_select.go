@@ -76,7 +76,8 @@ func (c configuredModel) overridden() bool { return c.overrideFile != "" }
 // projectOverrideWarning is the models-step line for a project file that selects a model the key does not grant.
 func projectOverrideWarning(env config.Env, tool string, c configuredModel) string {
 	return fmt.Sprintf(
-		"%s: %s selects %s, which this key does not grant. Setup does not change project files.",
+		"%s: this folder has its own settings in %s. They select %s, which this key does not grant. "+
+			"Setup does not change project files.",
 		toolLabel(tool),
 		shortHomePath(env.UserHome, c.overrideFile),
 		safe(c.overrideModel),
@@ -85,8 +86,8 @@ func projectOverrideWarning(env config.Env, tool string, c configuredModel) stri
 
 // projectOverrideNote is kept on the tool's outcome line.
 func projectOverrideNote(env config.Env, c configuredModel) string {
-	return fmt.Sprintf("in this folder %s selects %s, which this key does not grant; "+
-		"Claude Code started here uses that model until you change it",
+	return fmt.Sprintf("this folder has its own settings in %s that select %s, which this key does "+
+		"not grant; Claude Code started here uses them until you change or remove them",
 		shortHomePath(env.UserHome, c.overrideFile), safe(c.overrideModel))
 }
 

@@ -393,10 +393,12 @@ func TestClaudeUntouchedUserAndProjectLayerRecoveryBoundaries(t *testing.T) {
 				t.Fatalf("exit %d, stderr:\n%s", r.code, r.stderr)
 			}
 			for _, want := range []string{
-				"Claude Code: ~/work/.claude/settings.local.json selects claude-retired, which this key does not " +
-					"grant. Setup does not change project files.",
-				"configured; in this folder ~/work/.claude/settings.local.json selects claude-retired, which this " +
-					"key does not grant; Claude Code started here uses that model until you change it",
+				"Claude Code: this folder has its own settings in ~/work/.claude/settings.local.json. " +
+					"They select claude-retired, which this key does not grant. " +
+					"Setup does not change project files.",
+				"configured; this folder has its own settings in ~/work/.claude/settings.local.json " +
+					"that select claude-retired, which this key does not grant; " +
+					"Claude Code started here uses them until you change or remove them",
 				"Default model     deepseek-v3.2\n",
 			} {
 				if strings.Count(r.stderr, want) != 1 {
