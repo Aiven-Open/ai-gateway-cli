@@ -28,7 +28,8 @@ const maxConcurrentProbes = 4
 // nothing else and saves neither the key nor any tool.
 var errNotGranted = errors.New("which this key does not grant")
 
-func notGranted(path, model string, table []models.Model) error {
+func notGranted(userHome, path, model string, table []models.Model) error {
+	path = shortHomePath(userHome, path)
 	if alias := models.ProviderAlias(table, model); alias != "" {
 		return fmt.Errorf("%s selects %s, %w (try %s; aiven-ai-gateway models lists granted "+
 			"models), then update it or rerun setup interactively", path, model, errNotGranted, alias)
@@ -102,19 +103,10 @@ func toolChecks(
 		}
 		alias, _ := cfg["model"].(string)
 		if _, granted := models.Find(table, alias); !granted {
-			return nil, notGranted(plan.Files[len(plan.Files)-1].Path, alias, table)
+			return nil, notGranted(env.UserHome, plan.Files[len(plan.Files)-1].Path, alias, table)
 		}
 		return []probeKey{{protocol: models.Responses, model: alias}}, nil
 	case "claude":
-		// Project .claude/settings*.json overrides cannot be repaired by setup, even if a granted
-		// dedicated or user ANTHROPIC_MODEL would otherwise mask them in Effective.
-		if projPath, projAlias, _, bad := claude.ProjectUngranted(
-			table,
-			env.UserHome,
-			env.WorkDir,
-		); bad {
-			return nil, notGranted(projPath, projAlias, table)
-		}
 		planned := make(map[string][]byte, len(plan.Files))
 		var configured []string
 		for _, f := range plan.Files {
@@ -123,19 +115,20 @@ func toolChecks(
 				return nil, fmt.Errorf("read proposed Claude settings: %w", err)
 			}
 			if _, granted := models.Find(table, alias); !granted {
-				return nil, notGranted(f.Path, alias, table)
+				return nil, notGranted(env.UserHome, f.Path, alias, table)
 			}
 			planned[f.Path] = f.Data
 			configured = append(configured, alias)
 		}
-		path, alias, _, err := claude.Effective(table, env.UserHome, env.WorkDir, planned)
+		// A project file selecting an ungranted model is setup's to report, not to probe.
+		path, alias, _, err := claude.Effective(table, env.UserHome, claudeWorkDir(env, table), planned)
 		if err != nil {
 			return nil, fmt.Errorf("read effective Claude settings: %w", err)
 		}
 		if _, granted := models.Find(table, alias); !granted {
-			return nil, notGranted(path, alias, table)
+			return nil, notGranted(env.UserHome, path, alias, table)
 		}
-		return claudePickChecks(table, sel, path, append([]string{alias}, configured...))
+		return claudePickChecks(env.UserHome, table, sel, path, append([]string{alias}, configured...))
 	case "opencode":
 		model := cmp.Or(chosen, models.SonnetOrFirst(table))
 		return []probeKey{{protocol: models.ChatCompletions, model: model}}, nil
@@ -377,6 +370,7 @@ func printProtocolResult(u ui, check protocolCheck) {
 // claudePickChecks is the Messages check of each model in aliases (the one Claude Code runs, then those the files
 // setup writes or keeps select) and of every other model chosen with it, each once.
 func claudePickChecks(
+	userHome string,
 	table []models.Model,
 	sel harness.ModelSelection,
 	path string,
@@ -385,7 +379,7 @@ func claudePickChecks(
 	var checks []probeKey
 	for _, m := range slices.Concat(aliases, sel.Models) {
 		if _, granted := models.Find(table, m); !granted {
-			return nil, notGranted(path, m, table)
+			return nil, notGranted(userHome, path, m, table)
 		}
 		if pk := (probeKey{protocol: models.Messages, model: m}); !slices.Contains(checks, pk) {
 			checks = append(checks, pk)

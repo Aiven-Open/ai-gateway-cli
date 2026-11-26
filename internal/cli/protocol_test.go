@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/aiven-open/ai-gateway-cli/internal/cli"
 	"github.com/aiven-open/ai-gateway-cli/internal/harness"
+	"github.com/aiven-open/ai-gateway-cli/internal/harness/claude"
 	"github.com/aiven-open/ai-gateway-cli/internal/harness/omp"
 	"github.com/aiven-open/ai-gateway-cli/internal/harness/pi"
 )
@@ -482,34 +484,19 @@ func TestSetupChecksTheModelOfEveryClaudeSettingsFileItWrites(t *testing.T) {
 	}
 }
 
-// Even when setup leaves the user's settings.json untouched or project layers exist, Claude Code layers them on launch,
-// so setup refuses an ungranted effective model naming the layer that selected it and saves no key.
+// Even when setup leaves the user's settings.json untouched, Claude Code layers it on launch, so setup refuses an
+// ungranted effective model naming the file that selected it and saves no key.
 func TestSetupRefusesUngrantedEffectiveClaudeLayer(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name          string
-		userSettings  string
-		projSettings  string
-		projLocal     string
-		wantFile      string
-		wantInWorkDir bool
+		name         string
+		userSettings string
+		wantFile     string
 	}{
 		{
 			name:         "user settings with asDefault false",
 			userSettings: `{"model":"claude-retired"}`,
 			wantFile:     ".claude/settings.json",
-		},
-		{
-			name:          "project shared settings",
-			projSettings:  `{"model":"claude-retired"}`,
-			wantFile:      ".claude/settings.json",
-			wantInWorkDir: true,
-		},
-		{
-			name:          "project local settings",
-			projLocal:     `{"env":{"ANTHROPIC_MODEL":"claude-retired[1m]"}}`,
-			wantFile:      ".claude/settings.local.json",
-			wantInWorkDir: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -519,17 +506,8 @@ func TestSetupRefusesUngrantedEffectiveClaudeLayer(t *testing.T) {
 			if tc.userSettings != "" {
 				s.writeUserSettings("settings.json", tc.userSettings)
 			}
-			if tc.projSettings != "" {
-				s.writeProjectSettings("settings.json", tc.projSettings)
-			}
-			if tc.projLocal != "" {
-				s.writeProjectSettings("settings.local.json", tc.projLocal)
-			}
 			r := s.run("setup", "claude", "--key-stdin", "--yes")
-			wantPath := filepath.Join(s.fakeHome, tc.wantFile)
-			if tc.wantInWorkDir {
-				wantPath = filepath.Join(s.env.WorkDir, tc.wantFile)
-			}
+			wantPath := "~/" + tc.wantFile
 			if r.code == 0 || !strings.Contains(r.stderr, wantPath) ||
 				!strings.Contains(r.stderr, "claude-retired") ||
 				!strings.Contains(r.stderr, "does not grant") {
@@ -549,6 +527,58 @@ func TestSetupRefusesUngrantedEffectiveClaudeLayer(t *testing.T) {
 				err,
 			) {
 				t.Errorf("aiven.settings.json written: %v", err)
+			}
+		})
+	}
+}
+
+// A project Claude file that selects a model the key does not grant is not setup's to repair: setup carries on with
+// the model it plans, writes the user-level file, saves the key, and says so once in the run and once in the summary.
+func TestSetupContinuesPastAProjectClaudeFileSelectingAnUngrantedModel(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ name, file, content string }{
+		{"shared settings", "settings.json", `{"model":"claude-retired"}`},
+		{"local settings", "settings.local.json", `{"env":{"ANTHROPIC_MODEL":"claude-retired[1m]"}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := newGatewayDouble(t)
+			probes := recordProbes(t, g)
+			s := newSession(t, g).stdin(keyValid)
+			s.env.WorkDir = filepath.Join(s.fakeHome, "work")
+			s.writeProjectSettings(tc.file, tc.content)
+			project := filepath.Join(s.env.WorkDir, ".claude", tc.file)
+			r := s.run("setup", "claude", "--key-stdin", "--yes")
+			if r.code != 0 {
+				t.Fatalf("exit %d, stderr %s", r.code, r.stderr)
+			}
+			short := "~/work/.claude/" + tc.file
+			for _, want := range []string{
+				"Claude Code: this folder has its own settings in " + short +
+					". They select claude-retired, which this key does not grant. " +
+					"Setup does not change project files.",
+				"configured; this folder has its own settings in " + short +
+					" that select claude-retired, which this key does not grant; " +
+					"aiven-ai-gateway claude overrides them, plain claude started here uses them",
+				"Default model     claude-sonnet\n",
+				"    Default model: claude-sonnet\n",
+			} {
+				if strings.Count(r.stderr, want) != 1 {
+					t.Errorf("want exactly one %q in %s", want, r.stderr)
+				}
+			}
+			if got := probes()["/v1/messages"]; !slices.Equal(got, []string{"claude-sonnet"}) {
+				t.Errorf("probed %v, want [claude-sonnet]", got)
+			}
+			cfg := readJSON(t, filepath.Join(s.fakeHome, claude.SettingsFile))
+			if cfg["model"] != "claude-sonnet[1m]" {
+				t.Errorf("aiven.settings.json model = %v, want claude-sonnet[1m]", cfg["model"])
+			}
+			if _, err := os.Stat(s.keyPath()); err != nil {
+				t.Errorf("key not saved: %v", err)
+			}
+			if data, _ := os.ReadFile(project); string(data) != tc.content {
+				t.Errorf("project file changed: %s", data)
 			}
 		})
 	}

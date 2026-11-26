@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/aiven-open/ai-gateway-cli/internal/config"
@@ -69,11 +68,6 @@ func projectLayerPaths(userHome, workDir string) []string {
 		filepath.Join(workDir, ".claude", "settings.json"),
 		filepath.Join(workDir, ".claude", "settings.local.json"),
 	}
-}
-
-// IsProjectPath reports whether path is one of the read-only project .claude/settings*.json layers.
-func IsProjectPath(userHome, workDir, path string) bool {
-	return path != "" && slices.Contains(projectLayerPaths(userHome, workDir), path)
 }
 
 func nativeLayerSpecs(userHome, workDir string) []layerSpec {
@@ -173,6 +167,15 @@ func ProjectUngranted(
 		return "", "", "", false
 	}
 	return selectedPath, eff, selectedSetting, true
+}
+
+// PinWorkDir is the folder whose project .claude files may pin models for setup and for launch: none when they
+// select a model the key does not grant, so both ignore that layer and agree on the model that runs.
+func PinWorkDir(t []models.Model, userHome, workDir string) string {
+	if _, _, _, bad := ProjectUngranted(t, userHome, workDir); bad {
+		return ""
+	}
+	return workDir
 }
 
 // withPins adopts model pins from the dedicated settings cfg, then canonical user and project settings, local over

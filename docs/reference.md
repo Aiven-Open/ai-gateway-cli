@@ -130,8 +130,11 @@ With `--yes` or without a terminal, `setup` skips interactive model and
 default-provider menus: fresh configurations use natural defaults
 (falling back through the Open-weight preference order when no Anthropic or
 OpenAI model is granted), existing granted models stay unchanged, and
-ungranted Codex or Claude Code models (across dedicated, user and project
-layers) fail before probes or writes, naming any derived gateway alias.
+ungranted Codex or Claude Code models (across dedicated and user layers) fail
+before probes or writes, naming any derived gateway alias. An ungranted model
+selected by a project `.claude/settings*.json` does not stop setup, which never
+writes project files: setup warns, plans and probes its own model, and keeps a
+note on the Claude Code outcome line.
 
 Next, `setup` prints one dimmed usage notice and probes each distinct
 uncached `(protocol, model)` concurrently (Chat Completions, Messages or

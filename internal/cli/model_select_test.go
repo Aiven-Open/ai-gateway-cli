@@ -377,26 +377,74 @@ func TestClaudeUntouchedUserAndProjectLayerRecoveryBoundaries(t *testing.T) {
 		},
 	)
 
-	t.Run("project settings.local.json ungranted refuses without fake repair", func(t *testing.T) {
-		t.Parallel()
-		g := newGatewayDouble(t)
-		s := newSession(t, g).stdin(keyOpenWeightLA)
-		s.writeProjectSettings("settings.local.json", `{"env":{"ANTHROPIC_MODEL":"claude-retired"}}`)
-		p := &scriptedPrompter{answers: []string{"2", "1", "1"}}
-		s.deps.Prompter = p
-		r := s.run("setup", "claude", "--key-stdin", "--plain")
-		projPath := filepath.Join(s.env.WorkDir, ".claude", "settings.local.json")
-		if r.code == 0 || !strings.Contains(r.stderr, projPath) ||
-			!strings.Contains(r.stderr, "does not grant") {
-			t.Fatalf("exit %d, stderr:\n%s", r.code, r.stderr)
-		}
-		if len(p.prompts) != 0 {
-			t.Errorf("offered Beat 2 repair prompts for unrepairable project override: %q", p.prompts)
-		}
-		if _, err := os.Stat(s.keyPath()); !os.IsNotExist(err) {
-			t.Error("key saved despite unrepairable project override")
-		}
-	})
+	t.Run(
+		"project settings.local.json ungranted is warned about once and the model step runs",
+		func(t *testing.T) {
+			t.Parallel()
+			g := newGatewayDouble(t)
+			probes := recordProbes(t, g)
+			s := newSession(t, g).stdin(keyOpenWeightLA)
+			s.env.WorkDir = filepath.Join(s.fakeHome, "work")
+			s.writeProjectSettings("settings.local.json", `{"env":{"ANTHROPIC_MODEL":"claude-retired"}}`)
+			// Models: 1=Recommended defaults (deepseek-v3.2); Default provider: 2=No; Review: 1=Apply.
+			s.deps.Prompter = &scriptedPrompter{answers: []string{"1", "2", "1"}}
+			r := s.run("setup", "claude", "--key-stdin", "--plain")
+			if r.code != 0 {
+				t.Fatalf("exit %d, stderr:\n%s", r.code, r.stderr)
+			}
+			for _, want := range []string{
+				"Claude Code: this folder has its own settings in ~/work/.claude/settings.local.json. " +
+					"They select claude-retired, which this key does not grant. " +
+					"Setup does not change project files.",
+				"configured; this folder has its own settings in ~/work/.claude/settings.local.json " +
+					"that select claude-retired, which this key does not grant; " +
+					"aiven-ai-gateway claude overrides them, plain claude started here uses them",
+				"Default model     deepseek-v3.2\n",
+			} {
+				if strings.Count(r.stderr, want) != 1 {
+					t.Errorf("want exactly one %q in:\n%s", want, r.stderr)
+				}
+			}
+			if got := probes()["/v1/messages"]; !slices.Equal(got, []string{"deepseek-v3.2"}) {
+				t.Errorf("probes = %v, want [deepseek-v3.2]", got)
+			}
+			if cfg := readJSON(
+				t,
+				filepath.Join(s.fakeHome, claude.SettingsFile),
+			); cfg["model"] != "deepseek-v3.2" {
+				t.Errorf("aiven.settings.json = %v, want model deepseek-v3.2", cfg)
+			}
+			if _, err := os.Stat(s.keyPath()); err != nil {
+				t.Errorf("key not saved: %v", err)
+			}
+			// Launch ignores the same project pin: the child runs what setup checked, in env and in the overlay.
+			if lr := s.run("launch", "claude"); lr.code != 0 {
+				t.Fatalf("launch claude exit %d: %s", lr.code, lr.stderr)
+			}
+			c := s.launched()
+			var overlay struct {
+				Env map[string]string `json:"env"`
+			}
+			if err := json.Unmarshal([]byte(c.argv[2]), &overlay); err != nil {
+				t.Fatal(err)
+			}
+			for name, want := range map[string]string{
+				"ANTHROPIC_MODEL":                "deepseek-v3.2",
+				"ANTHROPIC_DEFAULT_OPUS_MODEL":   "deepseek-v3.2",
+				"ANTHROPIC_DEFAULT_SONNET_MODEL": "deepseek-v3.2",
+				"ANTHROPIC_DEFAULT_HAIKU_MODEL":  "glm-4.7-flash",
+				"ANTHROPIC_DEFAULT_FABLE_MODEL":  "deepseek-v3.2",
+				"ANTHROPIC_BASE_URL":             g.URL,
+			} {
+				if got, _ := c.envVar(name); got != want {
+					t.Errorf("child %s = %q, want %q", name, got, want)
+				}
+				if got, ok := overlay.Env[name]; ok && got != want {
+					t.Errorf("overlay %s = %q, want %q", name, got, want)
+				}
+			}
+		},
+	)
 }
 
 // R4: Repeat setup (--yes --plain) probes the persisted launcher model (deepseek-v3.2) rather than SonnetOrFirst.

@@ -372,6 +372,9 @@ func (s *setupSession) inspectCandidates() {
 		t.nativeFile = nativeFileOf(t.snapshot, plan0)
 		t.existing = inspectConfiguredModel(t.out.tool, s.env, s.table, t.snapshot, plan0)
 		t.badge = toolBadge(t.out.tool, s.env, s.table, t.existing)
+		if t.existing.overridden() {
+			t.out.note = projectOverrideNote(s.env, t.existing)
+		}
 	}
 }
 
@@ -382,6 +385,7 @@ func (s *setupSession) runBeats() (approved []approvedWrite, exitCode int, done 
 	if hasBeat1 {
 		step = stepHarnesses
 	} else if !interactive {
+		s.warnProjectOverrides(s.eligible())
 		step = stepReview
 	}
 
@@ -438,6 +442,7 @@ func (s *setupSession) runBeats() (approved []approvedWrite, exitCode int, done 
 				return nil, s.run.finish(), true
 			}
 			if !interactive {
+				s.warnProjectOverrides(s.eligible())
 				step = stepReview
 			} else {
 				step = stepModels
@@ -589,20 +594,20 @@ func draftSummary(eligible []*setupTarget, draft map[string]toolDraft) string {
 	return strings.Join(parts, ", ") + " (others: defaults)"
 }
 
+// warnProjectOverrides says once per tool that its project file keeps its own model, which setup leaves alone.
+func (s *setupSession) warnProjectOverrides(eligible []*setupTarget) {
+	for _, t := range eligible {
+		if t.existing.overridden() {
+			s.p.ui.railWarn(projectOverrideWarning(s.env, t.out.tool, t.existing))
+		}
+	}
+}
+
 func (s *setupSession) runBeatModels(
 	eligible []*setupTarget,
 	hasBeat1 bool,
 ) (exitCode int, nextStep setupStep, stop bool) {
-	// Project-level Claude overrides (.claude/settings*.json) are never written by setup, so refuse
-	// immediately instead of offering a repair that cannot fix them.
-	for _, t := range eligible {
-		if t.existing.present && !t.existing.granted && t.existing.unrepairable {
-			return s.refuseUngranted(
-				eligible,
-				notGranted(t.existing.file, t.existing.model, s.table),
-			), 0, true
-		}
-	}
+	s.warnProjectOverrides(eligible)
 	if len(eligible) >= 2 {
 		decision, err := selectMultiToolModels(s.deps, s.p, s.env, eligible, s.table, hasBeat1)
 		if errors.Is(err, errBack) && hasBeat1 {
@@ -663,7 +668,7 @@ func (s *setupSession) runCustomizePerTool(
 				if t.existing.present && !t.existing.granted && !draft[t.out.tool].set {
 					return s.refuseUngranted(
 						eligible,
-						notGranted(t.existing.file, t.existing.model, s.table),
+						notGranted(s.env.UserHome, t.existing.file, t.existing.model, s.table),
 					), 0, true
 				}
 			}
