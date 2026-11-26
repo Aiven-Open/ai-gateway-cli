@@ -84,3 +84,28 @@ func TestReviewKeepsShowingFileChangesPressAfterPress(t *testing.T) {
 			len(approved), outcome, len(sel.asked), stderr.String())
 	}
 }
+
+// Show file changes prints file content as written, even when it holds text that looks like a command hint.
+func TestShowChangesLeavesHintTextInFilesAlone(t *testing.T) {
+	const content = "aiven-ai-gateway launch claude"
+	var stderr strings.Builder
+	deps := inlineDeps(&scriptedSelector{}, &stderr)
+	deps.Command = "avn-aig"
+	p := newPresenter(config.Env{}, deps, false)
+	files := []harness.File{{
+		Path: filepath.Join(t.TempDir(), "settings.json"),
+		Data: []byte(`{"note":"` + content + `"}` + "\n"),
+	}}
+	pending := []pendingPreview{{
+		target: &setupTarget{out: &targetOutcome{tool: "claude"}},
+		files:  files, write: files,
+		names: backupNames{time.Unix(0, 0), map[string]string{}},
+	}}
+	if err := showChanges(p, pending); err != nil {
+		t.Fatal(err)
+	}
+	if out := stderr.String(); !strings.Contains(out, content) ||
+		strings.Contains(out, "avn-aig launch") {
+		t.Errorf("stderr %q", out)
+	}
+}

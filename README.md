@@ -11,10 +11,14 @@ AI Gateway.
   `brew install aiven/tap/aiven-ai-gateway` (notarized). Maintainers: see
   [`RELEASING.md`](RELEASING.md).
 - **npm / npx** (Node 20 or later), once the npm packages are published:
-  `npm install -g @aivenio/ai-gateway`, or `npx @aivenio/ai-gateway` without
-  installing. See [`npm/README.md`](npm/README.md). Configured harnesses
+  `npm install -g @aivenio/ai-gateway`, or `npx @aivenio/ai-gateway` to try it
+  without installing; nothing is left on `PATH`, so each run goes through `npx`
+  and the commands setup prints use that form. See
+  [`npm/README.md`](npm/README.md). Configured harnesses
   read their saved key file directly, so they keep working whichever way the
-  launcher was run.
+  launcher was run. Homebrew and npm both install `aiven-ai-gateway` and the
+  short name `avn-aig`; npm also installs `ai-gateway`.
+
 - **Go module**, once a release is tagged (Go 1.27.4 or later, or default
   `GOTOOLCHAIN=auto`):
 
@@ -25,7 +29,7 @@ AI Gateway.
   Put `$(go env GOPATH)/bin` (or `GOBIN`) in `PATH`, or run
   `go run github.com/aiven-open/ai-gateway-cli/cmd/aiven-ai-gateway@latest <command>`
   without installing. The Go module path is lowercase
-  `github.com/aiven-open/ai-gateway-cli`.
+  `github.com/aiven-open/ai-gateway-cli`. This installs `aiven-ai-gateway` only.
 
 - **From a local clone**:
 
@@ -39,11 +43,11 @@ Create an API key in Aiven Console, install the coding harness you want to
 use, configure it once, then launch sessions:
 
 ```sh
-aiven-ai-gateway setup claude
-aiven-ai-gateway launch claude
-aiven-ai-gateway launch codex resume
-aiven-ai-gateway launch pi --model aiven/claude-sonnet
-aiven-ai-gateway models
+avn-aig setup claude
+avn-aig claude
+avn-aig codex resume
+avn-aig pi --model aiven/claude-sonnet
+avn-aig models
 ```
 
 On a terminal, bare `setup` detects harnesses installed on `PATH`, checks
@@ -54,7 +58,7 @@ before probing configured protocols concurrently and showing a review table.
 Arrow keys or `j`/`k` move, `Space` toggles (`a` toggles all), `/` filters,
 `Esc` or `Shift+Tab` steps back, and `Ctrl-C` cancels before saving any key
 or file. When no supported harness is found on `PATH`, bare `setup` prints
-install hints and `aiven-ai-gateway login` without asking for a key. Bare
+install hints and `avn-aig login` without asking for a key. Bare
 `launch` opens a single-select list of installed harnesses. Without a
 terminal, pass the harness name (`claude`, `codex`, `pi`, `opencode` or
 `omp`).
@@ -67,12 +71,13 @@ motion. Non-UTF-8 locales (`LC_ALL=C`/`POSIX`) fall back to ASCII markers.
 
 | Command | Summary |
 | --- | --- |
+| `<harness> [native args]` | Start a configured tool, the same as `launch <harness>`. Arguments after the harness name go to the tool unchanged. |
 | `setup [harness] [--key-stdin] [-y\|--yes] [--plain]` | Discover installed harnesses, validate a key, choose a model or curated preset (resolving ungranted configured models), probe each configured protocol and model concurrently (1 output token each, which may incur usage; a check that times out before any response is sent once more, so a model can receive two one-token requests), review what will be configured, with redacted file changes on request, save the key (`0600`) and launcher model preferences, and write harness configuration with timestamped `.bak` backups. Never starts a session. |
 | `launch [--plain] [harness] [--] [native args]` | Start one configured harness against the selected gateway without modifying persistent configuration. Arguments after the harness name (or after `--` when picking a harness) are forwarded literally to the native tool; an optional `--` after the harness name is also accepted. |
 | `login` | Check that an explicitly supplied key can list models, save it (`0600`), and list granted models. Sends no inference request and configures no harness. |
 | `logout` | Remove the saved key file for the selected gateway, leaving other gateways' key files and harness configurations intact. Does not revoke the server key or unset environment variables. |
-| `models` | List granted models on stdout grouped by publisher, with the exact model IDs that harness flags take (`aiven-ai-gateway models > models.txt`). |
-| `help`, `-h`, `--help` | Print usage to stdout and exit zero without reading credentials or configuration (bare `aiven-ai-gateway` does the same). |
+| `models` | List granted models on stdout grouped by publisher, with the exact model IDs that harness flags take (`avn-aig models > models.txt`). |
+| `help`, `-h`, `--help` | Print usage to stdout and exit zero without reading credentials or configuration; bare `avn-aig` does the same without a terminal and offers the installed tools in one. |
 | `version`, `--version` | Print the build's version, commit and date without reading credentials or configuration. |
 
 For unattended `setup` without a working saved key, supply the key via
@@ -80,7 +85,7 @@ For unattended `setup` without a working saved key, supply the key via
 interactive diff prompts (`--yes` never changes a tool's native default):
 
 ```sh
-aiven-ai-gateway setup pi --key-stdin --yes < /path/to/gateway-key
+avn-aig setup pi --key-stdin --yes < /path/to/gateway-key
 ```
 
 Full behavioural details (protocol routing, credential consent, diff
@@ -106,7 +111,7 @@ Setting Aiven as the default provider during `setup` also updates Claude's
 `modelRoles.default` in `~/.omp/agent/config.yml` (or existing
 `config.yaml`). Choosing launch-only keeps native defaults untouched; for Pi, OpenCode and OMP, `setup` persists your chosen default
 model per gateway in `~/.config/aiven/ai-gateway-models.json` (`0600`) so
-`aiven-ai-gateway launch <tool>` uses it automatically (explicit
+`avn-aig <tool>` uses it automatically (explicit
 `-- --model`/`-m` flags still override, and ungranted persisted aliases fall
 back cleanly to the catalogue default).
 
@@ -125,7 +130,7 @@ or running with `--yes` refuses before probes or writes.
 Keys are stored with mode `0600` at `~/.config/aiven/ai-gateway-key` for the
 default gateway (`https://ai.aiven.io`), and under
 `~/.config/aiven/ai-gateway-keys/` for custom origins. `setup` reuses a
-valid saved key automatically; run `aiven-ai-gateway login` or pass
+valid saved key automatically; run `avn-aig login` or pass
 `--key-stdin` to replace it. With changes to write, the key is saved before the
 approved changes. With nothing to write, a new key is saved only when every
 selected tool is already up to date, also in unattended runs without `--yes`. If no tool ends up ready or with a file

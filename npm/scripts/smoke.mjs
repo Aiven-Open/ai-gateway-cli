@@ -71,6 +71,20 @@ const shimHelp = spawnSync(shim, ["--help"], {
 });
 assert.equal(shimHelp.status, 0, shimHelp.stderr);
 assert.equal(shimHelp.stdout, help.stdout);
+const shortShim = isWin ? join(prefix, "avn-aig.cmd") : join(prefix, "bin/avn-aig");
+const shortHelp = spawnSync(shortShim, ["--help"], {
+  env, encoding: "utf8", timeout: 30_000, shell: isWin, cwd: isolated,
+});
+assert.equal(shortHelp.status, 0, shortHelp.stderr);
+const npmShim = isWin ? join(prefix, "ai-gateway.cmd") : join(prefix, "bin/ai-gateway");
+const npmHelp = spawnSync(npmShim, ["--help"], {
+  env, encoding: "utf8", timeout: 30_000, shell: isWin, cwd: isolated,
+});
+assert.equal(npmHelp.status, 0, npmHelp.stderr);
+assert(npmHelp.stdout.startsWith("usage: ai-gateway <command> [args]\n"), npmHelp.stdout);
+// Each bin script names itself, so the usage line is the same on every platform, whatever the shim is.
+assert(shimHelp.stdout.startsWith("usage: aiven-ai-gateway <command> [args]\n"), shimHelp.stdout);
+assert(shortHelp.stdout.startsWith("usage: avn-aig <command> [args]\n"), shortHelp.stdout);
 
 // Setup and launch each tool against a loopback gateway, with a synthetic key and a fixture standing in for the tool.
 const key = "sk-smoke-synthetic";
@@ -189,7 +203,7 @@ for (const name of names) {
     assert(!text.includes(key), `${name} setup wrote the key into ${file}`);
   }
   const argv = ["two words", "", 'quote"slash\\', "a & b | c < d > e (f) ^ %USERPROFILE%", '{"inline":"x && y || z"}'];
-  for (const launchArgs of [["launch", name, ...argv], ["launch", name, "--", ...argv]]) {
+  for (const launchArgs of [["launch", name, ...argv], ["launch", name, "--", ...argv], [name, ...argv]]) {
     const launch = await runAsync(launchArgs, "");
     assert.equal(launch.status, 23, `${name} launch: ${launch.stderr}`);
     assert(launch.stderr.includes(`Gateway: ${toolEnv.AIVEN_AI_GATEWAY_BASE_URL}\n`), `${name} launch omitted the gateway`);

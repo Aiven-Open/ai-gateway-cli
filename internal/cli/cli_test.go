@@ -150,8 +150,6 @@ func TestMalformedInvocationsAreRefusedWithoutEcho(t *testing.T) {
 		{[]string{"sk-pasted"}, "unknown command. Run: aiven-ai-gateway --help"},
 		{[]string{"connect", "claude", "sk-pasted"}, "connect was removed. Run: aiven-ai-gateway setup <harness>"},
 		{[]string{"omp", "init", "-h"}, "omp init was removed; existing project files are left as they are. Run: aiven-ai-gateway setup omp"},
-		{[]string{"claude", "--help"}, "session shortcut removed. Run: aiven-ai-gateway launch claude"},
-		{[]string{"codex", "sk-pasted"}, "session shortcut removed. Run: aiven-ai-gateway launch codex"},
 	} {
 		var out, errb bytes.Buffer
 		handled, code := cli.Informational(tc.args, nil, cli.Deps{Stdout: &out, Stderr: &errb})
@@ -169,6 +167,8 @@ func TestMalformedInvocationsAreRefusedWithoutEcho(t *testing.T) {
 	for _, args := range [][]string{
 		{"--version"},
 		{"version"},
+		{"claude", "--help"},
+		{"codex", "sk-pasted"},
 		{"launch", "pi", "--", "--help"},
 		{"launch", "pi", "--help"},
 		{"launch", "claude", "--dangerously-skip-permissions"},

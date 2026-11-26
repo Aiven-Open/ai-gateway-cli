@@ -14,6 +14,10 @@ import (
 const plainHelp = `usage: aiven-ai-gateway <command> [args]
 
 Commands
+  <harness> [native args]
+      Start a configured tool, the same as launch <harness>. Arguments after
+      the harness name go to the tool unchanged. With no arguments at all, a
+      terminal offers the installed tools.
   setup [harness] [--key-stdin] [-y|--yes] [--plain]
       Check a key, choose models, preview and approve changes, then save and write.
       List models; send minimal requests per protocol and model, retrying a timeout once.

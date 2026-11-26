@@ -22,7 +22,7 @@ func TestStartSessionLinesCarryNoModelArgument(t *testing.T) {
 		lines[0],
 	); !slices.Equal(
 		got,
-		[]string{"aiven-ai-gateway", "launch", "claude"},
+		[]string{"aiven-ai-gateway", "claude"},
 	) {
 		t.Errorf("copied line %q runs %q", lines[0], got)
 	}

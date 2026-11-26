@@ -40,8 +40,12 @@ func newPresenter(env config.Env, deps Deps, plain bool) presenter {
 	p := presenter{
 		ui: newUIWithEnv(deps.Stderr, deps.Term.StderrTTY, deps.Term.StderrWidth, plain, env.Environ),
 	}
+	p.ui.cmd = deps.command()
 	if sel, ok := deps.Prompter.(selector); ok && !plain && deps.Term.StdinTTY && deps.Term.StderrTTY {
 		p.inline = sel
+		if p.ui.cmd != longName {
+			p.inline = hintSelector{selector: sel, cmd: p.ui.cmd}
+		}
 	}
 	return p
 }
@@ -230,7 +234,7 @@ func (r *setupRun) finish() int {
 	if len(ready) > 0 {
 		u.heading("Start a session")
 		for _, o := range ready {
-			u.command(2, "aiven-ai-gateway launch "+o.tool)
+			u.command(2, "aiven-ai-gateway "+o.tool)
 			// The model goes on a line of its own: a copied command line must not pass it to the tool.
 			if o.resolvedModel != "" && safe(o.resolvedModel) == o.resolvedModel {
 				u.note(4, "Default model: "+o.resolvedModel)
