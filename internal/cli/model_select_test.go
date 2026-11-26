@@ -398,7 +398,7 @@ func TestClaudeUntouchedUserAndProjectLayerRecoveryBoundaries(t *testing.T) {
 					"Setup does not change project files.",
 				"configured; this folder has its own settings in ~/work/.claude/settings.local.json " +
 					"that select claude-retired, which this key does not grant; " +
-					"Claude Code started here uses them until you change or remove them",
+					"aiven-ai-gateway claude overrides them, plain claude started here uses them",
 				"Default model     deepseek-v3.2\n",
 			} {
 				if strings.Count(r.stderr, want) != 1 {

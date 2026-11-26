@@ -87,7 +87,7 @@ func projectOverrideWarning(env config.Env, tool string, c configuredModel) stri
 // projectOverrideNote is kept on the tool's outcome line.
 func projectOverrideNote(env config.Env, c configuredModel) string {
 	return fmt.Sprintf("this folder has its own settings in %s that select %s, which this key does "+
-		"not grant; Claude Code started here uses them until you change or remove them",
+		"not grant; aiven-ai-gateway claude overrides them, plain claude started here uses them",
 		shortHomePath(env.UserHome, c.overrideFile), safe(c.overrideModel))
 }
 

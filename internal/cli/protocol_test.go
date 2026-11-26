@@ -559,7 +559,7 @@ func TestSetupContinuesPastAProjectClaudeFileSelectingAnUngrantedModel(t *testin
 					"Setup does not change project files.",
 				"configured; this folder has its own settings in " + short +
 					" that select claude-retired, which this key does not grant; " +
-					"Claude Code started here uses them until you change or remove them",
+					"aiven-ai-gateway claude overrides them, plain claude started here uses them",
 				"Default model     claude-sonnet\n",
 				"    Default model: claude-sonnet\n",
 			} {
