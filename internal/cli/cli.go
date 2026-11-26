@@ -145,11 +145,12 @@ var helpCommands = []helpCommand{
 		"[harness] [--key-stdin] [-y|--yes] [--plain]",
 		[]string{
 			"Check a key, choose models, preview and approve changes, then save and write.",
-			"List models; send one minimal request per configured protocol and model.",
+			"List models; send minimal requests per protocol and model, retrying a timeout once.",
 			"These basic checks may incur usage; they do not test native tool requests.",
 			"Never starts a session. Without a harness, a terminal offers installed tools.",
 			"Interactive steps support Esc / Shift+Tab to go back before saving.",
 			"Interactive setup sets Aiven as default; --yes leaves tool defaults unchanged.",
+			"Claude Code takes Claude models plus up to five models from other vendors.",
 		},
 	},
 	{"launch", "[--plain] [harness] [--] [native args]", []string{

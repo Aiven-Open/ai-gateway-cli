@@ -28,6 +28,12 @@ type choice struct {
 	filterDefault bool
 	rail          bool
 	theme         *theme
+	// ordered returns a multiple choice's picks in the order they were ticked, starting from order.
+	ordered bool
+	// order lists the pre-picked options of an ordered choice in their tick order; empty means list order.
+	order []int
+	// refuse gives the reason ticking option i is refused with picked as it stands, or "" to allow it.
+	refuse func(picked []bool, i int) string
 }
 
 type option struct {
@@ -45,6 +51,8 @@ type selectState struct {
 	cursor    int
 	offset    int
 	picked    []bool
+	order     []int
+	notice    string
 	input     []byte
 }
 
@@ -61,13 +69,63 @@ func newSelectState(c choice) *selectState {
 	if c.cursor > 0 && c.cursor < len(c.options) {
 		cursor = c.cursor
 	}
+	order := slices.Clone(c.order)
+	if len(order) == 0 {
+		for i, p := range picked {
+			if p {
+				order = append(order, i)
+			}
+		}
+	}
 	return &selectState{
+		order:     order,
 		c:         c,
 		th:        th,
 		filtering: c.filterDefault || len(c.options) > 8,
 		cursor:    cursor,
 		picked:    picked,
 	}
+}
+
+// toggle flips option i. A tick refuse turns down leaves the option clear and shows the reason until the next key.
+func (s *selectState) toggle(i int) {
+	if s.picked[i] {
+		s.picked[i] = false
+		s.order = slices.DeleteFunc(slices.Clone(s.order), func(j int) bool { return j == i })
+		return
+	}
+	if s.c.refuse != nil {
+		if reason := s.c.refuse(slices.Clone(s.picked), i); reason != "" {
+			s.notice = reason
+			return
+		}
+	}
+	s.picked[i] = true
+	s.order = append(slices.Clone(s.order), i)
+}
+
+// toggleAll clears the visible options when all are ticked, else ticks each one refuse allows.
+func (s *selectState) toggleAll(visible []int) {
+	all := !slices.ContainsFunc(visible, func(i int) bool { return !s.picked[i] })
+	for _, i := range visible {
+		if s.picked[i] == all {
+			s.toggle(i)
+		}
+	}
+}
+
+// pickedIndexes is the answer of a multiple choice: tick order when ordered, else list order.
+func (s *selectState) pickedIndexes() []int {
+	if s.c.ordered {
+		return slices.Clone(s.order)
+	}
+	var out []int
+	for j, p := range s.picked {
+		if p {
+			out = append(out, j)
+		}
+	}
+	return out
 }
 
 // visible lists the options whose label contains the filter, ignoring case.
@@ -188,6 +246,9 @@ func (s *selectState) render(width, height int) []string {
 	}
 	if s.c.subtitle != "" && (budget == 0 || len(header)+1 < budget) {
 		header = append(header, bodyPrefix+s.th.dim(fitBody(s.c.subtitle)))
+	}
+	if s.notice != "" && (budget == 0 || len(header)+1 < budget) {
+		header = append(header, bodyPrefix+s.th.paint(yellow, fitBody(s.notice)))
 	}
 	if showFilter && (budget == 0 || len(header)+1 < budget) {
 		header = append(header, bodyPrefix+fitBody("  Filter: "+s.filter))
@@ -391,6 +452,7 @@ func (s *selectState) handleStandaloneEscape() bool {
 // keys applies input while retaining incomplete escape sequences and UTF-8 runes across reads.
 // The terminal adapter bounds the wait for an escape suffix; finished reports an answer or cancellation.
 func (s *selectState) keys(b []byte) (picked []int, finished bool, err error) {
+	s.notice = ""
 	b = append(s.input, b...)
 	s.input = nil
 	for i := 0; i < len(b); i++ {
@@ -452,19 +514,14 @@ func (s *selectState) keys(b []byte) (picked []int, finished bool, err error) {
 			return nil, true, errInputEnded
 		case c == '\r' || c == '\n':
 			if s.c.multi {
-				for j, p := range s.picked {
-					if p {
-						picked = append(picked, j)
-					}
-				}
-				return picked, true, nil
+				return s.pickedIndexes(), true, nil
 			}
 			if len(visible) > 0 {
 				return []int{visible[s.cursor]}, true, nil
 			}
 		case c == ' ' && s.c.multi:
 			if len(visible) > 0 {
-				s.picked[visible[s.cursor]] = !s.picked[visible[s.cursor]]
+				s.toggle(visible[s.cursor])
 			}
 		case c == 0x7f || c == 0x08:
 			if s.filter != "" {
@@ -486,16 +543,7 @@ func (s *selectState) keys(b []byte) (picked []int, finished bool, err error) {
 					}
 				case 'a':
 					if s.c.multi && len(visible) > 0 {
-						allPicked := true
-						for _, idx := range visible {
-							if !s.picked[idx] {
-								allPicked = false
-								break
-							}
-						}
-						for _, idx := range visible {
-							s.picked[idx] = !allPicked
-						}
+						s.toggleAll(visible)
 					}
 				case '/':
 					s.filtering = true

@@ -45,6 +45,8 @@ type UnreachableError struct {
 	Err     error
 	// Limit is how long the request was allowed to take.
 	Limit time.Duration
+	// Answered is set when the gateway had sent response headers, so it took the request before the failure.
+	Answered bool
 }
 
 func (e *UnreachableError) Error() string {
@@ -163,6 +165,12 @@ func (c Client) Probe(
 	}
 	defer func() { _ = resp.Body.Close() }()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	var timeout net.Error
+	if errors.As(err, &timeout) && timeout.Timeout() {
+		return resp.StatusCode, &UnreachableError{
+			BaseURL: c.BaseURL, Err: err, Limit: requestLimit(c.HTTP), Answered: true,
+		}
+	}
 	if err != nil {
 		return resp.StatusCode, fmt.Errorf("read basic check response: %w", err)
 	}

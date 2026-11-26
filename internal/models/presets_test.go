@@ -210,3 +210,36 @@ func TestGeminiPresetPrefersNeonThenCarbonThenArgon(t *testing.T) {
 		})
 	}
 }
+
+func TestAnthropicTiersLeavesTierWithoutItsOwnModelEmpty(t *testing.T) {
+	t.Parallel()
+	got := models.AnthropicTiers([]models.Model{{Alias: "claude-sonnet-5-5"}, {Alias: "glm-5"}})
+	if got.Sonnet != "claude-sonnet-5-5" || got.Opus != "" || got.Haiku != "" || got.Fable != "" {
+		t.Errorf("tiers = %+v, want only Sonnet", got)
+	}
+}
+
+func TestAnthropicTiersRanksFableVersionsNumericallyWithOrWithoutOwner(t *testing.T) {
+	t.Parallel()
+	got := models.AnthropicTiers([]models.Model{
+		{Alias: "claude-fable-5-9"}, {Alias: "claude-fable-5-10"}, {Alias: "claude-fable-5-2"},
+	})
+	if got.Fable != "claude-fable-5-10" {
+		t.Errorf("fable = %q, want claude-fable-5-10", got.Fable)
+	}
+}
+
+func TestAnthropicTiersPrefersNewestGrantedFableAndSkipsAnotherVendorsClaude(t *testing.T) {
+	t.Parallel()
+	anthropic := func(a string) models.Model { return models.Model{Alias: a, Owner: "anthropic"} }
+	got := models.AnthropicTiers([]models.Model{
+		anthropic("claude-fable-5-1"), anthropic("claude-fable-5-2"), anthropic("claude-opus-5-5"),
+	})
+	if got.Fable != "claude-fable-5-2" || got.Opus != "claude-opus-5-5" {
+		t.Errorf("tiers = %+v, want fable claude-fable-5-2 and opus claude-opus-5-5", got)
+	}
+	aiven := models.AnthropicTiers([]models.Model{{Alias: "claude-opus-5-5", Owner: "Aiven"}})
+	if aiven != (models.Preset{ID: models.PresetAnthropic, Name: "Anthropic"}) {
+		t.Errorf("an Aiven-owned claude-opus-5-5 filled a tier: %+v", aiven)
+	}
+}

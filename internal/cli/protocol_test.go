@@ -741,7 +741,7 @@ func TestConcurrentProbesDeterministicOrderAndPartialFailure(t *testing.T) {
 }
 
 // A check that times out is sent once more; a second timeout is reported as one, with the limit.
-func TestSetupRetriesATimedOutCheckOnceAndReportsTheTimeout(t *testing.T) {
+func TestSetupRetriesTimedOutCheckOnceAndReportsTimeout(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name string
@@ -779,5 +779,38 @@ func TestSetupRetriesATimedOutCheckOnceAndReportsTheTimeout(t *testing.T) {
 				t.Errorf("timeout reported as %q", r.stderr)
 			}
 		})
+	}
+}
+
+// A check whose body stalls after the headers is reported as a timeout and not sent again, since the gateway took it.
+func TestSetupReportsBodyTimeoutWithoutSendingTheCheckAgain(t *testing.T) {
+	t.Parallel()
+	g := newGatewayDouble(t)
+	var posts atomic.Int32
+	base := g.Config.Handler
+	g.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			base.ServeHTTP(w, r)
+			return
+		}
+		posts.Add(1)
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		select {
+		case <-r.Context().Done():
+		case <-time.After(5 * time.Second):
+		}
+	})
+	s := newSession(t, g).stdin(keyValid)
+	client := *g.Client()
+	client.Timeout = 300 * time.Millisecond
+	s.deps.HTTP = &client
+	r := s.run("setup", "--key-stdin", "--yes", "claude")
+	if r.code != 1 || posts.Load() != 1 {
+		t.Fatalf("exit %d after %d checks, stderr %q", r.code, posts.Load(), r.stderr)
+	}
+	if !strings.Contains(r.stderr, "did not answer within 300ms") ||
+		strings.Contains(r.stderr, "read basic check") {
+		t.Errorf("timeout reported as %q", r.stderr)
 	}
 }

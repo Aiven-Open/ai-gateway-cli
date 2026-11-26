@@ -207,7 +207,7 @@ func TestUnreachableGatewayNamesURL(t *testing.T) {
 	}
 }
 
-func TestSlowGatewayTimesOutWithTheLimit(t *testing.T) {
+func TestSlowGatewayTimesOutWithLimit(t *testing.T) {
 	release := make(chan struct{})
 	srv := httptest.NewTLSServer(
 		http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }),

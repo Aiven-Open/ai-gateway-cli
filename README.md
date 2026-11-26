@@ -67,7 +67,7 @@ motion. Non-UTF-8 locales (`LC_ALL=C`/`POSIX`) fall back to ASCII markers.
 
 | Command | Summary |
 | --- | --- |
-| `setup [harness] [--key-stdin] [-y\|--yes] [--plain]` | Discover installed harnesses, validate a key, choose a model or curated preset (resolving ungranted configured models), probe each configured protocol and model concurrently (1 output token each, which may incur usage), review redacted diffs, save the key (`0600`) and launcher model preferences, and write harness configuration with timestamped `.bak` backups. Never starts a session. |
+| `setup [harness] [--key-stdin] [-y\|--yes] [--plain]` | Discover installed harnesses, validate a key, choose a model or curated preset (resolving ungranted configured models), probe each configured protocol and model concurrently (1 output token each, which may incur usage; a check that times out before any response is sent once more, so a model can receive two one-token requests), review redacted diffs, save the key (`0600`) and launcher model preferences, and write harness configuration with timestamped `.bak` backups. Never starts a session. |
 | `launch [--plain] [harness] [--] [native args]` | Start one configured harness against the selected gateway without modifying persistent configuration. Arguments after the harness name (or after `--` when picking a harness) are forwarded literally to the native tool; an optional `--` after the harness name is also accepted. |
 | `login` | Check that an explicitly supplied key can list models, save it (`0600`), and list granted models. Sends no inference request and configures no harness. |
 | `logout` | Remove the saved key file for the selected gateway, leaving other gateways' key files and harness configurations intact. Does not revoke the server key or unset environment variables. |
@@ -112,11 +112,14 @@ back cleanly to the catalogue default).
 
 Interactive `setup` offers curated presets (`Anthropic`, `OpenAI`,
 `Gemini`, `Open-weight`, filtered to models your key grants) and a
-searchable `Custom model…` picker. When an existing Claude Code (including
+searchable `Custom model…` picker. Claude Code instead offers `Recommended defaults`
+and `Choose models`, plus `Keep current` when the key grants the configured model.
+`Choose models` takes any granted Claude models plus up to five models from
+other vendors; the reference describes how they fill Claude Code's model slots. When an existing Claude Code (including
 `~/.claude/settings.json` and project `.claude/settings*.json` layers) or
 Codex configuration selects an ungranted model, `setup` badges the conflict
 and offers the matching gateway alias (when known via provider-ID
-normalization), available presets, or a custom model; leaving it unchanged
+normalization), the other menu items, or a custom model; leaving it unchanged
 or running with `--yes` refuses before probes or writes.
 
 Keys are stored with mode `0600` at `~/.config/aiven/ai-gateway-key` for the

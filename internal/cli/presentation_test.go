@@ -83,7 +83,7 @@ func TestSetupAnnouncesEachRequestBeforeSendingItAndSavesOnlyAfterTheProbe(t *te
 		if probe.method != http.MethodPost ||
 			!strings.Contains(
 				probe.stderr,
-				"Sending one 1-token check per configured protocol and model (may incur usage).\n",
+				"Sending 1-token checks for each configured protocol and model (may incur usage).\n",
 			) || probe.keySaved {
 			t.Errorf("probe arrived after %q (key saved %v)", probe.stderr, probe.keySaved)
 		}

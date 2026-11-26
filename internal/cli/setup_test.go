@@ -937,7 +937,7 @@ func TestUnrecognisedAnswerIsAskedAgain(t *testing.T) {
 
 // A new key for a tool that is already up to date is saved: the tool reads the key file, so keeping the old key would
 // leave it on a key the user replaced.
-func TestSetupSavesARotatedKeyWhenNothingElseChanges(t *testing.T) {
+func TestSetupSavesRotatedKeyWhenNothingElseChanges(t *testing.T) {
 	s := newSession(t, newGatewayDouble(t))
 	if r := s.stdin(keyShort).run("setup", "--key-stdin", "--yes", "claude"); r.code != 0 {
 		t.Fatalf("first setup: exit %d, stderr %q", r.code, r.stderr)
@@ -1006,7 +1006,7 @@ func TestSetupKeepsNewKeyWhenUnchangedToolSitsBesideFailedWrite(t *testing.T) {
 }
 
 // A run that configures no tool leaves the key file as it was before the run.
-func TestSetupPutsThePreviousKeyBackWhenNoToolIsConfigured(t *testing.T) {
+func TestSetupPutsPreviousKeyBackWhenNoToolIsConfigured(t *testing.T) {
 	for name, saved := range map[string]string{"replacing a key": keyFlash, "first key": ""} {
 		t.Run(name, func(t *testing.T) {
 			s := newSession(t, newGatewayDouble(t))
@@ -1034,7 +1034,7 @@ func TestSetupPutsThePreviousKeyBackWhenNoToolIsConfigured(t *testing.T) {
 }
 
 // Rollback touches the key file only while it still holds the key this run saved.
-func TestSetupRollbackLeavesAKeyFileAnotherProcessChanged(t *testing.T) {
+func TestSetupRollbackLeavesKeyFileAnotherProcessChanged(t *testing.T) {
 	for name, change := range map[string]func(path string){
 		"another login": func(path string) { _ = fsutil.WriteAtomic(path, []byte(keyShort+"\n"), 0o600) },
 		"a logout":      func(path string) { _ = os.Remove(path) },
@@ -1065,7 +1065,7 @@ func TestSetupRollbackLeavesAKeyFileAnotherProcessChanged(t *testing.T) {
 }
 
 // A tool that wrote a file keeps the new key, so the file it wrote can still be used.
-func TestSetupKeepsTheNewKeyAfterAPartialWrite(t *testing.T) {
+func TestSetupKeepsNewKeyAfterPartialWrite(t *testing.T) {
 	s := newSession(t, newGatewayDouble(t)).loggedIn(keyFlash)
 	s.deps.WriteFile = failNth(filepath.Join(s.fakeHome, ".codex", "aiven.config.toml"), 1)
 	r := s.stdin(keyValid).run("setup", "--key-stdin", "--yes", "codex")
