@@ -181,7 +181,7 @@ func (u ui) railEnd(text string) {
 // command either preserves the executable text exactly or refuses to display it. Sanitizing a quoted token
 // would silently change its argument; tabs are also unrepresentable when copied from a terminal.
 func (u ui) command(indent int, s string) bool {
-	if strings.ContainsRune(s, '\t') || safe(s) != s {
+	if s == "" || strings.ContainsRune(s, '\t') || safe(s) != s {
 		return false
 	}
 	// The hint is rewritten before the colour codes go on: the pattern needs a word boundary before the name.
