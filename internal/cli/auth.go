@@ -42,8 +42,14 @@ func login(ctx context.Context, env config.Env, deps Deps) int {
 	p.ui.line(2, "Login checked model access only: no inference request was sent and no tool")
 	p.ui.line(2, "was configured. Configure one before launching it:")
 	p.ui.command(4, "aiven-ai-gateway setup <harness>")
+	stdoutPlain := deps.Term.NoVT || deps.Term.StdoutNoVT
 	renderModels(
-		newUI(deps.Stdout, deps.Term.StdoutTTY, deps.Term.StdoutWidth, plainRequested(env.Environ)),
+		newUI(
+			deps.Stdout,
+			deps.Term.StdoutTTY && !stdoutPlain,
+			deps.Term.StdoutWidth,
+			stdoutPlain || plainRequested(env.Environ),
+		),
 		table,
 	)
 	return 0
@@ -57,8 +63,14 @@ func listModels(ctx context.Context, env config.Env, deps Deps) int {
 	if code != 0 {
 		return code
 	}
+	stdoutPlain := deps.Term.NoVT || deps.Term.StdoutNoVT
 	renderModels(
-		newUI(deps.Stdout, deps.Term.StdoutTTY, deps.Term.StdoutWidth, plainRequested(env.Environ)),
+		newUI(
+			deps.Stdout,
+			deps.Term.StdoutTTY && !stdoutPlain,
+			deps.Term.StdoutWidth,
+			stdoutPlain || plainRequested(env.Environ),
+		),
 		table,
 	)
 	return 0

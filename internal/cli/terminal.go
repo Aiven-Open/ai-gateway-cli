@@ -19,8 +19,10 @@ import (
 var (
 	// errInputEnded is end of input where an answer was needed; it never counts as consent.
 	errInputEnded = errors.New("no answer: input ended")
-	// errCancelled is Esc or Ctrl-C in an inline choice.
+	// errCancelled is Esc (when allowBack is false) or Ctrl-C in an inline choice.
 	errCancelled = errors.New("cancelled")
+	// errBack is Esc or Shift+Tab in an inline choice with allowBack enabled.
+	errBack = errors.New("back")
 )
 
 // DetectTerminal checks each stream on its own, so a redirected stdout does not change how stderr is drawn.
@@ -34,9 +36,19 @@ func DetectTerminal(in, out, errOut *os.File) Terminal {
 			return w
 		}
 	}
+	stdinTTY := term.IsTerminal(int(in.Fd()))
+	stdoutTTY := term.IsTerminal(int(out.Fd()))
+	stderrTTY := term.IsTerminal(int(errOut.Fd()))
+	noVT := stderrTTY && !probeConsoleVT(in, errOut)
+	stdoutNoVT := stdoutTTY && !probeOutputVT(out)
 	return Terminal{
-		StdinTTY: term.IsTerminal(int(in.Fd())), StdoutTTY: term.IsTerminal(int(out.Fd())),
-		StderrTTY: term.IsTerminal(int(errOut.Fd())), StdoutWidth: width(out), StderrWidth: width(errOut),
+		StdinTTY:    stdinTTY,
+		StdoutTTY:   stdoutTTY,
+		StderrTTY:   stderrTTY,
+		NoVT:        noVT,
+		StdoutNoVT:  stdoutNoVT,
+		StdoutWidth: width(out),
+		StderrWidth: width(errOut),
 	}
 }
 
@@ -88,6 +100,22 @@ func (p terminalPrompter) ReadLine(prompt string) (string, error) {
 	return strings.TrimRight(line, "\r\n"), err
 }
 
+// size queries terminal dimensions from stderr when it is an *os.File TTY (required on Windows where
+// STD_INPUT_HANDLE has no screen buffer size), falling back to stdin otherwise.
+func (p terminalPrompter) size() (int, int) {
+	if f, ok := p.stderr.(*os.File); ok {
+		if w, h, err := term.GetSize(int(f.Fd())); err == nil && (w > 0 || h > 0) {
+			return w, h
+		}
+	}
+	if p.in != nil {
+		if w, h, err := term.GetSize(int(p.in.Fd())); err == nil {
+			return w, h
+		}
+	}
+	return 0, 0
+}
+
 // Select draws an inline list below the cursor and redraws it in place on each key; nothing switches to the
 // alternate screen. The list is erased before returning, so the caller prints the durable outcome.
 func (p terminalPrompter) Select(c choice) ([]int, error) {
@@ -97,6 +125,11 @@ func (p terminalPrompter) Select(c choice) ([]int, error) {
 		return nil, err
 	}
 	defer p.interruptible(fd, state)()
+	restoreVT, vtOK := enableVT(p.in, p.stderr)
+	if !vtOK {
+		return nil, errors.New("virtual terminal mode unavailable; use --plain")
+	}
+	defer restoreVT()
 	if _, err := term.MakeRaw(fd); err != nil {
 		return nil, err
 	}
@@ -123,14 +156,11 @@ func (p terminalPrompter) Select(c choice) ([]int, error) {
 		return nil
 	}
 	draw := func() error {
-		width, _, err := term.GetSize(fd)
-		if err != nil {
-			width = 0
-		}
+		width, height := p.size()
 		if err := erase(); err != nil {
 			return err
 		}
-		lines := s.render(width)
+		lines := s.render(width, height)
 		// Output processing is off in raw mode, so each line ends with an explicit carriage return.
 		text := strings.Join(lines, "\r\n") + "\r\n"
 		if err := write("draw", text); err != nil {
@@ -156,7 +186,14 @@ func (p terminalPrompter) Select(c choice) ([]int, error) {
 					return nil, errors.Join(err, erase())
 				}
 				if !ready {
-					return nil, errors.Join(errCancelled, erase())
+					if s.handleStandaloneEscape() {
+						escapeDeadline = time.Time{}
+						if err := draw(); err != nil {
+							return nil, err
+						}
+						continue
+					}
+					return nil, errors.Join(s.cancelError(), erase())
 				}
 			}
 			n, err := p.in.Read(buf)
@@ -202,6 +239,7 @@ func (p terminalPrompter) interruptible(fd int, state *term.State) (stop func())
 		select {
 		case <-sig:
 			restoreModes(fd, state)
+			restoreAllVT()
 			_, _ = fmt.Fprintln(p.stderr)
 			os.Exit(130)
 		case <-done:

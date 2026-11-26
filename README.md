@@ -41,26 +41,34 @@ use, configure it once, then launch sessions:
 ```sh
 aiven-ai-gateway setup claude
 aiven-ai-gateway launch claude
-aiven-ai-gateway launch codex -- resume
-aiven-ai-gateway launch pi -- --model aiven/claude-sonnet
+aiven-ai-gateway launch codex resume
+aiven-ai-gateway launch pi --model aiven/claude-sonnet
 aiven-ai-gateway models
 ```
 
-On a terminal, bare `setup` opens an inline multi-select list of harnesses
-found on `PATH` (arrow keys move, Space marks, typing filters, Enter
-continues) and bare `launch` opens a single-select list. `Esc` or `Ctrl-C`
-cancels before any key is read or saved. Without a terminal, pass the
-harness name (`claude`, `codex`, `pi`, `opencode` or `omp`).
+On a terminal, bare `setup` detects harnesses installed on `PATH`, checks
+your key and granted models, then guides you through three reversible steps
+(harnesses pre-selected with live status badges, model/preset selection with
+inline ungranted-model recovery, and optional direct `<tool>` invocation)
+before probing configured protocols concurrently and showing a review table.
+Arrow keys or `j`/`k` move, `Space` toggles (`a` toggles all), `/` filters,
+`Esc` or `Shift+Tab` steps back, and `Ctrl-C` cancels before saving any key
+or file. When no supported harness is found on `PATH`, bare `setup` prints
+install hints and `aiven-ai-gateway login` without asking for a key. Bare
+`launch` opens a single-select list of installed harnesses. Without a
+terminal, pass the harness name (`claude`, `codex`, `pi`, `opencode` or
+`omp`).
 
 Pass `--plain` on `setup` or `launch`, or set a nonempty `NO_COLOR` or
-`TERM=dumb`, to use numbered line prompts without colour or cursor motion.
+`TERM=dumb`, to use numbered line prompts without colour, spinners or cursor
+motion. Non-UTF-8 locales (`LC_ALL=C`/`POSIX`) fall back to ASCII markers.
 
 ## Commands
 
 | Command | Summary |
 | --- | --- |
-| `setup [harness] [--key-stdin] [-y\|--yes] [--plain]` | Validate a key, send one minimal 1-output-token request per configured protocol and model (which may incur usage), preview redacted configuration diffs (`[Y/n/v]`), save the key (`0600`), and write harness configuration with timestamped `.bak` backups. Never starts a session. |
-| `launch [harness] [--plain] [-- native args]` | Start one configured harness against the selected gateway without modifying persistent configuration. Arguments after `--` are forwarded literally to the native tool. |
+| `setup [harness] [--key-stdin] [-y\|--yes] [--plain]` | Discover installed harnesses, validate a key, choose a model or curated preset (resolving ungranted configured models), probe each configured protocol and model concurrently (1 output token each, which may incur usage), review redacted diffs, save the key (`0600`) and launcher model preferences, and write harness configuration with timestamped `.bak` backups. Never starts a session. |
+| `launch [--plain] [harness] [--] [native args]` | Start one configured harness against the selected gateway without modifying persistent configuration. Arguments after the harness name (or after `--` when picking a harness) are forwarded literally to the native tool; an optional `--` after the harness name is also accepted. |
 | `login` | Check that an explicitly supplied key can list models, save it (`0600`), and list granted models. Sends no inference request and configures no harness. |
 | `logout` | Remove the saved key file for the selected gateway, leaving other gateways' key files and harness configurations intact. Does not revoke the server key or unset environment variables. |
 | `models` | List granted models on stdout grouped by publisher, with the exact model IDs that harness flags take (`aiven-ai-gateway models > models.txt`). |
@@ -86,21 +94,37 @@ configuration files:
 
 | Harness | On-demand configuration | Direct native invocation |
 | --- | --- | --- |
-| Claude Code | `~/.claude/aiven.settings.json` | `claude --settings ~/.claude/aiven.settings.json` |
+| Claude Code | `~/.claude/aiven.settings.json` | `claude --settings ~/.claude/aiven.settings.json` (`claude --settings "%USERPROFILE%\.claude\aiven.settings.json"` on Windows) |
 | Codex | Aiven provider in `~/.codex/config.toml`, profile in `~/.codex/aiven.config.toml` | `codex -p aiven` |
 | Pi | Aiven provider in `~/.pi/agent/models.json` | `pi --model aiven/<alias>` |
 | OpenCode | Aiven provider in `~/.config/opencode/opencode.json`, or `opencode.jsonc` when it exists; `$XDG_CONFIG_HOME/opencode` when set | `opencode -m aiven/<alias>` |
 | OMP | Aiven provider in `~/.omp/agent/models.yml` (or existing `models.yaml`) | `omp --model aiven/<alias>` |
 
-Answering `y` to `Make Aiven the native default for <tool>? [y/N]` also
-updates Claude's `~/.claude/settings.json`, Codex's top-level
-model/provider, Pi's `~/.pi/agent/settings.json`, OpenCode's `model`, or
-OMP's `modelRoles.default` in `~/.omp/agent/config.yml` (or existing
-`config.yaml`).
+Setting Aiven as the default provider during `setup` also updates Claude's
+`~/.claude/settings.json`, Codex's top-level model/provider, Pi's
+`~/.pi/agent/settings.json`, OpenCode's `model`, or OMP's
+`modelRoles.default` in `~/.omp/agent/config.yml` (or existing
+`config.yaml`). Choosing launch-only keeps native defaults untouched; for Pi, OpenCode and OMP, `setup` persists your chosen default
+model per gateway in `~/.config/aiven/ai-gateway-models.json` (`0600`) so
+`aiven-ai-gateway launch <tool>` uses it automatically (explicit
+`-- --model`/`-m` flags still override, and ungranted persisted aliases fall
+back cleanly to the catalogue default).
+
+Interactive `setup` offers curated presets (`Anthropic`, `OpenAI`,
+`Gemini`, `Open-weight`, filtered to models your key grants) and a
+searchable `Custom model…` picker. When an existing Claude Code (including
+`~/.claude/settings.json` and project `.claude/settings*.json` layers) or
+Codex configuration selects an ungranted model, `setup` badges the conflict
+and offers the matching gateway alias (when known via provider-ID
+normalization), available presets, or a custom model; leaving it unchanged
+or running with `--yes` refuses before probes or writes.
 
 Keys are stored with mode `0600` at `~/.config/aiven/ai-gateway-key` for the
 default gateway (`https://ai.aiven.io`), and under
-`~/.config/aiven/ai-gateway-keys/` for custom origins.
+`~/.config/aiven/ai-gateway-keys/` for custom origins. `setup` reuses a
+valid saved key automatically; run `aiven-ai-gateway login` or pass
+`--key-stdin` to replace it. No key or preference file is written unless at
+least one configuration change is approved.
 
 ## Environment
 
@@ -135,11 +159,12 @@ default gateway (`https://ai.aiven.io`), and under
 - **OMP legacy JSON files:** without `models.yml`/`models.yaml`, existing
   legacy `models.json` or `settings.json` stops `setup`; run `omp` once so
   OMP migrates its files, then rerun `setup`.
-- **Extended Unix ACLs and non-Unix inline keys:** atomic backups and
+- **Extended Unix ACLs and legacy consoles:** atomic backups and
   replacements preserve POSIX mode bits on Unix and DACLs on Windows, not
-  extended Unix ACLs (`chmod +a`, `setfacl`). Platforms other than macOS and
-  Linux do not implement bounded `Esc` suffix waiting (use `--plain`);
-  native Windows terminal behavior remains unverified.
+  extended Unix ACLs (`chmod +a`, `setfacl`). Windows terminals enable
+  virtual terminal processing and bounded `Esc` waits automatically,
+  falling back to `--plain` on legacy ConHost consoles where VT modes are
+  unavailable; other non-Unix platforms require `--plain`.
 
 ## Development
 

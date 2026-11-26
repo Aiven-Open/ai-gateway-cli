@@ -107,10 +107,9 @@ func TestSetupWritesTheGatewaySettingsBesideTheUsersOwn(t *testing.T) {
 		"FOO":                             "bar",
 		"ANTHROPIC_BASE_URL":              baseURL,
 		"ANTHROPIC_DEFAULT_OPUS_MODEL":    "claude-opus[1m]",
-		"ANTHROPIC_DEFAULT_SONNET_MODEL":  "glm[1m]",
-		"ANTHROPIC_DEFAULT_HAIKU_MODEL":   "glm[1m]",
-		"ANTHROPIC_DEFAULT_FABLE_MODEL":   "",
-		"ANTHROPIC_CUSTOM_MODEL_OPTION":   "gpt-sol",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL":  "claude-opus[1m]",
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL":   "claude-opus[1m]",
+		"ANTHROPIC_DEFAULT_FABLE_MODEL":   "claude-opus[1m]",
 		"ANTHROPIC_AUTH_TOKEN":            "",
 		"ANTHROPIC_API_KEY":               "",
 		"CLAUDE_CODE_USE_BEDROCK":         "",
@@ -121,7 +120,7 @@ func TestSetupWritesTheGatewaySettingsBesideTheUsersOwn(t *testing.T) {
 		"CLAUDE_CODE_MAX_CONTEXT_TOKENS":  "",
 		"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "",
 	}
-	if !reflect.DeepEqual(got["env"], wantEnv) || got["model"] != "glm[1m]" ||
+	if !reflect.DeepEqual(got["env"], wantEnv) || got["model"] != "claude-opus[1m]" ||
 		got["apiKeyHelper"] != claude.APIKeyHelper(baseURL) ||
 		!reflect.DeepEqual(got["permissions"], map[string]any{"allow": []any{"Bash(ls)"}}) {
 		t.Errorf("settings = %v", got)
@@ -159,7 +158,7 @@ func TestSetupWiresTheUsersSettingsOnlyWhenAskedToMakeTheGatewayTheDefault(t *te
 		t,
 		plan.Files[1].Data,
 	); got["apiKeyHelper"] != claude.APIKeyHelper(baseURL) ||
-		got["model"] != "glm[1m]" {
+		got["model"] != "claude-opus[1m]" {
 		t.Errorf("settings.json = %v", got)
 	}
 }
@@ -175,9 +174,9 @@ func TestSetupKeepsAChosenModelAndDeclaresAWindowUnderOneMillion(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := decode(t, plan.Files[0].Data)
-	if env, _ := got["env"].(map[string]any); env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] != "262144" ||
+	if env, _ := got["env"].(map[string]any); env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] != "" ||
 		env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] != "" ||
-		got["model"] != "glm-fast" {
+		got["model"] != "claude-opus[1m]" {
 		t.Errorf("settings = %v", got)
 	}
 	write(t, filepath.Join(in.UserHome, claude.SettingsFile), string(plan.Files[0].Data))
@@ -245,6 +244,7 @@ func TestSetupDropsAOneMillionSuffixTheCatalogueNoLongerSupports(t *testing.T) {
 	in := input(t)
 	in.Table = []models.Model{
 		{Alias: "glm-fast", Context: ptr(262_144)},
+		{Alias: "claude-sonnet", Context: ptr(262_144)},
 		{Alias: "claude-opus", Context: ptr(1_000_000)},
 	}
 	for _, tc := range []struct{ field, value, want string }{
@@ -545,7 +545,8 @@ func TestLaunchPassesOnlyLauncherOwnedSettingsAndTheKeyHelper(t *testing.T) {
 	}
 	inline := decode(t, []byte(plan.Argv[2]))
 	env, _ := inline["env"].(map[string]any)
-	if inline["apiKeyHelper"] != claude.APIKeyHelper(baseURL) || inline["model"] != "glm[1m]" ||
+	if inline["apiKeyHelper"] != claude.APIKeyHelper(baseURL) ||
+		inline["model"] != "claude-opus[1m]" ||
 		env["ANTHROPIC_BASE_URL"] != baseURL ||
 		env["ANTHROPIC_DEFAULT_OPUS_MODEL"] != "claude-opus[1m]" ||
 		env["ANTHROPIC_AUTH_TOKEN"] != "" {
@@ -560,8 +561,8 @@ func TestLaunchPassesOnlyLauncherOwnedSettingsAndTheKeyHelper(t *testing.T) {
 		t.Errorf("key in argv: %q", plan.Argv)
 	}
 	for _, kv := range []string{
-		"ANTHROPIC_MODEL=glm[1m]", "ANTHROPIC_AUTH_TOKEN=", "ANTHROPIC_API_KEY=", "ANTHROPIC_DEFAULT_OPUS_MODEL_NAME=claude-opus (gateway)",
-		"ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION=Claude Opus via Aiven AI Gateway", "ANTHROPIC_DEFAULT_FABLE_MODEL_NAME=",
+		"ANTHROPIC_MODEL=claude-opus[1m]", "ANTHROPIC_AUTH_TOKEN=", "ANTHROPIC_API_KEY=", "ANTHROPIC_DEFAULT_OPUS_MODEL_NAME=claude-opus (gateway)",
+		"ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION=Claude Opus via Aiven AI Gateway", "ANTHROPIC_CUSTOM_MODEL_OPTION=",
 	} {
 		if !slices.Contains(plan.Env, kv) {
 			t.Errorf("env lacks %q: %q", kv, plan.Env)
@@ -675,7 +676,7 @@ func TestSetupAndLaunchTreatABlankModelAsNoChoice(t *testing.T) {
 	path := filepath.Join(in.UserHome, claude.SettingsFile)
 	write(t, path, `{"model":"[1m]"}`)
 	plan, err := claude.Setup(in)
-	if err != nil || decode(t, plan.Files[0].Data)["model"] != "glm[1m]" {
+	if err != nil || decode(t, plan.Files[0].Data)["model"] != "claude-opus[1m]" {
 		t.Errorf("blank model kept by setup: %v, %s", err, plan.Files[0].Data)
 	}
 	// Setup sets the model only when the file has none; one it cannot read as a name is the user's to fix.
@@ -683,7 +684,7 @@ func TestSetupAndLaunchTreatABlankModelAsNoChoice(t *testing.T) {
 	if plan, err := claude.Setup(
 		in,
 	); err != nil ||
-		decode(t, plan.Files[0].Data)["model"] == "glm[1m]" {
+		decode(t, plan.Files[0].Data)["model"] == "claude-opus[1m]" {
 		t.Errorf("non-string model replaced by setup: %v, %s", err, plan.Files[0].Data)
 	}
 	write(
@@ -696,7 +697,7 @@ func TestSetupAndLaunchTreatABlankModelAsNoChoice(t *testing.T) {
 	if plan, err := claude.Launch(
 		in,
 	); err != nil ||
-		!slices.Contains(plan.Env, "ANTHROPIC_MODEL=glm[1m]") {
+		!slices.Contains(plan.Env, "ANTHROPIC_MODEL=claude-opus[1m]") {
 		t.Errorf("blank model used by launch: %v, %q", err, plan.Env)
 	}
 }
@@ -709,7 +710,7 @@ func TestLaunchCarriesUsablePinsIntoTheInlineSettings(t *testing.T) {
 	}{
 		{"unusable pins", `{"model":5}`,
 			`{"env":{"ANTHROPIC_MODEL":5,"ANTHROPIC_DEFAULT_OPUS_MODEL":["gpt-sol"],"ANTHROPIC_DEFAULT_HAIKU_MODEL":null,"ANTHROPIC_DEFAULT_SONNET_MODEL":"[1m]"}}`,
-			map[string]string{"ANTHROPIC_MODEL": "glm[1m]", "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus[1m]", "ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm[1m]", "ANTHROPIC_DEFAULT_SONNET_MODEL": "glm[1m]"}},
+			map[string]string{"ANTHROPIC_MODEL": "claude-opus[1m]", "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus[1m]", "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-opus[1m]", "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-opus[1m]"}},
 		{"blank local clears shared", `{"env":{"ANTHROPIC_DEFAULT_OPUS_MODEL":"gpt-sol[1m]"}}`, `{"env":{"ANTHROPIC_DEFAULT_OPUS_MODEL":""}}`,
 			map[string]string{"ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus[1m]"}},
 		{"pin not granted", `{}`, `{"env":{"ANTHROPIC_DEFAULT_SONNET_MODEL":"ghost-9[1m]"}}`,
@@ -758,7 +759,7 @@ func TestLaunchDeclaresTheMainWindowOnlyUnderOneMillion(t *testing.T) {
 		table []models.Model
 		want  string
 	}{
-		{"262K main", []models.Model{{Alias: "glm-fast", Context: ptr(262_144)}, {Alias: "claude-opus", Context: ptr(1_000_000)}}, "CLAUDE_CODE_MAX_CONTEXT_TOKENS=262144"},
+		{"262K main", []models.Model{{Alias: "glm-fast", Context: ptr(262_144)}}, "CLAUDE_CODE_MAX_CONTEXT_TOKENS=262144"},
 		{"200K non-claude main", []models.Model{{Alias: "glm-4.7-flash", Context: ptr(200_000)}}, "CLAUDE_CODE_MAX_CONTEXT_TOKENS=200000"},
 		{"500K gateway alias", []models.Model{{Alias: "claude-opus", Context: ptr(500_000)}}, "CLAUDE_CODE_MAX_CONTEXT_TOKENS=500000"},
 		{"200K recognised main", []models.Model{{Alias: "claude-haiku-4-5", Context: ptr(200_000)}}, "CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000"},
@@ -827,6 +828,302 @@ func TestLaunchRefusesMissingWiringAndUnreadablePins(t *testing.T) {
 	}
 }
 
+func TestEffectiveResolvesLayeredModelAndSelectingPath(t *testing.T) {
+	for _, tc := range []struct {
+		name                          string
+		planned                       string
+		userSettings, proj, projLocal string
+		wantRel, wantAlias            string
+		wantInWorkDir                 bool
+	}{
+		{
+			name:         "empty and permissions-only user settings keep planned model",
+			planned:      `{"model":"glm[1m]"}`,
+			userSettings: `{"permissions":{"allow":["Bash(ls)"]}}`,
+			wantRel:      claude.SettingsFile,
+			wantAlias:    "glm",
+		},
+		{
+			name:         "user settings overrides dedicated model",
+			planned:      `{"model":"glm[1m]"}`,
+			userSettings: `{"model":"claude-retired"}`,
+			wantRel:      ".claude/settings.json",
+			wantAlias:    "claude-retired",
+		},
+		{
+			name:          "project shared and local override user model",
+			planned:       `{"model":"glm[1m]"}`,
+			userSettings:  `{"model":"claude-opus"}`,
+			proj:          `{"model":"gpt-sol"}`,
+			projLocal:     `{"model":"claude-retired[1m]"}`,
+			wantRel:       ".claude/settings.local.json",
+			wantAlias:     "claude-retired",
+			wantInWorkDir: true,
+		},
+		{
+			name:         "user ANTHROPIC_MODEL outranks project model",
+			planned:      `{"model":"glm[1m]"}`,
+			userSettings: `{"env":{"ANTHROPIC_MODEL":"claude-retired"}}`,
+			proj:         `{"model":"glm"}`,
+			wantRel:      ".claude/settings.json",
+			wantAlias:    "claude-retired",
+		},
+		{
+			name:          "blank ANTHROPIC_MODEL in local layer clears earlier pin",
+			planned:       `{"model":"glm[1m]"}`,
+			userSettings:  `{"env":{"ANTHROPIC_MODEL":"claude-retired"}}`,
+			proj:          `{"model":"claude-opus"}`,
+			projLocal:     `{"env":{"ANTHROPIC_MODEL":""}}`,
+			wantRel:       ".claude/settings.json",
+			wantAlias:     "claude-opus",
+			wantInWorkDir: true,
+		},
+		{
+			name:         "native alias resolves through its slot",
+			planned:      `{"model":"glm[1m]"}`,
+			userSettings: `{"model":"opus"}`,
+			wantRel:      ".claude/settings.json",
+			wantAlias:    "claude-opus",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			in := input(t)
+			aivenPath := filepath.Join(in.UserHome, claude.SettingsFile)
+			planned := map[string][]byte{aivenPath: []byte(tc.planned)}
+			if tc.userSettings != "" {
+				write(t, filepath.Join(in.UserHome, ".claude/settings.json"), tc.userSettings)
+			}
+			if tc.proj != "" {
+				write(t, filepath.Join(in.WorkDir, ".claude/settings.json"), tc.proj)
+			}
+			if tc.projLocal != "" {
+				write(t, filepath.Join(in.WorkDir, ".claude/settings.local.json"), tc.projLocal)
+			}
+			gotPath, gotAlias, gotSetting, err := claude.Effective(
+				in.Table,
+				in.UserHome,
+				in.WorkDir,
+				planned,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			base := in.UserHome
+			if tc.wantInWorkDir {
+				base = in.WorkDir
+			}
+			wantPath := filepath.Join(base, tc.wantRel)
+			if gotPath != wantPath || gotAlias != tc.wantAlias || gotSetting == "" {
+				t.Errorf(
+					"Effective = (%q, %q, %q), want (%q, %q, non-empty)",
+					gotPath,
+					gotAlias,
+					gotSetting,
+					wantPath,
+					tc.wantAlias,
+				)
+			}
+		})
+	}
+	t.Run("missing home fails", func(t *testing.T) {
+		if _, _, _, err := claude.Effective(granted(), "", "", nil); !errors.Is(err, config.ErrNoHome) {
+			t.Errorf("err = %v, want ErrNoHome", err)
+		}
+	})
+	t.Run("empty planned falls back to catalogue default", func(t *testing.T) {
+		in := input(t)
+		write(t, filepath.Join(in.UserHome, ".claude/settings.json"), `{}`)
+		_, alias, setting, err := claude.Effective(in.Table, in.UserHome, "", nil)
+		if err != nil || alias != "claude-opus" || setting != "" {
+			t.Errorf("Effective = (%q, %q, %v); want (claude-opus, \"\", nil)", alias, setting, err)
+		}
+	})
+	t.Run("explicit dedicated choice overrides ungranted user ANTHROPIC_MODEL", func(t *testing.T) {
+		in := input(t)
+		in.Table = []models.Model{
+			{Alias: "glm-5", Context: ptr(1_000_000)},
+			{Alias: "glm-4.7-flash", Context: ptr(200_000)},
+		}
+		write(
+			t,
+			filepath.Join(in.UserHome, ".claude/settings.json"),
+			`{"env":{"ANTHROPIC_MODEL":"claude-retired"}}`,
+		)
+		in.Default = false
+		in.Selection = harness.ModelSelection{Preset: models.PresetOpenWeight}
+		plan, err := claude.Setup(in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		write(t, plan.Files[0].Path, string(plan.Files[0].Data))
+		dedicated := decode(t, plan.Files[0].Data)
+		env, _ := dedicated["env"].(map[string]any)
+		if dedicated["model"] != "glm-5[1m]" || env["ANTHROPIC_MODEL"] != "" {
+			t.Fatalf("dedicated settings = %v, want model=glm-5[1m] and blank ANTHROPIC_MODEL", dedicated)
+		}
+		planned := map[string][]byte{plan.Files[0].Path: plan.Files[0].Data}
+		_, alias, _, err := claude.Effective(in.Table, in.UserHome, in.WorkDir, planned)
+		if err != nil || alias != "glm-5" {
+			t.Fatalf("Effective = %q, %v; want glm-5", alias, err)
+		}
+		lp, err := claude.Launch(in)
+		if err != nil {
+			t.Fatalf("Launch: %v", err)
+		}
+		if !slices.Contains(lp.Env, "ANTHROPIC_MODEL=glm-5[1m]") {
+			t.Errorf("Launch env = %v, want ANTHROPIC_MODEL=glm-5[1m]", lp.Env)
+		}
+	})
+
+	t.Run(
+		"mixed granted user model plus ungranted user env lets explicit replacement win",
+		func(t *testing.T) {
+			in := input(t)
+			in.Table = []models.Model{
+				{Alias: "gpt-6.1-sol", Context: ptr(200_000)},
+				{Alias: "glm-5", Context: ptr(1_000_000)},
+				{Alias: "glm-4.7-flash", Context: ptr(200_000)},
+			}
+			write(
+				t,
+				filepath.Join(in.UserHome, ".claude/settings.json"),
+				`{"model":"gpt-6.1-sol","env":{"ANTHROPIC_MODEL":"claude-retired"}}`,
+			)
+			in.Default = false
+			in.Selection = harness.ModelSelection{Preset: models.PresetOpenWeight}
+			plan, err := claude.Setup(in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			write(t, plan.Files[0].Path, string(plan.Files[0].Data))
+			planned := map[string][]byte{plan.Files[0].Path: plan.Files[0].Data}
+			_, alias, _, err := claude.Effective(in.Table, in.UserHome, in.WorkDir, planned)
+			if err != nil || alias != "glm-5" {
+				t.Fatalf("Effective = %q, %v; want glm-5", alias, err)
+			}
+			lp, err := claude.Launch(in)
+			if err != nil {
+				t.Fatalf("Launch: %v", err)
+			}
+			if !slices.Contains(lp.Env, "ANTHROPIC_MODEL=glm-5[1m]") {
+				t.Errorf("Launch env = %v, want ANTHROPIC_MODEL=glm-5[1m]", lp.Env)
+			}
+		},
+	)
+
+	t.Run(
+		"explicit launcher-only choice overrides granted user model while project still wins",
+		func(t *testing.T) {
+			in := input(t)
+			in.Table = []models.Model{
+				{Alias: "claude-sonnet-5-5"},
+				{Alias: "glm-5"},
+				{Alias: "gpt-6.1-sol"},
+			}
+			write(t, filepath.Join(in.UserHome, ".claude/settings.json"), `{"model":"glm-5"}`)
+			in.Default = false
+			in.Selection = harness.ModelSelection{Preset: models.PresetOpenAI}
+			plan, err := claude.Setup(in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			write(t, plan.Files[0].Path, string(plan.Files[0].Data))
+			planned := map[string][]byte{plan.Files[0].Path: plan.Files[0].Data}
+			gotPath, gotAlias, gotSetting, err := claude.Effective(
+				in.Table,
+				in.UserHome,
+				in.WorkDir,
+				planned,
+			)
+			if err != nil || gotPath != plan.Files[0].Path || gotAlias != "gpt-6.1-sol" ||
+				gotSetting != "model" {
+				t.Fatalf(
+					"Effective = (%q, %q, %q, %v), want (%q, gpt-6.1-sol, model, nil)",
+					gotPath,
+					gotAlias,
+					gotSetting,
+					err,
+					plan.Files[0].Path,
+				)
+			}
+			lp, err := claude.Launch(in)
+			if err != nil {
+				t.Fatalf("Launch: %v", err)
+			}
+			if !slices.Contains(lp.Env, "ANTHROPIC_MODEL=gpt-6.1-sol") {
+				t.Errorf("Launch env = %v, want ANTHROPIC_MODEL=gpt-6.1-sol", lp.Env)
+			}
+			// Project override remains authoritative over dedicated launcher-only choice.
+			projPath := filepath.Join(in.WorkDir, ".claude/settings.json")
+			write(t, projPath, `{"model":"claude-sonnet-5-5"}`)
+			gotPath, gotAlias, _, err = claude.Effective(in.Table, in.UserHome, in.WorkDir, planned)
+			if err != nil || gotPath != projPath || gotAlias != "claude-sonnet-5-5" {
+				t.Fatalf("Effective with project = (%q, %q, %v), want project override", gotPath, gotAlias, err)
+			}
+		},
+	)
+
+	t.Run(
+		"ProjectUngranted detects hidden project ungranted model despite user env pin",
+		func(t *testing.T) {
+			in := input(t)
+			in.Table = []models.Model{{Alias: "glm-5", Context: ptr(1_000_000)}}
+			write(
+				t,
+				filepath.Join(in.UserHome, ".claude/settings.json"),
+				`{"env":{"ANTHROPIC_MODEL":"claude-retired"}}`,
+			)
+			projLocal := filepath.Join(in.WorkDir, ".claude/settings.local.json")
+			write(t, projLocal, `{"model":"project-retired"}`)
+			gotPath, gotAlias, gotSetting, ok := claude.ProjectUngranted(
+				in.Table,
+				in.UserHome,
+				in.WorkDir,
+			)
+			if !ok || gotPath != projLocal || gotAlias != "project-retired" || gotSetting != "model" {
+				t.Fatalf(
+					"ProjectUngranted = (%q, %q, %q, %v), want (%q, project-retired, model, true)",
+					gotPath,
+					gotAlias,
+					gotSetting,
+					ok,
+					projLocal,
+				)
+			}
+		},
+	)
+
+	t.Run(
+		"ProjectUngranted excludes user settings.json when WorkDir is UserHome but keeps settings.local.json",
+		func(t *testing.T) {
+			in := input(t)
+			in.WorkDir = in.UserHome
+			in.Table = []models.Model{{Alias: "claude-sonnet-5-5"}}
+			write(t, filepath.Join(in.UserHome, ".claude/settings.json"), `{"model":"retired-model"}`)
+			if p, a, s, ok := claude.ProjectUngranted(in.Table, in.UserHome, in.WorkDir); ok {
+				t.Fatalf("ProjectUngranted from home = (%q, %q, %q, true), want false", p, a, s)
+			}
+			localPath := filepath.Join(in.UserHome, ".claude/settings.local.json")
+			write(t, localPath, `{"model":"local-retired"}`)
+			gotPath, gotAlias, gotSetting, ok := claude.ProjectUngranted(
+				in.Table,
+				in.UserHome,
+				in.WorkDir,
+			)
+			if !ok || gotPath != localPath || gotAlias != "local-retired" || gotSetting != "model" {
+				t.Fatalf(
+					"ProjectUngranted(local in home) = (%q, %q, %q, %v), want (%q, local-retired, model, true)",
+					gotPath,
+					gotAlias,
+					gotSetting,
+					ok,
+					localPath,
+				)
+			}
+		},
+	)
+}
+
 func mustJSON(t *testing.T, v any) []byte {
 	t.Helper()
 	data, err := json.Marshal(v)
@@ -834,4 +1131,195 @@ func mustJSON(t *testing.T, v any) []byte {
 		t.Fatal(err)
 	}
 	return data
+}
+
+func TestSetupWithPresetReplacesModelAndSlotsAndRecomputesWindow(t *testing.T) {
+	t.Parallel()
+	in := input(t)
+	in.Table = []models.Model{
+		{Alias: "claude-sonnet-5-5", Context: ptr(1_000_000)},
+		{Alias: "glm-5", Context: ptr(1_000_000)},
+		{Alias: "glm-4.7-flash", Context: ptr(200_000)},
+	}
+	write(t, filepath.Join(in.UserHome, claude.SettingsFile), `{
+		"permissions": {"allow": ["Bash(ls)"]},
+		"model": "claude-retired",
+		"env": {"FOO": "bar", "ANTHROPIC_MODEL": "claude-retired[1m]"}
+	}`)
+	in.Selection = harness.ModelSelection{Preset: models.PresetOpenWeight}
+	plan, err := claude.Setup(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := decode(t, plan.Files[0].Data)
+	env, _ := got["env"].(map[string]any)
+	if got["model"] != "glm-5[1m]" || env["ANTHROPIC_MODEL"] != "glm-5[1m]" ||
+		env["ANTHROPIC_DEFAULT_OPUS_MODEL"] != "glm-5[1m]" ||
+		env["ANTHROPIC_DEFAULT_SONNET_MODEL"] != "glm-5[1m]" ||
+		env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] != "glm-4.7-flash" ||
+		env["ANTHROPIC_DEFAULT_FABLE_MODEL"] != "glm-5[1m]" ||
+		env["ANTHROPIC_CUSTOM_MODEL_OPTION"] != nil ||
+		env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] != "" ||
+		env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] != "" ||
+		env["FOO"] != "bar" {
+		t.Fatalf("settings = %v", got)
+	}
+	if !reflect.DeepEqual(got["permissions"], map[string]any{"allow": []any{"Bash(ls)"}}) {
+		t.Errorf("lost permissions: %v", got["permissions"])
+	}
+}
+
+func TestSetupWithCustomModelPreservesClaudeTiersAndClearsStaleCustomOption(t *testing.T) {
+	t.Parallel()
+	in := input(t)
+	in.Table = []models.Model{
+		{Alias: "claude-opus-5-5", Context: ptr(1_000_000)},
+		{Alias: "claude-sonnet-5-5", Context: ptr(1_000_000)},
+		{Alias: "claude-haiku-5-5", Context: ptr(200_000)},
+		{Alias: "deepseek-v3.2", Context: ptr(163_840)},
+		{Alias: "gpt-6.1-sol"},
+	}
+	write(
+		t,
+		filepath.Join(in.UserHome, claude.SettingsFile),
+		`{"model":"claude-sonnet-5-5[1m]","env":{"KEEP":"1","ANTHROPIC_CUSTOM_MODEL_OPTION":"gpt-6.1-sol[1m]"}}`,
+	)
+	in.Selection = harness.ModelSelection{Model: "deepseek-v3.2"}
+	plan, err := claude.Setup(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := decode(t, plan.Files[0].Data)
+	env, _ := got["env"].(map[string]any)
+	if got["model"] != "deepseek-v3.2" ||
+		env["ANTHROPIC_MODEL"] != nil ||
+		env["ANTHROPIC_DEFAULT_OPUS_MODEL"] != "claude-opus-5-5[1m]" ||
+		env["ANTHROPIC_DEFAULT_SONNET_MODEL"] != "claude-sonnet-5-5[1m]" ||
+		env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] != "claude-haiku-5-5" ||
+		env["ANTHROPIC_DEFAULT_FABLE_MODEL"] != "claude-opus-5-5[1m]" ||
+		env["ANTHROPIC_CUSTOM_MODEL_OPTION"] != "deepseek-v3.2" ||
+		env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] != "163840" ||
+		env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] != "" ||
+		env["KEEP"] != "1" {
+		t.Fatalf("settings = %v", got)
+	}
+
+	// Recognised Claude id not in default tiers uses custom slot and CLAUDE_CODE_AUTO_COMPACT_WINDOW.
+	in.Table = append(in.Table, models.Model{Alias: "claude-opus-4-8", Context: ptr(500_000)})
+	in.Selection = harness.ModelSelection{Model: "claude-opus-4-8"}
+	plan, err = claude.Setup(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = decode(t, plan.Files[0].Data)
+	env, _ = got["env"].(map[string]any)
+	if got["model"] != "claude-opus-4-8" ||
+		env["ANTHROPIC_CUSTOM_MODEL_OPTION"] != "claude-opus-4-8" ||
+		env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] != "500000" ||
+		env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] != "" {
+		t.Fatalf("recognised custom model settings = %v", got)
+	}
+
+	// Picking a Claude model already in a tier slot removes any stale ANTHROPIC_CUSTOM_MODEL_OPTION.
+	in.Selection = harness.ModelSelection{Model: "claude-sonnet-5-5"}
+	plan, err = claude.Setup(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = decode(t, plan.Files[0].Data)
+	env, _ = got["env"].(map[string]any)
+	if got["model"] != "claude-sonnet-5-5[1m]" || env["ANTHROPIC_CUSTOM_MODEL_OPTION"] != nil {
+		t.Fatalf("expected stale custom option removed, got = %v", got)
+	}
+
+	// Switching to a preset also deletes a leftover ANTHROPIC_CUSTOM_MODEL_OPTION from disk.
+	in.Selection = harness.ModelSelection{Preset: models.PresetAnthropic}
+	plan, err = claude.Setup(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = decode(t, plan.Files[0].Data)
+	env, _ = got["env"].(map[string]any)
+	if env["ANTHROPIC_CUSTOM_MODEL_OPTION"] != nil {
+		t.Fatalf("expected preset to delete stale custom option, got = %v", got)
+	}
+
+	// Open-weight-only key (no Anthropic models granted): custom model fills tier slots cleanly.
+	in.Table = []models.Model{
+		{Alias: "deepseek-v4.1-flash", Context: ptr(128_000)},
+		{Alias: "glm-5.3", Context: ptr(200_000)},
+	}
+	in.Selection = harness.ModelSelection{Model: "glm-5.3"}
+	plan, err = claude.Setup(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = decode(t, plan.Files[0].Data)
+	env, _ = got["env"].(map[string]any)
+	if got["model"] != "glm-5.3" ||
+		env["ANTHROPIC_DEFAULT_OPUS_MODEL"] != "glm-5.3" ||
+		env["ANTHROPIC_DEFAULT_SONNET_MODEL"] != "glm-5.3" ||
+		env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] != "glm-5.3" ||
+		env["ANTHROPIC_DEFAULT_FABLE_MODEL"] != "glm-5.3" ||
+		env["ANTHROPIC_CUSTOM_MODEL_OPTION"] != nil {
+		t.Fatalf("open-weight-only custom model settings = %v", got)
+	}
+}
+
+func TestSetupCustomModelPreservesExistingGrantedClaudeTiers(t *testing.T) {
+	t.Parallel()
+	in := input(t)
+	in.Table = []models.Model{
+		{Alias: "claude-sonnet-4-5", Owner: "Anthropic"},
+		{Alias: "claude-sonnet-5-5", Owner: "Anthropic"},
+		{Alias: "glm-5", Owner: "Z.ai"},
+	}
+	write(
+		t,
+		filepath.Join(in.UserHome, claude.SettingsFile),
+		`{"env":{"ANTHROPIC_DEFAULT_SONNET_MODEL":"claude-sonnet-4-5","ANTHROPIC_DEFAULT_OPUS_MODEL":"claude-retired"}}`,
+	)
+	in.Selection = harness.ModelSelection{Model: "glm-5"}
+	plan, err := claude.Setup(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := decode(t, plan.Files[0].Data)
+	env, _ := got["env"].(map[string]any)
+	if got["model"] != "glm-5" ||
+		env["ANTHROPIC_DEFAULT_SONNET_MODEL"] != "claude-sonnet-4-5" ||
+		env["ANTHROPIC_DEFAULT_OPUS_MODEL"] != "claude-sonnet-5-5" ||
+		env["ANTHROPIC_CUSTOM_MODEL_OPTION"] != "glm-5" {
+		t.Fatalf("custom pick tier preservation = %v", got)
+	}
+}
+
+func TestSetupPresetClearsInheritedUserCustomModelOptionOnLaunch(t *testing.T) {
+	t.Parallel()
+	in := input(t)
+	in.Table = []models.Model{{Alias: "claude-sonnet-5-5"}}
+	write(
+		t,
+		filepath.Join(in.UserHome, ".claude/settings.json"),
+		`{"env":{"ANTHROPIC_CUSTOM_MODEL_OPTION":"retired-model"}}`,
+	)
+	in.Default = false
+	in.Selection = harness.ModelSelection{Preset: models.PresetAnthropic}
+	plan, err := claude.Setup(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range plan.Files {
+		write(t, f.Path, string(f.Data))
+	}
+	lp, err := claude.Launch(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(lp.Env, "ANTHROPIC_CUSTOM_MODEL_OPTION=retired-model") {
+		t.Errorf("launch reintroduced retired user custom option: %v", lp.Env)
+	}
+	if !slices.Contains(lp.Env, "ANTHROPIC_CUSTOM_MODEL_OPTION=") {
+		t.Errorf("launch missing cleared custom option: %v", lp.Env)
+	}
 }

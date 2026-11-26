@@ -61,20 +61,41 @@ func DefaultAlias(ms []Model, prefix string) string {
 	return SonnetOrFirst(ms)
 }
 
-// SonnetOrFirst returns `claude-sonnet-5-5` or `claude-sonnet` when granted, else FirstAlias.
+// SonnetOrFirst returns `claude-sonnet-5-5` or `claude-sonnet` when granted, else the Anthropic, OpenAI,
+// Gemini or Open-weight preference order, else FirstAlias.
 func SonnetOrFirst(ms []Model) string {
-	if a := FirstGranted(ms, "claude-sonnet-5-5", "claude-sonnet"); a != "" {
+	if a := FirstGranted(
+		ms,
+		"claude-sonnet-5-5",
+		"claude-sonnet",
+		"claude-sonnet-5",
+		"claude-sonnet-4-6",
+		"claude-sonnet-4-5",
+	); a != "" {
 		return a
 	}
-	return FirstAlias(ms)
+	if p, ok := FindPreset(ms, PresetAnthropic); ok {
+		return p.Main
+	}
+	if p, ok := FindPreset(ms, PresetOpenAI); ok {
+		return p.Main
+	}
+	if p, ok := FindPreset(ms, PresetGemini); ok {
+		return p.Main
+	}
+	return OpenWeightOrFirst(ms)
 }
 
-// CodexOrFirst returns production `gpt-6.1-sol` or `gpt-6-sol` when granted, else DefaultAlias for `gpt-`.
+// CodexOrFirst returns production `gpt-6.1-sol` or `gpt-6-sol` when granted, else an OpenAI non-gpt-oss alias,
+// else SonnetOrFirst.
 func CodexOrFirst(ms []Model) string {
 	if a := FirstGranted(ms, "gpt-6.1-sol", "gpt-6-sol"); a != "" {
 		return a
 	}
-	return DefaultAlias(ms, "gpt-")
+	if a := openAIMain(ms); a != "" {
+		return a
+	}
+	return SonnetOrFirst(ms)
 }
 
 // FirstNotIn returns the first non-router alias in sorted order not in used, else FirstAlias.

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aiven-open/ai-gateway-cli/internal/config"
+	"github.com/aiven-open/ai-gateway-cli/internal/harness"
 	"github.com/aiven-open/ai-gateway-cli/internal/models"
 )
 
@@ -22,12 +24,16 @@ func TestEarlyHelpPlainFlagBoundaryGrid(t *testing.T) {
 	Informational(nil, nil, Deps{Stdout: &reference})
 	for _, command := range []string{"login", "setup", "launch"} {
 		for _, help := range []string{"-h", "--help"} {
-			for _, args := range [][]string{
+			cases := [][]string{
 				{command, "--plain", help},
 				{command, help, "--plain"},
-				{command, "claude", "--plain", help},
+				{command, "--plain", help, "claude"},
 				{command, help, "--plain", "--", "--plain"},
-			} {
+			}
+			if command != "launch" {
+				cases = append(cases, []string{command, "claude", "--plain", help})
+			}
+			for _, args := range cases {
 				for _, stdoutTTY := range []bool{false, true} {
 					var out, errOut bytes.Buffer
 					handled, code := Informational(args, []string{"TERM=xterm-256color"}, Deps{
@@ -50,6 +56,7 @@ func TestEarlyHelpPlainFlagBoundaryGrid(t *testing.T) {
 	}
 	for _, args := range [][]string{
 		{"launch", "--help", "--", "--plain"},
+		{"launch", "--help", "claude", "--plain"},
 		{"help", "--", "--plain"},
 	} {
 		var out bytes.Buffer
@@ -58,14 +65,21 @@ func TestEarlyHelpPlainFlagBoundaryGrid(t *testing.T) {
 			t.Fatalf("native-side --plain changed launcher help: %q: %q", args, out.String())
 		}
 	}
-	var out bytes.Buffer
-	handled, code := Informational(
-		[]string{"launch", "claude", "--", "--plain", "--help"},
-		nil,
-		Deps{Stdout: &out},
-	)
-	if handled || code != 0 || out.Len() != 0 {
-		t.Fatalf("native help intercepted: handled=%v code=%d out=%q", handled, code, out.String())
+	for _, args := range [][]string{
+		{"launch", "claude", "--", "--plain", "--help"},
+		{"launch", "claude", "--plain", "--help"},
+	} {
+		var out bytes.Buffer
+		handled, code := Informational(args, nil, Deps{Stdout: &out})
+		if handled || code != 0 || out.Len() != 0 {
+			t.Fatalf(
+				"%q: native help intercepted: handled=%v code=%d out=%q",
+				args,
+				handled,
+				code,
+				out.String(),
+			)
+		}
 	}
 }
 
@@ -111,7 +125,16 @@ func TestCommandRenderingEquivalenceGrid(t *testing.T) {
 				for _, colored := range []bool{false, true} {
 					var out bytes.Buffer
 					u := newUI(&out, colored, nil, !colored)
-					u.command(0, directCommand(tool, []models.Model{{Alias: id}}, false))
+					u.command(
+						0,
+						directCommand(
+							config.Env{},
+							tool,
+							[]models.Model{{Alias: id}},
+							false,
+							harness.ModelSelection{},
+						),
+					)
 					if out.Len() != 0 {
 						t.Fatalf(
 							"%s/color=%v/control=%q advertised altered command %q",
@@ -139,7 +162,16 @@ func TestCommandRenderingEquivalenceGrid(t *testing.T) {
 					for _, colored := range []bool{false, true} {
 						var out bytes.Buffer
 						u := newUI(&out, colored, nil, !colored)
-						u.command(0, directCommand(tool, []models.Model{{Alias: id}}, false))
+						u.command(
+							0,
+							directCommand(
+								config.Env{},
+								tool,
+								[]models.Model{{Alias: id}},
+								false,
+								harness.ModelSelection{},
+							),
+						)
 						printed := style.ReplaceAllString(out.String(), "")
 						if printed == "" {
 							t.Fatalf("printable token %q had no command", id)

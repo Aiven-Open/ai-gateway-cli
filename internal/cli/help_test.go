@@ -15,15 +15,16 @@ const plainHelp = `usage: aiven-ai-gateway <command> [args]
 
 Commands
   setup [harness] [--key-stdin] [-y|--yes] [--plain]
-      Check a key, save it, then preview and approve each tool's configuration.
+      Check a key, choose models, preview and approve changes, then save and write.
       List models; send one minimal request per configured protocol and model.
       These basic checks may incur usage; they do not test native tool requests.
-      Never starts a session. Without a harness, a terminal offers a list of tools.
-      At each preview: Enter or y applies, n declines that tool, v shows the full
-      redacted diff and asks again. Enter and --yes keep native defaults unchanged.
-  launch [harness] [--plain] [-- native args]
+      Never starts a session. Without a harness, a terminal offers installed tools.
+      Interactive steps support Esc / Shift+Tab to go back before saving.
+      Interactive setup sets Aiven as default; --yes leaves tool defaults unchanged.
+  launch [--plain] [harness] [--] [native args]
       Start one configured tool. Setup is required first; launch writes no
       configuration. Without a harness, a terminal offers one installed tool.
+      Arguments after the harness (or after -- when picking) are forwarded literally.
   login
       Check that a key can list models, then save it. Sends no test request and
       configures no tool.
@@ -40,7 +41,7 @@ Output
   next steps go to stderr. --plain, NO_COLOR or TERM=dumb use numbered prompts
   with no colour or cursor motion. Help needs no credentials or configuration.
   --version prints build metadata without reading credentials or configuration.
-  Native arguments must follow -- and are forwarded literally.
+  Native launch arguments after a harness (or after --) are forwarded literally.
 `
 
 var escapes = regexp.MustCompile("\x1b\\[[0-9;]*m")
@@ -56,6 +57,8 @@ func TestHelpIsStyledOnlyOnAStdoutTerminal(t *testing.T) {
 	}{
 		{name: "redirected", term: cli.Terminal{StdinTTY: true, StderrTTY: true}},
 		{name: "stdout terminal", term: cli.Terminal{StdoutTTY: true}, styled: true},
+		{name: "legacy console without VT", term: cli.Terminal{StdoutTTY: true, StderrTTY: true, NoVT: true}},
+		{name: "stdout-only legacy console without VT", term: cli.Terminal{StdoutTTY: true, StdoutNoVT: true}},
 		{name: "NO_COLOR", term: cli.Terminal{StdoutTTY: true}, environ: []string{"NO_COLOR=1"}},
 		{name: "TERM=dumb", term: cli.Terminal{StdoutTTY: true}, environ: []string{"TERM=dumb"}},
 		{name: "empty NO_COLOR", term: cli.Terminal{StdoutTTY: true}, environ: []string{"NO_COLOR="}, styled: true},

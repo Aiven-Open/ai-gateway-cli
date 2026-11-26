@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/aiven-open/ai-gateway-cli/internal/config"
 	"github.com/aiven-open/ai-gateway-cli/internal/creds"
@@ -68,8 +69,11 @@ func Setup(in harness.Input) (harness.Plan, error) {
 	if _, ok := cfg["$schema"]; !ok {
 		cfg["$schema"] = "https://opencode.ai/config.json"
 	}
+	if _, err := in.Selection.ResolveMain(in.Table); err != nil {
+		return harness.Plan{}, err
+	}
 	if in.Default {
-		cfg["model"] = Model(in.Table)
+		cfg["model"] = ModelFor(in.Table, in.Selection)
 	}
 	data, err := harness.Edit(path, src, cfg)
 	if err != nil {
@@ -112,13 +116,75 @@ var reference = regexp.MustCompile(`^\{(?:env:[A-Za-z_][A-Za-z0-9_]*|file:[^{}\s
 // Reference reports whether value is an OpenCode substitution, which names the variable or file holding a key.
 func Reference(_, value string) bool { return reference.MatchString(value) }
 
-// Model is the -m value that picks the gateway's default alias.
-func Model(table []models.Model) string { return "aiven/" + models.SonnetOrFirst(table) }
+// ModelFor returns the -m value for sel against table, falling back to SonnetOrFirst.
+func ModelFor(table []models.Model, sel harness.ModelSelection) string {
+	return "aiven/" + harness.AliasFor(table, sel)
+}
 
-// Launch selects the configured provider/model when there are no native args, passes native args unchanged, and
-// leaves the native configuration tree untouched.
+// Model is the -m value that picks the gateway's default alias.
+func Model(table []models.Model) string { return ModelFor(table, harness.ModelSelection{}) }
+
+// takesValue reports OpenCode CLI flags whose next argument is a value rather than a subcommand.
+func takesValue(flag string) bool {
+	switch flag {
+	case "--prompt", "--log-level", "--port", "--hostname", "--session", "-s",
+		"--agent", "--title", "--format", "--file", "-f", "--attach", "--variant", "--dir":
+		return true
+	}
+	return false
+}
+
+// ModelArgs injects -m model for OpenCode interactive launches (including a positional project path or
+// options such as --prompt) and `run`, unless a model, provider, help/version flag or management subcommand is given.
+func ModelArgs(args []string, model string) []string {
+	if len(args) == 0 {
+		return []string{"-m", model}
+	}
+	if args[0] == "--" {
+		return args
+	}
+	insertAt := 0
+	foundPositional := false
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			break
+		}
+		if harness.IsModelOrMetaFlag(a) {
+			return args
+		}
+		if strings.HasPrefix(a, "-") {
+			if takesValue(a) && i+1 < len(args) {
+				i++
+			}
+			continue
+		}
+		if foundPositional {
+			continue
+		}
+		foundPositional = true
+		if a == "run" {
+			insertAt = i + 1
+			continue
+		}
+		switch a {
+		case "auth", "models", "serve", "acp", "agent", "attach", "completion", "db", "debug",
+			"export", "generate", "github", "help", "import", "mcp", "pr", "session", "stats",
+			"uninstall", "upgrade", "web":
+			return args
+		}
+	}
+	out := make([]string, 0, len(args)+2)
+	out = append(out, args[:insertAt]...)
+	out = append(out, "-m", model)
+	return append(out, args[insertAt:]...)
+}
+
+// Launch selects the configured (or persisted setup) provider/model when there are no native args, passes native args
+// unchanged, and leaves the native configuration tree untouched.
 func Launch(in harness.Input) (harness.Plan, error) {
-	args := harness.ModelArgs(in.Args, Model(in.Table), "-m")
+	alias := harness.AliasFor(in.Table, in.Selection)
+	args := ModelArgs(in.Args, "aiven/"+alias)
 	if len(args) != len(in.Args) {
 		if in.UserHome == "" {
 			return harness.Plan{}, config.ErrNoHome
@@ -134,7 +200,7 @@ func Launch(in harness.Input) (harness.Plan, error) {
 		providers, _ := cfg["provider"].(map[string]any)
 		p, _ := providers["aiven"].(map[string]any)
 		list, _ := p["models"].(map[string]any)
-		if list[models.SonnetOrFirst(in.Table)] == nil {
+		if list[alias] == nil {
 			return harness.Plan{}, errors.New(
 				"selected default is absent from the configured catalogue; refresh with setup",
 			)

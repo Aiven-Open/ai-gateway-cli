@@ -200,8 +200,10 @@ func TestLaunchAddsTheDefaultModelUnlessTheArgsChooseOne(t *testing.T) {
 	setUp(t, in)
 	for _, tc := range []struct{ args, want []string }{
 		{nil, []string{"opencode", "-m", "aiven/claude-sonnet"}},
-		{[]string{"."}, []string{"opencode", "."}},
-		{[]string{"run", "hi"}, []string{"opencode", "run", "hi"}},
+		{[]string{"."}, []string{"opencode", "-m", "aiven/claude-sonnet", "."}},
+		{[]string{"--prompt", "models"}, []string{"opencode", "-m", "aiven/claude-sonnet", "--prompt", "models"}},
+		{[]string{"run", "hi"}, []string{"opencode", "run", "-m", "aiven/claude-sonnet", "hi"}},
+		{[]string{"run", "--pure", "hi"}, []string{"opencode", "run", "-m", "aiven/claude-sonnet", "--pure", "hi"}},
 		{[]string{"--log-level", "INFO", "models", "aiven"}, []string{"opencode", "--log-level", "INFO", "models", "aiven"}},
 		{[]string{"--model=aiven/glm"}, []string{"opencode", "--model=aiven/glm"}},
 		{[]string{"auth", "login"}, []string{"opencode", "auth", "login"}},
@@ -396,5 +398,61 @@ func TestReadyAndLaunchRefuseAMissingHome(t *testing.T) {
 	in.UserHome = ""
 	if _, err := opencode.Launch(in); err == nil || !errors.Is(err, config.ErrNoHome) {
 		t.Errorf("Launch without a home: %v", err)
+	}
+}
+
+func TestSetupAndModelForUseExplicitSelection(t *testing.T) {
+	t.Parallel()
+	in := input(t)
+	in.Table = append(in.Table, models.Model{Alias: "glm-5"})
+	sel := harness.ModelSelection{Preset: models.PresetOpenWeight}
+	if got := opencode.ModelFor(in.Table, sel); got != "aiven/glm-5" {
+		t.Fatalf("ModelFor(preset) = %q, want aiven/glm-5", got)
+	}
+	in.Default = true
+	in.Selection = harness.ModelSelection{Model: "gpt-sol"}
+	if got := opencode.ModelFor(in.Table, in.Selection); got != "aiven/gpt-sol" {
+		t.Fatalf("ModelFor(custom) = %q, want aiven/gpt-sol", got)
+	}
+	if got := setUp(t, in); got["model"] != "aiven/gpt-sol" {
+		t.Fatalf("opencode.json model = %v", got["model"])
+	}
+	lp, err := opencode.Launch(in)
+	if err != nil || !slices.Equal(lp.Argv, []string{"opencode", "-m", "aiven/gpt-sol"}) {
+		t.Fatalf("Launch(selected) = %v, %v", lp.Argv, err)
+	}
+	in.Selection = harness.ModelSelection{Model: "retired-model"}
+	lp, err = opencode.Launch(in)
+	if err != nil || !slices.Equal(lp.Argv, []string{"opencode", "-m", "aiven/claude-sonnet"}) {
+		t.Fatalf("Launch(ungranted fallback) = %v, %v", lp.Argv, err)
+	}
+	in.Selection = harness.ModelSelection{Model: "gpt-sol"}
+	in.Args = []string{"-m", "aiven/glm"}
+	lp, err = opencode.Launch(in)
+	if err != nil || !slices.Equal(lp.Argv, []string{"opencode", "-m", "aiven/glm"}) {
+		t.Fatalf("Launch(native args) = %v, %v", lp.Argv, err)
+	}
+}
+
+func TestModelArgsInjectsUnlessExplicitModelMetaOrSubcommand(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ args, want []string }{
+		{nil, []string{"-m", "m"}},
+		{[]string{"run", "--pure", "hi"}, []string{"run", "-m", "m", "--pure", "hi"}},
+		{[]string{"run", "-m", "other/x", "hi"}, []string{"run", "-m", "other/x", "hi"}},
+		{[]string{"run", "hi", "--", "-m", "other/x"}, []string{"run", "-m", "m", "hi", "--", "-m", "other/x"}},
+		{[]string{"--continue"}, []string{"-m", "m", "--continue"}},
+		{[]string{"/tmp/project"}, []string{"-m", "m", "/tmp/project"}},
+		{[]string{"/tmp/project", "-m", "other/x"}, []string{"/tmp/project", "-m", "other/x"}},
+		{[]string{"--prompt", "models"}, []string{"-m", "m", "--prompt", "models"}},
+		{[]string{"--log-level", "INFO", "models", "aiven"}, []string{"--log-level", "INFO", "models", "aiven"}},
+		{[]string{"models"}, []string{"models"}},
+		{[]string{"auth", "list"}, []string{"auth", "list"}},
+		{[]string{"--help"}, []string{"--help"}},
+		{[]string{"--", "--model"}, []string{"--", "--model"}},
+	} {
+		if got := opencode.ModelArgs(tc.args, "m"); !slices.Equal(got, tc.want) {
+			t.Errorf("ModelArgs(%q) = %q, want %q", tc.args, got, tc.want)
+		}
 	}
 }

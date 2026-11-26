@@ -75,7 +75,13 @@ func Setup(in harness.Input) (harness.Plan, error) {
 	if err := wireProvider(profile, profilePath, provider); err != nil {
 		return harness.Plan{}, err
 	}
-	if model, _ := profile["model"].(string); model == "" {
+	chosen, err := in.Selection.ResolveMain(in.Table)
+	if err != nil {
+		return harness.Plan{}, err
+	}
+	if chosen != "" {
+		profile["model"] = chosen
+	} else if model, _ := profile["model"].(string); model == "" {
 		profile["model"] = models.CodexOrFirst(in.Table)
 	}
 	profile["model_provider"] = "aiven"

@@ -256,7 +256,7 @@ func TestLaunchAddsTheDefaultModelOnlyWithoutNativeArgs(t *testing.T) {
 	setUp(t, in)
 	for _, tc := range []struct{ args, want []string }{
 		{nil, []string{"omp", "--model", "aiven/claude-sonnet"}},
-		{[]string{"-p", "hi"}, []string{"omp", "-p", "hi"}},
+		{[]string{"-p", "hi"}, []string{"omp", "--model", "aiven/claude-sonnet", "-p", "hi"}},
 		{[]string{"commit"}, []string{"omp", "commit"}},
 		{[]string{"-m", "aiven/glm"}, []string{"omp", "-m", "aiven/glm"}},
 		{[]string{"plugin", "list"}, []string{"omp", "plugin", "list"}},
@@ -343,5 +343,42 @@ func TestReadyAndLaunchRefuseAMissingHome(t *testing.T) {
 	in.UserHome = ""
 	if _, err := omp.Launch(in); err == nil || !errors.Is(err, config.ErrNoHome) {
 		t.Errorf("Launch without a home: %v", err)
+	}
+}
+
+func TestSetupAndModelForUseExplicitSelection(t *testing.T) {
+	t.Parallel()
+	in := input(t)
+	in.Table = append(in.Table, models.Model{Alias: "glm-5"})
+	sel := harness.ModelSelection{Preset: models.PresetOpenWeight}
+	if got := omp.ModelFor(in.Table, sel); got != "aiven/glm-5" {
+		t.Fatalf("ModelFor(preset) = %q, want aiven/glm-5", got)
+	}
+	in.Default = true
+	in.Selection = harness.ModelSelection{Model: "gpt-sol"}
+	if got := omp.ModelFor(in.Table, in.Selection); got != "aiven/gpt-sol" {
+		t.Fatalf("ModelFor(custom) = %q, want aiven/gpt-sol", got)
+	}
+	plan := setUp(t, in)
+	if got := decode(
+		t,
+		plan.Files[1],
+	); got["modelRoles"].(map[string]any)["default"] != "aiven/gpt-sol" {
+		t.Fatalf("config.yml = %v", got)
+	}
+	lp, err := omp.Launch(in)
+	if err != nil || !slices.Equal(lp.Argv, []string{"omp", "--model", "aiven/gpt-sol"}) {
+		t.Fatalf("Launch(selected) = %v, %v", lp.Argv, err)
+	}
+	in.Selection = harness.ModelSelection{Model: "retired-model"}
+	lp, err = omp.Launch(in)
+	if err != nil || !slices.Equal(lp.Argv, []string{"omp", "--model", "aiven/claude-sonnet"}) {
+		t.Fatalf("Launch(ungranted fallback) = %v, %v", lp.Argv, err)
+	}
+	in.Selection = harness.ModelSelection{Model: "gpt-sol"}
+	in.Args = []string{"--model", "aiven/glm"}
+	lp, err = omp.Launch(in)
+	if err != nil || !slices.Equal(lp.Argv, []string{"omp", "--model", "aiven/glm"}) {
+		t.Fatalf("Launch(native args) = %v, %v", lp.Argv, err)
 	}
 }

@@ -14,6 +14,9 @@ import (
 
 // Run executes one invocation and returns the process exit code.
 func Run(ctx context.Context, args []string, env config.Env, deps Deps) int {
+	if !deps.Term.NoVT {
+		defer enableOutputVT(deps.Stdout, deps.Stderr)()
+	}
 	if handled, code := Informational(args, env.Environ, deps); handled {
 		return code
 	}
@@ -39,6 +42,9 @@ func Run(ctx context.Context, args []string, env config.Env, deps Deps) int {
 // Informational handles help and rejects malformed invocations before configuration, cwd or credential access.
 // environ is read only for NO_COLOR and TERM.
 func Informational(args, environ []string, deps Deps) (bool, int) {
+	if !deps.Term.NoVT {
+		defer enableOutputVT(deps.Stdout, deps.Stderr)()
+	}
 	presentation, _, _ := splitNative(args)
 	plain := slices.Contains(presentation, "--plain")
 	if len(args) == 0 || slices.Contains([]string{"help", "-h", "--help"}, args[0]) {
@@ -69,7 +75,13 @@ func Informational(args, environ []string, deps Deps) (bool, int) {
 	if !slices.Contains([]string{"launch", "setup", "login", "logout", "models"}, cmd) {
 		return true, fail(deps, "unknown command. Run: aiven-ai-gateway --help")
 	}
-	before, _, _ := splitNative(args[1:])
+	var before []string
+	if cmd == "launch" {
+		before, _, _ = splitLaunch(args[1:])
+		plain = slices.Contains(before, "--plain")
+	} else {
+		before, _, _ = splitNative(args[1:])
+	}
 	for _, a := range before {
 		if a == "--help" || a == "-h" {
 			writeHelp(deps, environ, plain)
@@ -128,17 +140,22 @@ type helpCommand struct {
 }
 
 var helpCommands = []helpCommand{
-	{"setup", "[harness] [--key-stdin] [-y|--yes] [--plain]", []string{
-		"Check a key, save it, then preview and approve each tool's configuration.",
-		"List models; send one minimal request per configured protocol and model.",
-		"These basic checks may incur usage; they do not test native tool requests.",
-		"Never starts a session. Without a harness, a terminal offers a list of tools.",
-		"At each preview: Enter or y applies, n declines that tool, v shows the full",
-		"redacted diff and asks again. Enter and --yes keep native defaults unchanged.",
-	}},
-	{"launch", "[harness] [--plain] [-- native args]", []string{
+	{
+		"setup",
+		"[harness] [--key-stdin] [-y|--yes] [--plain]",
+		[]string{
+			"Check a key, choose models, preview and approve changes, then save and write.",
+			"List models; send one minimal request per configured protocol and model.",
+			"These basic checks may incur usage; they do not test native tool requests.",
+			"Never starts a session. Without a harness, a terminal offers installed tools.",
+			"Interactive steps support Esc / Shift+Tab to go back before saving.",
+			"Interactive setup sets Aiven as default; --yes leaves tool defaults unchanged.",
+		},
+	},
+	{"launch", "[--plain] [harness] [--] [native args]", []string{
 		"Start one configured tool. Setup is required first; launch writes no",
 		"configuration. Without a harness, a terminal offers one installed tool.",
+		"Arguments after the harness (or after -- when picking) are forwarded literally.",
 	}},
 	{"login", "", []string{
 		"Check that a key can list models, then save it. Sends no test request and",
@@ -156,12 +173,18 @@ var helpOutput = []string{
 	"next steps go to stderr. --plain, NO_COLOR or TERM=dumb use numbered prompts",
 	"with no colour or cursor motion. Help needs no credentials or configuration.",
 	"--version prints build metadata without reading credentials or configuration.",
-	"Native arguments must follow -- and are forwarded literally.",
+	"Native launch arguments after a harness (or after --) are forwarded literally.",
 }
 
 // writeHelp styles only terminal stdout when neither the launcher flag nor the environment requests plain text.
 func writeHelp(deps Deps, environ []string, plain bool) {
-	u := newUI(deps.Stdout, deps.Term.StdoutTTY, nil, plain || plainRequested(environ))
+	stdoutPlain := deps.Term.NoVT || deps.Term.StdoutNoVT
+	u := newUI(
+		deps.Stdout,
+		deps.Term.StdoutTTY && !stdoutPlain,
+		nil,
+		plain || stdoutPlain || plainRequested(environ),
+	)
 	u.printf("%s aiven-ai-gateway <command> [args]\n", u.paint(bold, "usage:"))
 	u.heading("Commands")
 	for _, c := range helpCommands {

@@ -115,10 +115,10 @@ func TestSetupEnvironmentKeyConsentDecisions(t *testing.T) {
 				secretErr: tc.secretErr,
 			}
 			p.onLine = func(prompt string) {
-				if want := "Use this key with " + g.URL + "? [y/N] "; prompt != want {
+				if want := "Choose key option (Enter for 2): "; prompt != want {
 					t.Errorf("prompt = %q, want %q", prompt, want)
 				}
-				for _, want := range []string{"Gateway: " + g.URL, "Key source: " + creds.EnvVar, "Key: AVNS_…wxyz"} {
+				for _, want := range []string{"Gateway: " + g.URL, "Key source: " + creds.EnvVar, "Key: AVNS_…wxyz", "Use this key with " + g.URL + "?"} {
 					if !strings.Contains(s.errb.String(), want) {
 						t.Errorf("before prompt, stderr lacks %q", want)
 					}
@@ -207,7 +207,7 @@ func TestSetupConfirmsEnvironmentKeyForHostedDefault(t *testing.T) {
 	})}
 	p := &consentPrompter{answers: []string{"y"}}
 	p.onLine = func(prompt string) {
-		if prompt != "Use this key with "+config.DefaultBaseURL+"? [y/N] " || len(g.journal()) != 0 {
+		if prompt != "Choose key option (Enter for 2): " || len(g.journal()) != 0 {
 			t.Fatalf("prompt %q or requests before consent", prompt)
 		}
 	}

@@ -139,8 +139,9 @@ func TestMalformedInvocationsAreRefusedWithoutEcho(t *testing.T) {
 		{[]string{"login", "sk-pasted"}, "login: unexpected argument. Run: aiven-ai-gateway --help"},
 		{[]string{"logout", "now"}, "logout: unexpected argument. Run: aiven-ai-gateway --help"},
 		{[]string{"models", "--all"}, "models: unexpected argument. Run: aiven-ai-gateway --help"},
-		{[]string{"launch", "pi", "codex"}, "launch: name one harness and put native arguments after --. Run: aiven-ai-gateway launch --help"},
-		{[]string{"launch", "pi", "--model", "x"}, "launch: name one harness and put native arguments after --. Run: aiven-ai-gateway launch --help"},
+		{[]string{"launch", "unknown-tool"}, "launch: pass launcher flags before one harness, or put native arguments after -- when picking a harness. Run: aiven-ai-gateway launch --help"},
+		{[]string{"launch", "--model", "x"}, "launch: pass launcher flags before one harness, or put native arguments after -- when picking a harness. Run: aiven-ai-gateway launch --help"},
+		{[]string{"launch", "--key=sk-pasted", "claude"}, "launch: pass launcher flags before one harness, or put native arguments after -- when picking a harness. Run: aiven-ai-gateway launch --help"},
 		{[]string{"launch"}, "launch: a harness is required without a terminal"},
 		{[]string{"setup", "pi", "codex"}, "setup: unexpected argument. Run: aiven-ai-gateway setup --help"},
 		{[]string{"setup", "--key=sk-pasted"}, "do not pass API keys on the command line; use --key-stdin or interactive prompt"},
@@ -165,7 +166,15 @@ func TestMalformedInvocationsAreRefusedWithoutEcho(t *testing.T) {
 			)
 		}
 	}
-	for _, args := range [][]string{{"--version"}, {"version"}, {"launch", "pi", "--", "--help"}, {"setup", "pi"}, {"login"}} {
+	for _, args := range [][]string{
+		{"--version"},
+		{"version"},
+		{"launch", "pi", "--", "--help"},
+		{"launch", "pi", "--help"},
+		{"launch", "claude", "--dangerously-skip-permissions"},
+		{"setup", "pi"},
+		{"login"},
+	} {
 		var out, errb bytes.Buffer
 		if handled, _ := cli.Informational(
 			args,

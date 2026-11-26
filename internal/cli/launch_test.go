@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -87,14 +88,68 @@ func TestLaunchAnnouncesOnlyTheCatalogueAndTheStart(t *testing.T) {
 }
 
 func TestLaunchPlainFlagIsAcceptedAndNotForwarded(t *testing.T) {
-	s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid).configured("pi")
-	r := s.run("launch", "--plain", "pi", "--", "--plain")
-	if r.code != 0 || len(s.runner.calls) != 1 {
-		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
+	for _, args := range [][]string{
+		{"launch", "--plain", "pi", "--", "--plain"},
+		{"launch", "--plain", "pi", "--plain"},
+	} {
+		s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid).configured("pi")
+		r := s.run(args...)
+		if r.code != 0 || len(s.runner.calls) != 1 {
+			t.Fatalf("%q: exit %d, stderr %q", args, r.code, r.stderr)
+		}
+		argv := s.runner.calls[0].argv
+		if argv[len(argv)-1] != "--plain" || len(argv) > 1 && argv[len(argv)-2] == "--plain" {
+			t.Errorf("%q: argv %q, want only the native --plain forwarded", args, argv)
+		}
 	}
-	argv := s.runner.calls[0].argv
-	if argv[len(argv)-1] != "--plain" || len(argv) > 1 && argv[len(argv)-2] == "--plain" {
-		t.Errorf("argv %q, want only the native --plain forwarded", argv)
+}
+
+func TestLaunchForwardsNativeArgsDirectlyAfterHarnessAndKeepsSeparatorCompatible(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{
+			name: "direct flag after harness",
+			args: []string{"launch", "claude", "--dangerously-skip-permissions"},
+			want: []string{"--dangerously-skip-permissions"},
+		},
+		{
+			name: "separator still accepted after harness",
+			args: []string{"launch", "claude", "--", "--dangerously-skip-permissions"},
+			want: []string{"--dangerously-skip-permissions"},
+		},
+		{
+			name: "double separator preserves inner -- for native tool",
+			args: []string{"launch", "claude", "--", "--", "-x"},
+			want: []string{"--", "-x"},
+		},
+		{
+			name: "inner -- in native args stays intact",
+			args: []string{"launch", "claude", "-p", "--", "-not-a-flag"},
+			want: []string{"-p", "--", "-not-a-flag"},
+		},
+		{
+			name: "trailing -- produces no extra native arg",
+			args: []string{"launch", "claude", "--"},
+			want: nil,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid).configured("claude")
+			r := s.run(tc.args...)
+			if r.code != 0 || len(s.runner.calls) != 1 {
+				t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
+			}
+			// Claude launch prefixes ["claude", "--settings", "<json>"].
+			got := s.runner.calls[0].argv[3:]
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("forwarded = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -512,7 +567,7 @@ func TestLaunchRefusesAToolWhoseConfigIsMoved(t *testing.T) {
 			before := len(g.journal())
 			s.env.Environ = append(s.env.Environ, name+"="+filepath.Join(s.fakeHome, "elsewhere"))
 			r := s.run("launch", h)
-			want := "aiven-ai-gateway: " + name + " is set, so " + h + " would not read the config aiven-ai-gateway writes; unset it and rerun, or configure " + h + " by hand\n"
+			want := "aiven-ai-gateway: " + name + " is set, so " + h + " would not read the config aiven-ai-gateway writes; clear " + name + " in your environment and rerun, or configure " + h + " by hand\n"
 			if r.code != 1 || r.stderr != want || len(s.runner.calls) != 0 || len(g.journal()) != before {
 				t.Fatalf(
 					"exit %d, stderr %q, exec'd %v, %d gateway requests",
@@ -619,5 +674,64 @@ func TestOpencodeLaunchNeedsTheKeyFile(t *testing.T) {
 	}
 	if len(s.runner.calls) != 0 || len(g.journal()) != before {
 		t.Errorf("exec'd %v, %d gateway requests", s.runner.calls, len(g.journal())-before)
+	}
+}
+
+func TestLaunchUsesPersistedModelPrefsAndFallsBackWhenUngranted(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		tool, flag string
+	}{
+		{"pi", "--model"},
+		{"opencode", "-m"},
+		{"omp", "--model"},
+	} {
+		t.Run(tc.tool, func(t *testing.T) {
+			t.Parallel()
+			g := newGatewayDouble(t)
+			s := newSession(t, g).loggedIn(keyValid).configured(tc.tool)
+			if err := config.SaveModelPrefs(
+				s.fakeHome,
+				s.env.BaseURL,
+				map[string]string{tc.tool: "glm"},
+				nil,
+			); err != nil {
+				t.Fatal(err)
+			}
+			if r := s.run("launch", tc.tool); r.code != 0 {
+				t.Fatalf("launch persisted: exit %d, stderr %q", r.code, r.stderr)
+			}
+			if got := s.runner.calls[0].argv; !slices.Equal(got, []string{tc.tool, tc.flag, "aiven/glm"}) {
+				t.Fatalf("argv = %v, want [%s %s aiven/glm]", got, tc.tool, tc.flag)
+			}
+			// Explicit native model flag overrides persisted preference.
+			if r := s.run("launch", tc.tool, "--", tc.flag, "aiven/gpt-sol"); r.code != 0 {
+				t.Fatalf("launch native override: exit %d, stderr %q", r.code, r.stderr)
+			}
+			if got := s.runner.calls[1].argv; !slices.Equal(
+				got,
+				[]string{tc.tool, tc.flag, "aiven/gpt-sol"},
+			) {
+				t.Fatalf("argv override = %v", got)
+			}
+			// Ungranted persisted alias falls back cleanly to SonnetOrFirst.
+			if err := config.SaveModelPrefs(
+				s.fakeHome,
+				s.env.BaseURL,
+				map[string]string{tc.tool: "retired-alias"},
+				nil,
+			); err != nil {
+				t.Fatal(err)
+			}
+			if r := s.run("launch", tc.tool); r.code != 0 {
+				t.Fatalf("launch fallback: exit %d, stderr %q", r.code, r.stderr)
+			}
+			if got := s.runner.calls[2].argv; !slices.Equal(
+				got,
+				[]string{tc.tool, tc.flag, "aiven/claude-sonnet"},
+			) {
+				t.Fatalf("argv fallback = %v, want claude-sonnet", got)
+			}
+		})
 	}
 }
