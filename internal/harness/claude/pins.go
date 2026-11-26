@@ -124,6 +124,17 @@ func layerSelectsModel(settings map[string]any) bool {
 	return bare(v) != ""
 }
 
+// layerPinsTier reports whether settings sets a non-blank tier slot variable.
+func layerPinsTier(settings map[string]any) bool {
+	env, _ := settings["env"].(map[string]any)
+	for _, v := range tierVars {
+		if s, ok := env[v].(string); ok && bare(s) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // layerHasCustomOption reports whether settings sets a non-blank env.ANTHROPIC_CUSTOM_MODEL_OPTION.
 func layerHasCustomOption(settings map[string]any) bool {
 	if len(settings) == 0 {

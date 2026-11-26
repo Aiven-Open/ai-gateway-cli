@@ -5,6 +5,7 @@ package cli_test
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -80,21 +81,22 @@ func TestClaudeOverlayCarriesModelAndEnvButNotKey(t *testing.T) {
 	s.setupAndLaunch("claude")
 	overlay := launchSettings(t, s.launched())
 	wantEnv := map[string]any{
-		"ANTHROPIC_BASE_URL":              g.URL,
-		"ANTHROPIC_MODEL":                 "claude-sonnet[1m]",
-		"ANTHROPIC_DEFAULT_OPUS_MODEL":    "claude-opus[1m]",
-		"ANTHROPIC_DEFAULT_SONNET_MODEL":  "claude-sonnet[1m]",
-		"ANTHROPIC_DEFAULT_HAIKU_MODEL":   "claude-sonnet[1m]",
-		"ANTHROPIC_DEFAULT_FABLE_MODEL":   "claude-opus[1m]",
-		"ANTHROPIC_CUSTOM_MODEL_OPTION":   "",
-		"ANTHROPIC_API_KEY":               "",
-		"CLAUDE_CODE_USE_BEDROCK":         "",
-		"CLAUDE_CODE_USE_VERTEX":          "",
-		"CLAUDE_CODE_USE_FOUNDRY":         "",
-		"AWS_BEARER_TOKEN_BEDROCK":        "",
-		"ANTHROPIC_CUSTOM_HEADERS":        "",
-		"CLAUDE_CODE_MAX_CONTEXT_TOKENS":  "",
-		"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "",
+		"CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1",
+		"ANTHROPIC_BASE_URL":                         g.URL,
+		"ANTHROPIC_MODEL":                            "claude-sonnet[1m]",
+		"ANTHROPIC_DEFAULT_OPUS_MODEL":               "claude-opus[1m]",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL":             "claude-sonnet[1m]",
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL":              "claude-sonnet[1m]",
+		"ANTHROPIC_DEFAULT_FABLE_MODEL":              "claude-opus[1m]",
+		"ANTHROPIC_CUSTOM_MODEL_OPTION":              "",
+		"ANTHROPIC_API_KEY":                          "",
+		"CLAUDE_CODE_USE_BEDROCK":                    "",
+		"CLAUDE_CODE_USE_VERTEX":                     "",
+		"CLAUDE_CODE_USE_FOUNDRY":                    "",
+		"AWS_BEARER_TOKEN_BEDROCK":                   "",
+		"ANTHROPIC_CUSTOM_HEADERS":                   "",
+		"CLAUDE_CODE_MAX_CONTEXT_TOKENS":             "",
+		"CLAUDE_CODE_AUTO_COMPACT_WINDOW":            "",
 	}
 	wantEnv["ANTHROPIC_AUTH_TOKEN"] = ""
 	if overlay["model"] != "claude-sonnet[1m]" || !reflect.DeepEqual(overlay["env"], wantEnv) {
@@ -743,6 +745,7 @@ func TestClaudeConnectWritesGatewaySettingsBesideTheUsersOwn(t *testing.T) {
 	}
 	got := readJSON(t, path)
 	wantEnv := map[string]any{
+		"CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1",
 		"FOO":                             "bar",
 		"ANTHROPIC_BASE_URL":              g.URL,
 		"ANTHROPIC_DEFAULT_OPUS_MODEL":    "claude-opus[1m]",
@@ -906,5 +909,57 @@ func TestClaudeLaunchRefusesASymlinkedProjectSettingsFile(t *testing.T) {
 	); r.code != 1 || !strings.Contains(r.stderr, link+" is a symlink") ||
 		len(s.runner.calls) != 0 {
 		t.Errorf("exit %d, calls %d: %s", r.code, len(s.runner.calls), r.stderr)
+	}
+}
+
+// Rows answer the first menu item, then Yes to Aiven as default, then Apply, which is never reached.
+func TestClaudeSetupWithAivenDefaultRefusesUngrantedNativeModel(t *testing.T) {
+	for name, tc := range map[string]struct{ native, dedicated, says string }{
+		// Claude Code sends a model of "default" to the gateway as it is; it is no alias in a settings file.
+		"default is literal model id": {
+			native: `{"model":"default"}`, says: "selects default, which this key does not grant",
+		},
+		// The dedicated file's own choice hides the user's settings from a launch, not from plain claude.
+		"ungranted model under launcher-only choice": {
+			native:    `{"model":"claude-retired"}`,
+			dedicated: `{"model":"claude-opus","env":{"ANTHROPIC_MODEL":""}}`,
+			says:      "selects claude-retired, which this key does not grant",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := newSession(t, newGatewayDouble(t)).stdin(keyValid)
+			s.writeUserSettings("settings.json", tc.native)
+			if tc.dedicated != "" {
+				s.writeUserSettings("aiven.settings.json", tc.dedicated)
+			}
+			before := s.homeFiles()
+			s.deps.Prompter = &scriptedPrompter{answers: []string{"1", "1", "1"}}
+			r := s.run("setup", "claude", "--key-stdin", "--plain")
+			native := filepath.Join(s.fakeHome, ".claude", "settings.json")
+			text, _ := os.ReadFile(native)
+			if r.code != 1 || !strings.Contains(r.stderr, tc.says) || !strings.Contains(r.stderr, native) {
+				t.Fatalf("exit %d, want 1, %q and %s in:\n%s", r.code, tc.says, native, r.stderr)
+			}
+			if string(text) != tc.native || !slices.Equal(s.homeFiles(), before) {
+				t.Errorf("refusal changed %s or the files %v to %v", native, before, s.homeFiles())
+			}
+		})
+	}
+}
+
+// A project pin overrides the default setup writes, which still has to answer outside that project.
+func TestClaudeSetupChecksWrittenDefaultBesideProjectPin(t *testing.T) {
+	s := newSession(t, newGatewayDouble(t)).stdin(keyValid)
+	s.writeProjectSettings("settings.json", `{"model":"claude-opus"}`)
+	r := s.run("setup", "--key-stdin", "--yes", "claude")
+	written, _ := readJSON(t, filepath.Join(s.fakeHome, ".claude", "aiven.settings.json"))["model"].(string)
+	written = strings.TrimSuffix(written, "[1m]")
+	if r.code != 0 || written != "claude-sonnet" {
+		t.Fatalf("exit %d, written default %v, stderr %q", r.code, written, r.stderr)
+	}
+	for _, model := range []string{"claude-opus", written} {
+		if want := fmt.Sprintf("Messages with %s: HTTP 200", model); !strings.Contains(r.stderr, want) {
+			t.Errorf("no %q in %q", want, r.stderr)
+		}
 	}
 }

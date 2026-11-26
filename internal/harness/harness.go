@@ -19,16 +19,25 @@ import (
 // keeps existing configured models and uses automatic defaults for fresh setups.
 type ModelSelection struct {
 	Preset models.PresetID
-	Model  string
+	// Model is the default; with Models it is one of them.
+	Model string
+	// Models are several models chosen at once, in the order chosen.
+	// Only Claude Code takes more than one.
+	Models []string
 }
 
 // IsZero reports whether no explicit preset or model was chosen.
-func (s ModelSelection) IsZero() bool { return s.Preset == "" && s.Model == "" }
+func (s ModelSelection) IsZero() bool {
+	return s.Preset == "" && s.Model == "" && len(s.Models) == 0
+}
 
 // ResolveMain returns the chosen main alias against table, or "" when zero or table is empty.
 func (s ModelSelection) ResolveMain(table []models.Model) (string, error) {
 	if s.Model != "" {
 		return s.Model, nil
+	}
+	if len(s.Models) > 0 {
+		return s.Models[0], nil
 	}
 	if s.Preset != "" {
 		if len(table) == 0 {

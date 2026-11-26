@@ -121,6 +121,7 @@ func toolChecks(
 			return nil, notGranted(projPath, projAlias, table)
 		}
 		planned := make(map[string][]byte, len(plan.Files))
+		var configured []string
 		for _, f := range plan.Files {
 			alias, err := claude.Selected(f.Data)
 			if err != nil {
@@ -130,6 +131,7 @@ func toolChecks(
 				return nil, notGranted(f.Path, alias, table)
 			}
 			planned[f.Path] = f.Data
+			configured = append(configured, alias)
 		}
 		path, alias, _, err := claude.Effective(table, env.UserHome, env.WorkDir, planned)
 		if err != nil {
@@ -138,7 +140,7 @@ func toolChecks(
 		if _, granted := models.Find(table, alias); !granted {
 			return nil, notGranted(path, alias, table)
 		}
-		return []probeKey{{protocol: models.Messages, model: alias}}, nil
+		return claudePickChecks(table, sel, path, append([]string{alias}, configured...))
 	case "opencode":
 		model := cmp.Or(chosen, models.SonnetOrFirst(table))
 		return []probeKey{{protocol: models.ChatCompletions, model: model}}, nil
@@ -360,4 +362,24 @@ func printProtocolResult(u ui, check protocolCheck) {
 	} else {
 		u.status(2, green, "OK", text+"; basic check passed")
 	}
+}
+
+// claudePickChecks is the Messages check of each model in aliases (the one Claude Code runs, then those the files
+// setup writes or keeps select) and of every other model chosen with it, each once.
+func claudePickChecks(
+	table []models.Model,
+	sel harness.ModelSelection,
+	path string,
+	aliases []string,
+) ([]probeKey, error) {
+	var checks []probeKey
+	for _, m := range slices.Concat(aliases, sel.Models) {
+		if _, granted := models.Find(table, m); !granted {
+			return nil, notGranted(path, m, table)
+		}
+		if pk := (probeKey{protocol: models.Messages, model: m}); !slices.Contains(checks, pk) {
+			checks = append(checks, pk)
+		}
+	}
+	return checks, nil
 }

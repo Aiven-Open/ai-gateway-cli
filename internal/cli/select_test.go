@@ -502,3 +502,91 @@ func TestMultiSelectShowsLiveSelectionCountAndDynamicToggleHint(t *testing.T) {
 		t.Fatalf("out-of-range cursor = %d, want 0", c2.cursor)
 	}
 }
+
+func atMostTwo(picked []bool, _ int) string {
+	n := 0
+	for _, p := range picked {
+		if p {
+			n++
+		}
+	}
+	if n >= 2 {
+		return "Two at most."
+	}
+	return ""
+}
+
+func TestOrderedMultiSelectKeepsTickOrderAndRefusesInPlace(t *testing.T) {
+	t.Parallel()
+	c := choice{title: "Models", multi: true, ordered: true, refuse: atMostTwo,
+		options: []option{{label: "a"}, {label: "b"}, {label: "c"}}}
+	st := newSelectState(c)
+	// Tick c, then a.
+	if _, _, err := st.keys([]byte("\x1b[B\x1b[B \x1b[A\x1b[A ")); err != nil {
+		t.Fatal(err)
+	}
+	// A third tick is refused and its reason shows.
+	if _, _, err := st.keys([]byte("\x1b[B ")); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(st.render(100, 20), "\n"); !strings.Contains(got, "Two at most.") {
+		t.Fatalf("refusal not shown:\n%s", got)
+	}
+	picked, done, err := st.keys([]byte("\r"))
+	if err != nil || !done || !slices.Equal(picked, []int{2, 0}) {
+		t.Fatalf("picked %v, done %v, err %v; want [2 0]", picked, done, err)
+	}
+	// A list with a limit offers no a: pressing it, once or twice, ticks and clears nothing.
+	limited := newSelectState(c)
+	_, _, _ = limited.keys([]byte(" a"))
+	hint := strings.Join(limited.render(100, 20), "\n")
+	if picked, _, _ := limited.keys(
+		[]byte("a\r"),
+	); !slices.Equal(picked, []int{0}) ||
+		strings.Contains(hint, "a all") {
+		t.Errorf("a on a limited list left %v, want [0]; hint:\n%s", picked, hint)
+	}
+	c.refuse, c.status = nil, func(picked []bool) string { return fmt.Sprintf("%d chosen", len(picked)) }
+	free := newSelectState(c)
+	shown := strings.Join(free.render(100, 20), "\n")
+	if !strings.Contains(shown, "3 chosen") || !strings.Contains(shown, "a all") ||
+		strings.Contains(shown, "(0 selected)") {
+		t.Errorf("status line and a hint not shown:\n%s", shown)
+	}
+	if picked, _, _ := free.keys([]byte("\x1b[B a\r")); !slices.Equal(picked, []int{1, 0, 2}) {
+		t.Errorf("a ticked %v, want the tick order [1 0 2]", picked)
+	}
+	if picked, _, _ := newSelectState(c).keys([]byte("aa\r")); len(picked) != 0 {
+		t.Errorf("a twice left %v ticked", picked)
+	}
+	kept := c
+	kept.options = []option{{label: "a", picked: true}, {label: "b"}, {label: "c", picked: true}}
+	kept.order = []int{2, 0}
+	if picked, _, _ := newSelectState(kept).keys([]byte("\r")); !slices.Equal(picked, []int{2, 0}) {
+		t.Errorf("kept picks came back as %v, want [2 0]", picked)
+	}
+}
+
+func TestOrderedMultiSelectFilteredTickAndLimit(t *testing.T) {
+	t.Parallel()
+	c := choice{title: "Models", multi: true, ordered: true, refuse: atMostTwo}
+	for _, l := range []string{"a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "b1"} {
+		c.options = append(c.options, option{label: l})
+	}
+	st := newSelectState(c) // nine options start in filter mode
+	// Filter to b1 and tick it, then to a1 and tick it.
+	if _, _, err := st.keys([]byte("b1 \x7f\x7fa1 ")); err != nil {
+		t.Fatal(err)
+	}
+	// Filter to a2: a third tick is refused.
+	if _, _, err := st.keys([]byte("\x7f2 ")); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(st.render(100, 20), "\n"); !strings.Contains(got, "Two at most.") {
+		t.Fatalf("refusal not shown while filtering:\n%s", got)
+	}
+	picked, _, _ := st.keys([]byte("\r"))
+	if !slices.Equal(picked, []int{8, 0}) {
+		t.Fatalf("filtered ticks picked %v, want [8 0]", picked)
+	}
+}

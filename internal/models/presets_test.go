@@ -210,3 +210,36 @@ func TestGeminiPresetPrefersNeonThenCarbonThenArgon(t *testing.T) {
 		})
 	}
 }
+
+func TestAnthropicTiersTakesFirstGrantedAnthropicModelOfEachTier(t *testing.T) {
+	t.Parallel()
+	anthropic := models.Preset{ID: models.PresetAnthropic, Name: "Anthropic"}
+	for name, tc := range map[string]struct {
+		table []models.Model
+		want  models.Preset
+	}{
+		"tier without its own model stays empty": {
+			[]models.Model{{Alias: "claude-sonnet-5-5"}, {Alias: "glm-5"}},
+			models.Preset{Sonnet: "claude-sonnet-5-5"},
+		},
+		"date-tagged fable does not outrank reviewed one": {
+			[]models.Model{
+				{Alias: "claude-fable-20260101"}, {Alias: "claude-fable-5-1", Owner: "anthropic"},
+				{Alias: "claude-fable-5-2"},
+			},
+			models.Preset{Fable: "claude-fable-5-2"},
+		},
+		"another vendor's claude alias fills no tier": {
+			[]models.Model{{Alias: "claude-opus-5-5", Owner: "Aiven"}}, models.Preset{},
+		},
+		"alias matches in any case and keeps its spelling": {
+			[]models.Model{{Alias: "Claude-Opus-5-5"}},
+			models.Preset{Opus: "Claude-Opus-5-5", Fable: "Claude-Opus-5-5"},
+		},
+	} {
+		tc.want.ID, tc.want.Name = anthropic.ID, anthropic.Name
+		if got := models.AnthropicTiers(tc.table); got != tc.want {
+			t.Errorf("%s: tiers = %+v, want %+v", name, got, tc.want)
+		}
+	}
+}

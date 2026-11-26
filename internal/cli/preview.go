@@ -173,7 +173,7 @@ func reviewAndApprove(
 	if yes || deps.Prompter == nil {
 		var approved []approvedWrite
 		for _, item := range pending {
-			printSinglePreviewHeader(p.ui, item, env)
+			printSinglePreviewHeader(p.ui, item, env, table)
 			if yes {
 				approved = append(approved, approvedWrite{
 					target:      item.target,
@@ -193,7 +193,7 @@ func reviewAndApprove(
 	// Single-tool interactive review: rail-free diff + Apply / Show full diff / Back / Cancel.
 	if len(pending) == 1 {
 		item := pending[0]
-		printSinglePreviewHeader(p.ui, item, env)
+		printSinglePreviewHeader(p.ui, item, env, table)
 		approved, outcome := approveSingleInteractive(deps, p, item, table, allowBack)
 		return approved, outcome
 	}
@@ -218,7 +218,7 @@ func reviewAndApprove(
 		case action == multiActionInspect:
 			for i, item := range pending {
 				p.ui.heading(fmt.Sprintf("[%d/%d] %s", i+1, len(pending), toolLabel(item.target.out.tool)))
-				printFileSummary(p.ui, 2, item, env)
+				printFileSummary(p.ui, 2, item, env, table)
 				if item.preview != "" {
 					p.ui.printf("\n")
 					p.ui.block(item.preview)
@@ -282,11 +282,27 @@ func printReviewTable(u ui, env config.Env, pending []pendingPreview, table []mo
 	}
 	u.printf("\n")
 	u.table(2, []string{"TOOL", "DEFAULT MODEL", "DEFAULT", "FILES"}, rows)
+	for _, item := range pending {
+		printClaudeSlotNotes(u, 2, item, table)
+	}
 }
 
-func printSinglePreviewHeader(u ui, item pendingPreview, env config.Env) {
+// printClaudeSlotNotes prints where Claude Code's chosen models from other vendors go, for Review.
+func printClaudeSlotNotes(u ui, indent int, item pendingPreview, table []models.Model) {
+	if item.target.out.tool != "claude" {
+		return
+	}
+	notes, warning := claudeSlotNotes(table, item.target.planSel)
+	for _, n := range append(notes, warning) {
+		if n != "" {
+			u.line(indent, n)
+		}
+	}
+}
+
+func printSinglePreviewHeader(u ui, item pendingPreview, env config.Env, table []models.Model) {
 	u.heading(toolLabel(item.target.out.tool) + " configuration")
-	printFileSummary(u, 2, item, env)
+	printFileSummary(u, 2, item, env, table)
 	if item.preview != "" {
 		u.line(2, "The preview is compact and redacted: generated model lists are summarised")
 		u.line(2, "and credentials are hidden. The full diff is redacted the same way.")
@@ -295,8 +311,9 @@ func printSinglePreviewHeader(u ui, item pendingPreview, env config.Env) {
 	}
 }
 
-func printFileSummary(u ui, indent int, item pendingPreview, env config.Env) {
+func printFileSummary(u ui, indent int, item pendingPreview, env config.Env, table []models.Model) {
 	tool := item.target.out.tool
+	printClaudeSlotNotes(u, indent, item, table)
 	for _, f := range item.write {
 		existed := f.Existed
 		if !f.Inspected {

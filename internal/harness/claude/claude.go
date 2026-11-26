@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -64,6 +65,37 @@ func wiring(t []models.Model, s slots) (string, map[string]string) {
 		"CUSTOM": withSuffix(t, s.custom),
 	}
 	return withSuffix(t, s.main), ids
+}
+
+// MaxOtherModels is how many models from vendors other than Anthropic Claude Code holds: its custom option and its
+// four tiers.
+const MaxOtherModels = 5
+
+// IsClaude reports whether alias is a granted Anthropic model. An Aiven-owned claude-opus-5-5 is Aiven's model.
+func IsClaude(t []models.Model, alias string) bool {
+	m, ok := models.Find(t, alias)
+	return ok && m.IsClaude()
+}
+
+// tierVars are Claude Code's tier slots in the order models from other vendors take them.
+var tierVars = []string{
+	"ANTHROPIC_DEFAULT_FABLE_MODEL",
+	"ANTHROPIC_DEFAULT_OPUS_MODEL",
+	"ANTHROPIC_DEFAULT_SONNET_MODEL",
+	"ANTHROPIC_DEFAULT_HAIKU_MODEL",
+}
+
+// tier points at the slot the tier variable v names.
+func (s *slots) tier(v string) *string {
+	switch v {
+	case "ANTHROPIC_DEFAULT_FABLE_MODEL":
+		return &s.fable
+	case "ANTHROPIC_DEFAULT_OPUS_MODEL":
+		return &s.opus
+	case "ANTHROPIC_DEFAULT_SONNET_MODEL":
+		return &s.sonnet
+	}
+	return &s.haiku
 }
 
 const (
@@ -133,6 +165,10 @@ func APIKeyHelper(baseURL string) string { return creds.CommandLine(baseURL, run
 // SettingsFile is the dedicated setup destination; claude --settings adds it to a session.
 const SettingsFile = ".claude/aiven.settings.json"
 
+// discoveryVar makes Claude Code list the gateway's Claude models in /model, including one a pick moved out of its
+// tier. Observed in Claude Code, not documented.
+const discoveryVar = "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"
+
 // Setup merges the gateway wiring into ~/.claude/aiven.settings.json, keeping every other setting and env entry.
 // The user's own settings.json is left alone, so only sessions started with --settings use the gateway, unless
 // in.Default asks to wire it the same way.
@@ -141,7 +177,8 @@ func Setup(in Input) (harness.Plan, error) {
 		return harness.Plan{}, config.ErrNoHome
 	}
 	settings := filepath.Join(in.UserHome, ".claude", "settings.json")
-	if _, err := harness.ReadObject(settings); err != nil {
+	native, err := harness.ReadObject(settings)
+	if err != nil {
 		return harness.Plan{}, err
 	}
 	if in.WorkDir != "" {
@@ -154,30 +191,62 @@ func Setup(in Input) (harness.Plan, error) {
 	if in.Default {
 		names = append(names, filepath.Join(".claude", "settings.json"))
 	}
+	// On Keep current both files end with one set of slots and one model: those of the dedicated file when it
+	// existed before this run, else the native file's.
+	var sibling map[string]any
+	if src, _, _ := harness.ReadJSON(
+		filepath.Join(in.UserHome, SettingsFile),
+	); src == nil &&
+		in.Default {
+		sibling = native
+	}
 	for _, name := range names {
-		f, err := wire(in, filepath.Join(in.UserHome, name))
+		f, kept, err := wire(in, filepath.Join(in.UserHome, name), sibling)
 		if err != nil {
 			return harness.Plan{}, err
 		}
 		plan.Files = append(plan.Files, f)
+		sibling = kept
 	}
 	return plan, nil
 }
 
-func wire(in Input, path string) (harness.File, error) {
+// siblingSlots is env with its tier pins and custom option replaced, as a set, by those of the dedicated file's
+// settings: the native file's own pins do not win, and nothing else crosses.
+func siblingSlots(sibling, env map[string]any) map[string]any {
+	merged := maps.Clone(env)
+	siblingEnv, _ := sibling["env"].(map[string]any)
+	for _, k := range append([]string{"ANTHROPIC_CUSTOM_MODEL_OPTION"}, tierVars...) {
+		delete(merged, k)
+		if v, ok := siblingEnv[k]; ok {
+			merged[k] = v
+		}
+	}
+	return merged
+}
+
+// wire plans the gateway wiring of the settings file at path, and returns the planned settings when the file
+// existed. On Keep current the file takes the slots and model of sibling, the other file's settings, unless nil.
+func wire(in Input, path string, sibling map[string]any) (harness.File, map[string]any, error) {
 	src, cfg, err := harness.ReadJSON(path)
 	var env map[string]any
 	if err == nil {
 		env, err = harness.Object(cfg, "env", path)
 	}
 	if err != nil {
-		return harness.File{}, err
+		return harness.File{}, nil, err
 	}
 	var userSettings map[string]any
 	if !in.Selection.IsZero() && !in.Default {
 		userSettings, _ = harness.ReadObject(filepath.Join(in.UserHome, ".claude", "settings.json"))
 	}
+	if !in.Selection.IsZero() {
+		sibling = nil
+	}
 	tierEnv := env
+	if sibling != nil {
+		tierEnv = siblingSlots(sibling, env)
+	}
 	if in.Selection.Model != "" && !in.Default && userSettings != nil {
 		if userEnv, ok := userSettings["env"].(map[string]any); ok && len(userEnv) > 0 {
 			merged := make(map[string]any, len(userEnv)+len(env))
@@ -188,14 +257,20 @@ func wire(in Input, path string) (harness.File, error) {
 	}
 	s, explicit, err := resolveSlots(in.Table, in.Selection, tierEnv)
 	if err != nil {
-		return harness.File{}, err
+		return harness.File{}, nil, err
+	}
+	// The sibling's model is the one it runs: its ANTHROPIC_MODEL over its model.
+	if _, granted := models.Find(in.Table, pinned(slots{}, sibling).main); granted {
+		s.main = pinned(slots{}, sibling).main
 	}
 	main, ids := wiring(in.Table, s)
 	cfg["apiKeyHelper"] = APIKeyHelper(in.BaseURL)
 	if explicit {
 		cfg["model"] = main
-		if !in.Default && layerSelectsModel(userSettings) {
-			// Signal explicit launcher-only override with a blank ANTHROPIC_MODEL so aiven.settings.json wins over user settings.
+		if !in.Default && (layerSelectsModel(userSettings) || layerPinsTier(userSettings) ||
+			layerHasCustomOption(userSettings)) {
+			// Signal explicit launcher-only override with a blank ANTHROPIC_MODEL so aiven.settings.json wins over user
+			// settings, including their model and slot pins.
 			env["ANTHROPIC_MODEL"] = ""
 		} else if v, ok := env["ANTHROPIC_MODEL"].(string); ok && bare(v) != "" {
 			env["ANTHROPIC_MODEL"] = main
@@ -222,6 +297,7 @@ func wire(in Input, path string) (harness.File, error) {
 		"CLAUDE_CODE_USE_FOUNDRY":        "",
 		"AWS_BEARER_TOKEN_BEDROCK":       "",
 		"ANTHROPIC_CUSTOM_HEADERS":       "",
+		discoveryVar:                     "1",
 	} {
 		env[k] = v
 	}
@@ -230,7 +306,8 @@ func wire(in Input, path string) (harness.File, error) {
 	} else if explicit && !in.Default && layerHasCustomOption(userSettings) {
 		// Blank an inherited user-level custom option so launcher-only preset/tier picks do not re-import it.
 		env["ANTHROPIC_CUSTOM_MODEL_OPTION"] = ""
-	} else {
+	} else if env["ANTHROPIC_CUSTOM_MODEL_OPTION"] != "" || !in.Selection.IsZero() {
+		// On Keep current a blank one stays: it suppresses a custom option inherited from the user's settings.
 		delete(env, "ANTHROPIC_CUSTOM_MODEL_OPTION")
 	}
 	for _, chosen := range []struct {
@@ -250,9 +327,12 @@ func wire(in Input, path string) (harness.File, error) {
 	// Claude Code ignores a settings file holding comments or trailing commas.
 	data, err := harness.Edit(path, harness.Strip(src, harness.Strict), cfg)
 	if err != nil {
-		return harness.File{}, err
+		return harness.File{}, nil, err
 	}
-	return harness.File{Path: path, Data: data, Backup: true}, nil
+	if src == nil {
+		cfg = nil
+	}
+	return harness.File{Path: path, Data: data, Backup: true}, cfg, nil
 }
 
 // current drops a `[1m]` from model when the catalogue window of the model it runs is under 1M: one kept from an
@@ -287,45 +367,38 @@ func Selected(data []byte) (string, error) {
 // DefaultModel returns the main model alias that Claude Code setup selects by default for t.
 func DefaultModel(t []models.Model) string { return defaultSlots(t).main }
 
+// defaultPresets are the presets defaultSlots and Recommended defaults try, in order.
+var defaultPresets = []models.PresetID{
+	models.PresetAnthropic, models.PresetOpenAI, models.PresetGemini, models.PresetOpenWeight,
+}
+
 // defaultSlots keeps Claude Code on Claude models whenever Anthropic models are granted, falling back through
 // curated presets (OpenAI, Gemini, Open-weight latest DeepSeek) otherwise. It never injects an unsolicited
 // cross-vendor ANTHROPIC_CUSTOM_MODEL_OPTION.
 func defaultSlots(t []models.Model) slots {
-	if p, ok := models.FindPreset(t, models.PresetAnthropic); ok {
-		return slots{
-			main:   p.Main,
-			opus:   p.Opus,
-			sonnet: p.Sonnet,
-			haiku:  p.Haiku,
-			fable:  p.Fable,
-		}
-	}
-	for _, id := range []models.PresetID{
-		models.PresetOpenAI,
-		models.PresetGemini,
-		models.PresetOpenWeight,
-	} {
+	for _, id := range defaultPresets {
 		if p, ok := models.FindPreset(t, id); ok {
-			return slots{
-				main:   p.Main,
-				opus:   p.Opus,
-				sonnet: p.Sonnet,
-				haiku:  p.Haiku,
-				fable:  p.Fable,
-			}
+			return slots{main: p.Main, opus: p.Opus, sonnet: p.Sonnet, haiku: p.Haiku, fable: p.Fable}
 		}
 	}
 	main := models.SonnetOrFirst(t)
 	return slots{main: main, opus: main, sonnet: main, haiku: main, fable: main}
 }
 
-func keepGrantedClaudeTier(t []models.Model, env map[string]any, key, fallback string) string {
-	if v, ok := env[key].(string); ok {
-		alias := bare(v)
-		if m, granted := models.Find(t, alias); granted &&
-			(strings.HasPrefix(alias, "claude-") || m.Group() == "Anthropic") {
-			return alias
+// RecommendedSelection is Recommended defaults as an explicit choice: the slots defaultSlots gives, replacing a
+// model chosen earlier.
+func RecommendedSelection(t []models.Model) harness.ModelSelection {
+	for _, id := range defaultPresets {
+		if _, ok := models.FindPreset(t, id); ok {
+			return harness.ModelSelection{Preset: id}
 		}
+	}
+	return harness.ModelSelection{Model: models.SonnetOrFirst(t)}
+}
+
+func keepGrantedClaudeTier(t []models.Model, env map[string]any, key, fallback string) string {
+	if alias := grantedPin(t, env, key, ""); alias != "" && IsClaude(t, alias) {
+		return alias
 	}
 	return fallback
 }
@@ -336,17 +409,27 @@ func resolveSlots(
 	existingEnv map[string]any,
 ) (slots, bool, error) {
 	if sel.IsZero() || len(t) == 0 {
-		return defaultSlots(t), false, nil
+		// Keep current and --yes leave each granted model the settings pin in its slot, so a chosen mix stays.
+		s := defaultSlots(t)
+		for _, v := range tierVars {
+			*s.tier(v) = grantedPin(t, existingEnv, v, *s.tier(v))
+		}
+		s.custom = grantedPin(t, existingEnv, "ANTHROPIC_CUSTOM_MODEL_OPTION", "")
+		return s, false, nil
+	}
+	if len(sel.Models) > 0 {
+		s, err := fillSlots(t, sel)
+		return s, err == nil, err
 	}
 	if sel.Model != "" {
 		chosen := bare(sel.Model)
 		if p, ok := models.FindPreset(t, models.PresetAnthropic); ok {
-			s := slots{
-				main:   chosen,
-				opus:   keepGrantedClaudeTier(t, existingEnv, "ANTHROPIC_DEFAULT_OPUS_MODEL", p.Opus),
-				sonnet: keepGrantedClaudeTier(t, existingEnv, "ANTHROPIC_DEFAULT_SONNET_MODEL", p.Sonnet),
-				haiku:  keepGrantedClaudeTier(t, existingEnv, "ANTHROPIC_DEFAULT_HAIKU_MODEL", p.Haiku),
-				fable:  keepGrantedClaudeTier(t, existingEnv, "ANTHROPIC_DEFAULT_FABLE_MODEL", p.Fable),
+			// A granted model of a tier's own keeps that tier (a claude-fable the preset does not name); only a tier
+			// the key grants none of takes the preset's stand-in.
+			own := claudeTiers(t)
+			s := slots{main: chosen, opus: p.Opus, sonnet: p.Sonnet, haiku: p.Haiku, fable: p.Fable}
+			for _, v := range tierVars {
+				*s.tier(v) = keepGrantedClaudeTier(t, existingEnv, v, cmp.Or(*own.tier(v), *s.tier(v)))
 			}
 			if chosen != s.opus && chosen != s.sonnet && chosen != s.haiku && chosen != s.fable {
 				s.custom = chosen
@@ -372,6 +455,122 @@ func resolveSlots(
 		haiku:  p.Haiku,
 		fable:  p.Fable,
 	}, true, nil
+}
+
+// Placement is where a Choose models answer puts its models: each slot a model from another vendor holds, as slot
+// name and alias in slot order, the one in the haiku tier, and the chosen Claude models no tier holds.
+func Placement(
+	t []models.Model,
+	sel harness.ModelSelection,
+) (held [][2]string, haiku string, unslotted []string) {
+	if len(sel.Models) == 0 {
+		return nil, "", nil
+	}
+	s, err := fillSlots(t, sel)
+	if err != nil {
+		return nil, "", nil
+	}
+	if !IsClaude(t, s.haiku) {
+		haiku = s.haiku
+	}
+	tiers := []string{s.fable, s.opus, s.sonnet, s.haiku}
+	names := []string{"custom model option", "fable tier", "opus tier", "sonnet tier", "haiku tier"}
+	for i, alias := range append([]string{s.custom}, tiers...) {
+		if alias != "" && !IsClaude(t, alias) {
+			held = append(held, [2]string{names[i], alias})
+		}
+	}
+	for _, p := range sel.Models {
+		if alias := bare(p); IsClaude(t, alias) && !slices.Contains(tiers, alias) {
+			unslotted = append(unslotted, alias)
+		}
+	}
+	return held, haiku, unslotted
+}
+
+// fillSlots places a Choose models answer from the catalogue alone, so the same picks always give the same slots.
+// Ticked Claude models take the tiers their names say, the first other model the custom option, the rest tiers
+// in three passes. A tier nothing took keeps its Claude model, else a Claude stand-in, else the default pick.
+func fillSlots(t []models.Model, sel harness.ModelSelection) (slots, error) {
+	s := slots{main: bare(cmp.Or(sel.Model, sel.Models[0]))}
+	held := claudeTiers(t)
+	var others, ticked []string
+	isPick := false
+	for _, p := range sel.Models {
+		alias := bare(p)
+		isPick = isPick || alias == s.main
+		if !IsClaude(t, alias) {
+			if !slices.Contains(others, alias) {
+				others = append(others, alias)
+			}
+		} else if v := namedTier(alias); v != "" && !slices.Contains(ticked, v) {
+			ticked = append(ticked, v)
+			*held.tier(v) = alias
+		}
+	}
+	if !isPick {
+		return slots{}, fmt.Errorf("default model %q is not one of the chosen models", s.main)
+	}
+	if len(others) > MaxOtherModels {
+		return slots{}, fmt.Errorf("%d models from other vendors chosen; Claude Code holds at most %d",
+			len(others), MaxOtherModels)
+	}
+	if len(others) > 0 {
+		s.custom, others = others[0], others[1:]
+	}
+	// Tiers the key grants no Claude model for go first, then those whose Claude model was not ticked.
+	for pass := range 3 {
+		for _, v := range tierVars {
+			rank := 1
+			if slices.Contains(ticked, v) {
+				rank = 2
+			} else if *held.tier(v) == "" {
+				rank = 0
+			}
+			if rank == pass && len(others) > 0 {
+				*s.tier(v), others = others[0], others[1:]
+			}
+		}
+	}
+	p, _ := models.FindPreset(t, models.PresetAnthropic)
+	spare := slots{fable: p.Fable, opus: p.Opus, sonnet: p.Sonnet, haiku: p.Haiku}
+	for _, v := range tierVars {
+		if stand := *spare.tier(v); *s.tier(v) == "" {
+			if !IsClaude(t, stand) {
+				stand = ""
+			}
+			*s.tier(v) = cmp.Or(*held.tier(v), stand, s.main)
+		}
+	}
+	return s, nil
+}
+
+// namedTier is the tier slot the name of alias says, in any case (claude-fable-5-2 names
+// ANTHROPIC_DEFAULT_FABLE_MODEL), or "" when it names none.
+func namedTier(alias string) string {
+	for _, v := range tierVars {
+		name := strings.TrimSuffix(strings.TrimPrefix(v, "ANTHROPIC_DEFAULT_"), "_MODEL")
+		if strings.Contains(strings.ToUpper(alias), name) {
+			return v
+		}
+	}
+	return ""
+}
+
+// claudeTiers holds the granted Anthropic model of each tier; empty where the key grants none.
+func claudeTiers(t []models.Model) slots {
+	own := models.AnthropicTiers(t)
+	return slots{fable: own.Fable, opus: own.Opus, sonnet: own.Sonnet, haiku: own.Haiku}
+}
+
+// grantedPin is the granted alias env pins under key, without its [1m] suffix, else fallback.
+func grantedPin(t []models.Model, env map[string]any, key, fallback string) string {
+	if v, ok := env[key].(string); ok {
+		if _, granted := models.Find(t, bare(v)); granted {
+			return bare(v)
+		}
+	}
+	return fallback
 }
 
 // overlayJSON outranks native settings only for launcher-owned fields; it never holds the key.
@@ -477,6 +676,11 @@ func Launch(in Input) (harness.Plan, error) {
 	var inline map[string]any
 	if err := json.Unmarshal(overlayJSON(in.BaseURL, main, ids, name, window), &inline); err != nil {
 		return harness.Plan{}, err
+	}
+	// Setup turned gateway model discovery on; a file from an older setup lacks it until setup runs again.
+	if env, _ := cfg["env"].(map[string]any); env[discoveryVar] == "1" {
+		child = append(child, discoveryVar+"=1")
+		inline["env"].(map[string]any)[discoveryVar] = "1"
 	}
 	inline["apiKeyHelper"] = APIKeyHelper(in.BaseURL)
 	// One line, since cmd.exe cannot pass a newline to a batch file such as npm's claude.cmd.
