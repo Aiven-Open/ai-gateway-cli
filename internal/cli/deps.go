@@ -33,6 +33,9 @@ type Deps struct {
 	WriteFile func(path string, data []byte, perm os.FileMode) error
 	// Remove deletes the key file; nil means os.Remove.
 	Remove func(path string) error
+	// LockWait is how long a command waits for another run to release config.LockFile; zero means
+	// 10 seconds.
+	LockWait time.Duration
 	// Build is the release metadata `--version` prints.
 	Build Build
 }
@@ -84,6 +87,13 @@ func (d Deps) writeIn(
 		return err
 	}
 	return d.WriteFile(filepath.Join(dir.Path, name), data, perm)
+}
+
+func (d Deps) lockWait() time.Duration {
+	if d.LockWait > 0 {
+		return d.LockWait
+	}
+	return 10 * time.Second
 }
 
 func (d Deps) remove(path string) error {

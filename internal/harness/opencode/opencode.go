@@ -121,9 +121,6 @@ func ModelFor(table []models.Model, sel harness.ModelSelection) string {
 	return "aiven/" + harness.AliasFor(table, sel)
 }
 
-// Model is the -m value that picks the gateway's default alias.
-func Model(table []models.Model) string { return ModelFor(table, harness.ModelSelection{}) }
-
 // takesValue reports OpenCode CLI flags whose next argument is a value rather than a subcommand.
 func takesValue(flag string) bool {
 	switch flag {

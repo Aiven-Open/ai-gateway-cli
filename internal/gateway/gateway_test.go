@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/aiven-open/ai-gateway-cli/internal/gateway"
 	"github.com/aiven-open/ai-gateway-cli/internal/models"
@@ -228,5 +229,21 @@ func TestModelsDecodesOwnerAndDisplayNameWithoutControlCharacters(t *testing.T) 
 				t.Errorf("owner %q, name %q; want %q, %q", ms[0].Owner, ms[0].Name, tc.owner, tc.display)
 			}
 		})
+	}
+}
+
+func TestProbeTimeoutNamesTheLimit(t *testing.T) {
+	release := make(chan struct{}) // the handler never reads the body, so it learns of no hang-up
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))
+	defer srv.Close()
+	defer close(release)
+	c := gateway.Client{HTTP: &http.Client{Timeout: 50 * time.Millisecond}, BaseURL: srv.URL}
+	_, err := c.Probe(context.Background(), "sk", "m", models.Messages)
+	var unreachable *gateway.UnreachableError
+	if !errors.As(err, &unreachable) || !unreachable.Timeout() {
+		t.Fatalf("err = %v, want a timed-out UnreachableError", err)
+	}
+	if want := "the gateway at " + srv.URL + " did not answer within 50ms"; err.Error() != want {
+		t.Errorf("err = %q, want %q", err, want)
 	}
 }

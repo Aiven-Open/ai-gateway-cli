@@ -94,6 +94,8 @@ type setupRun struct {
 	targets    []*targetOutcome
 	cancelled  bool
 	checks     []protocolCheck
+	// reusedKey is the key file as inspected when the run reused the saved key, nil when the run was given its key.
+	reusedKey *keyFile
 }
 
 // sharedFailure ends a run whose credential stage failed: no target was configured, whatever passed preflight.

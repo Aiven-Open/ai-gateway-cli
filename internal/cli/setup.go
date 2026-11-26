@@ -290,7 +290,7 @@ func (s *setupSession) execute() int {
 	} else {
 		s.p.ui.line(0, "Gateway: "+safe(s.env.BaseURL))
 	}
-	key, table, err := obtainKey(s.ctx, s.env, s.deps, s.p, s.opts)
+	key, table, err := s.obtainRunKey()
 	if err != nil {
 		return s.run.sharedFailure(s.deps, "reading the key", err)
 	}
@@ -763,74 +763,6 @@ func (s *setupSession) refuseUngranted(eligible []*setupTarget, err error) int {
 	return s.run.finish()
 }
 
-func (s *setupSession) commitApproved(approved []approvedWrite) int {
-	// Populate resolvedModel for ready targets (including unchanged ones).
-	for _, t := range s.selected {
-		if t.preflightErr == nil {
-			t.out.resolvedModel = resolvedToolModel(t.out.tool, s.env, s.table, t.plan, t.planSel)
-		}
-	}
-	if len(approved) == 0 {
-		hasUnchanged := false
-		for _, o := range s.run.targets {
-			if o.status == statusUnchanged {
-				hasUnchanged = true
-				break
-			}
-		}
-		if hasUnchanged {
-			s.run.credential = "unchanged; existing key files unchanged"
-		} else {
-			s.run.credential = "not saved by this run; existing key files unchanged; " +
-				"no configuration changes were approved"
-		}
-		return s.run.finish()
-	}
-
-	s.p.begin("Saving the key")
-	where, err := saveKey(s.env, s.deps, s.key)
-	if err != nil {
-		s.p.failed("the key was not saved")
-		for _, item := range approved {
-			item.target.out.status = statusPending
-			item.target.out.reason = "not attempted: saving the key failed"
-		}
-		return s.run.sharedFailure(s.deps, "saving the key", err)
-	}
-	s.p.passed("saved to " + where)
-	s.run.credential = "saved to " + where
-
-	prefUpdates := map[string]string{}
-	for _, item := range approved {
-		writeApproved(s.deps, item)
-		if item.target.out.status == statusConfigured && item.prefChanged && item.prefAlias != "" {
-			prefUpdates[item.target.out.tool] = item.prefAlias
-		}
-	}
-	if len(prefUpdates) > 0 {
-		if err := config.SaveModelPrefs(
-			s.env.UserHome,
-			s.env.BaseURL,
-			prefUpdates,
-			s.deps.WriteFile,
-		); err != nil {
-			_ = fail(s.deps, "saving launcher model preferences: "+err.Error())
-			for _, item := range approved {
-				if _, ok := prefUpdates[item.target.out.tool]; !ok {
-					continue
-				}
-				if len(item.target.out.written) > 0 {
-					item.target.out.status = statusPartial
-				} else {
-					item.target.out.status = statusFailed
-				}
-				item.target.out.reason = "saving launcher model preferences failed: " + err.Error()
-			}
-		}
-	}
-	return s.run.finish()
-}
-
 // obtainKey reads explicit stdin, a working saved key, a confirmed environment key or hidden terminal input.
 // A non-nil table means the key already passed model listing.
 func obtainKey(
@@ -839,6 +771,7 @@ func obtainKey(
 	deps Deps,
 	p presenter,
 	o setupOptions,
+	saved keyFile,
 ) (string, []models.Model, error) {
 	if !p.ui.color {
 		p.ui.heading("Key check")
@@ -849,10 +782,7 @@ func obtainKey(
 		key, err := readKey(stdin, "")
 		return key, nil, err
 	}
-	fileKey, err := storedKey(env)
-	if err != nil {
-		return "", nil, err
-	}
+	fileKey := creds.Parse(saved.data)
 	if fileKey != "" {
 		if !p.ui.color {
 			p.ui.line(2, "Checking your saved key.")
@@ -1061,6 +991,8 @@ func gatewayCategory(err error) string {
 		return "the gateway rejected the key"
 	case errors.Is(err, gateway.ErrNoModels):
 		return "the key grants no models"
+	case errors.As(err, &unreachable) && unreachable.Timeout():
+		return "the gateway did not answer in time"
 	case errors.As(err, &unreachable):
 		return "the gateway could not be reached"
 	case errors.As(err, &he) && he.Status == 429:

@@ -32,6 +32,11 @@ func login(ctx context.Context, env config.Env, deps Deps) int {
 	if err != nil {
 		return failGateway(deps, err)
 	}
+	unlock, err := lockState(env, deps)
+	if err != nil {
+		return fail(deps, err.Error())
+	}
+	defer unlock()
 	p.begin("Saving the key")
 	where, err := saveKey(env, deps, key)
 	if err != nil {
@@ -76,7 +81,14 @@ func listModels(ctx context.Context, env config.Env, deps Deps) int {
 	return 0
 }
 
+// logout removes the key file under config.LockFile. The lock is taken first, also with no key file yet, so a key
+// saved meanwhile by another run is not removed without it.
 func logout(env config.Env, deps Deps) int {
+	unlock, err := lockState(env, deps)
+	if err != nil {
+		return fail(deps, err.Error())
+	}
+	defer unlock()
 	if err := removeKey(env, deps); err != nil {
 		return fail(deps, err.Error())
 	}

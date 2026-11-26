@@ -123,8 +123,11 @@ Keys are stored with mode `0600` at `~/.config/aiven/ai-gateway-key` for the
 default gateway (`https://ai.aiven.io`), and under
 `~/.config/aiven/ai-gateway-keys/` for custom origins. `setup` reuses a
 valid saved key automatically; run `aiven-ai-gateway login` or pass
-`--key-stdin` to replace it. No key or preference file is written unless at
-least one configuration change is approved.
+`--key-stdin` to replace it. With changes to write, the key is saved before the
+approved changes. With nothing to write, a new key is saved only when every
+selected tool is already up to date, also in unattended runs without `--yes`. If no tool ends up ready or with a file
+written, the previous key is put back unless another process changed the key
+file meanwhile. Setup, login and logout hold one lock file, `~/.config/aiven/ai-gateway.lock`, while they change a key file or the model preferences, so they never interleave; one that waits more than 10 seconds stops and asks you to retry.
 
 ## Environment
 
@@ -164,7 +167,8 @@ least one configuration change is approved.
   extended Unix ACLs (`chmod +a`, `setfacl`). Windows terminals enable
   virtual terminal processing and bounded `Esc` waits automatically,
   falling back to `--plain` on legacy ConHost consoles where VT modes are
-  unavailable; other non-Unix platforms require `--plain`.
+  unavailable; hidden key input works there too, and the console's modes are
+  restored before the tool starts; other non-Unix platforms require `--plain`.
 
 ## Development
 

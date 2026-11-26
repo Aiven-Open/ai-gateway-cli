@@ -739,3 +739,45 @@ func TestConcurrentProbesDeterministicOrderAndPartialFailure(t *testing.T) {
 		t.Errorf("opencode written despite failing probe: %v", err)
 	}
 }
+
+// A check that times out is sent once more; a second timeout is reported as one, with the limit.
+func TestSetupRetriesATimedOutCheckOnceAndReportsTheTimeout(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		slow int32
+		code int
+	}{
+		{"second try answers", 1, 0},
+		{"both tries time out", 2, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := newGatewayDouble(t)
+			var posts atomic.Int32
+			base := g.Config.Handler
+			g.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost && posts.Add(1) <= tc.slow {
+					select {
+					case <-r.Context().Done():
+					case <-time.After(5 * time.Second):
+					}
+					return
+				}
+				base.ServeHTTP(w, r)
+			})
+			s := newSession(t, g).stdin(keyValid)
+			client := *g.Client()
+			client.Timeout = 300 * time.Millisecond
+			s.deps.HTTP = &client
+			r := s.run("setup", "--key-stdin", "--yes", "claude")
+			if r.code != tc.code || posts.Load() != 2 {
+				t.Fatalf("exit %d after %d checks, stderr %q", r.code, posts.Load(), r.stderr)
+			}
+			if tc.code != 0 && (!strings.Contains(r.stderr, "did not answer within 300ms") ||
+				strings.Contains(r.stderr, "cannot reach gateway")) {
+				t.Errorf("timeout reported as %q", r.stderr)
+			}
+		})
+	}
+}

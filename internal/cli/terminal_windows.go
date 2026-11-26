@@ -7,36 +7,10 @@ package cli
 import (
 	"io"
 	"os"
-	"sync"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/term"
 )
-
-var (
-	vtMu       sync.Mutex
-	vtRestores []func()
-)
-
-// restoreAllVT restores every saved console mode registered by enableOutputVT/enableVT before a signal-driven exit.
-func restoreAllVT() {
-	vtMu.Lock()
-	list := vtRestores
-	vtRestores = nil
-	vtMu.Unlock()
-	for i := len(list) - 1; i >= 0; i-- {
-		list[i]()
-	}
-}
-
-func registerVTRestore(fn func()) func() {
-	var once sync.Once
-	wrapped := func() { once.Do(fn) }
-	vtMu.Lock()
-	vtRestores = append(vtRestores, wrapped)
-	vtMu.Unlock()
-	return wrapped
-}
 
 // probeConsoleVT checks whether Windows virtual terminal input and output modes can be enabled on in and errOut
 // without permanently mutating console modes (or touching stdout). Returns false on legacy ConHost consoles so the

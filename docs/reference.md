@@ -111,11 +111,14 @@ Finally, `setup` closes the vertical rail (`└`) and presents a rail-free
 review table (for multiple tools: `Apply all`, `Inspect redacted diffs`,
 `Back`, `Cancel`) or diff preview (for one tool: `Apply`, `Show full
 redacted diff`, `Back`, `Cancel`). Only after explicit approval (or `--yes`)
-does `setup` save the key (`0600`), write approved files atomically with
-timestamped `.bak` backups, and persist launcher model preferences for
-approved Pi, OpenCode and OMP targets. When zero configuration changes are
-approved (cancelled, declined, or non-interactive without `--yes`), neither
-the key nor `ai-gateway-models.json` is written.
+does `setup` write approved files atomically with timestamped `.bak` backups
+and persist launcher model preferences for approved Pi, OpenCode and OMP
+targets. With changes to write, the key is saved
+before the approved changes. With nothing to write, a new key is saved only when
+every selected tool is already up to date, also in unattended runs without `--yes`. If no tool ends up ready or with a
+file written, the previous key is put back unless another process changed the
+key file meanwhile. Setup, login and logout hold one lock file, `~/.config/aiven/ai-gateway.lock`, while they change a key file or the model preferences, so they never interleave; one that waits more than 10 seconds stops and asks you to retry. When no configuration change is approved,
+`ai-gateway-models.json` is not written.
 
 Ready tools end with a compact launch table (`COMMAND` / `MODEL`, without
 shell comment markers so commands paste cleanly in `cmd.exe`, PowerShell,

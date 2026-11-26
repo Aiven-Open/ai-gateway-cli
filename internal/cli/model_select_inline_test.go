@@ -721,7 +721,7 @@ func TestSetupMalformedModelPrefsRefusedBeforeApproval(t *testing.T) {
 	deps := inlineDeps(p, &stderr)
 	deps.HTTP = srv.Client()
 	code := Run(t.Context(), []string{"setup", "opencode"}, env, deps)
-	if code == 0 || !strings.Contains(stderr.String(), "is not valid JSON") {
+	if code == 0 || !strings.Contains(stderr.String(), "is not a valid model preference file") {
 		t.Fatalf("exit=%d, stderr:\n%s", code, stderr.String())
 	}
 	if len(probes()) != 0 {
@@ -1179,3 +1179,37 @@ func (p *plainSetupPrompter) ReadLine(prompt string) (string, error) {
 	p.idx++
 	return a, nil
 }
+
+// A change declined at review saves nothing, even when another selected tool is already up to date.
+func TestSetupDeclinedChangeLeavesTheSavedKeyAlone(t *testing.T) {
+	srv, _ := inlineGateway(t, multiModelTestCatalogue)
+	env, home := inlineSetupEnv(t, srv.URL)
+	run := func(secret string, answers ...selectAnswer) string {
+		p := &inlineSetupPrompter{secret: secret, scriptedSelector: scriptedSelector{answers: answers}}
+		var stderr strings.Builder
+		deps := inlineDeps(p, &stderr)
+		deps.HTTP = srv.Client()
+		deps.Stdin = strings.NewReader(secret + "\n")
+		if code := Run(t.Context(), []string{"setup", "--key-stdin"}, env, deps); code != 0 {
+			t.Fatalf("exit %d: %s", code, stderr.String())
+		}
+		return stderr.String()
+	}
+	// Pi and OpenCode, recommended defaults, Yes for all, then Apply.
+	run("synthetic-key", pick(0, 1), pick(0), pick(0), pick(0))
+	if err := os.Remove(filepath.Join(home, ".config", "opencode", "opencode.json")); err != nil {
+		t.Fatal(err)
+	}
+	// Pi is now up to date; OpenCode needs a change, and Cancel declines it.
+	out := run("rotated-key", pick(0, 1), pick(0), pick(0), pick(3))
+	got, err := os.ReadFile(creds.Path(home, srv.URL))
+	if err != nil || string(got) != "synthetic-key\n" {
+		t.Errorf("key file = %q, %v; want the key from before the run", got, err)
+	}
+	if !strings.Contains(out, "not saved by this run; existing key files unchanged") ||
+		strings.Contains(out, "Saving the key") {
+		t.Errorf("summary does not say the key was not saved:\n%s", out)
+	}
+}
+
+func pick(picked ...int) selectAnswer { return selectAnswer{picked: picked} }

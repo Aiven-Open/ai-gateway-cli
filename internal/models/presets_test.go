@@ -174,3 +174,39 @@ func TestPresetsFilterAndResolveByGrantedCatalogue(t *testing.T) {
 		},
 	)
 }
+
+func TestGeminiPresetPrefersNeonThenCarbonThenArgon(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name        string
+		table       []models.Model
+		main, haiku string
+	}{
+		{
+			name: "all three and Hydrogen",
+			table: []models.Model{
+				{Alias: "gemini-4-argon"}, {Alias: "gemini-4-carbon"},
+				{Alias: "gemini-4-hydrogen"}, {Alias: "gemini-4-neon"},
+			},
+			main: "gemini-4-neon", haiku: "gemini-4-hydrogen",
+		},
+		{
+			name:  "Carbon and Argon",
+			table: []models.Model{{Alias: "gemini-4-argon"}, {Alias: "gemini-4-carbon"}},
+			main:  "gemini-4-carbon", haiku: "gemini-4-carbon",
+		},
+		{
+			name:  "Argon alone",
+			table: []models.Model{{Alias: "gemini-4-argon"}},
+			main:  "gemini-4-argon", haiku: "gemini-4-argon",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			p, ok := models.FindPreset(tc.table, models.PresetGemini)
+			if !ok || p.Main != tc.main || p.Haiku != tc.haiku {
+				t.Errorf("Gemini preset = %+v, %v; want main %s, haiku %s", p, ok, tc.main, tc.haiku)
+			}
+		})
+	}
+}
