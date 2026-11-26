@@ -232,7 +232,8 @@ func (s *selectState) render(width, height int) []string {
 	}
 	showFilter := s.filtering || s.filter != ""
 	titleText := s.c.title
-	if s.c.multi && len(s.c.options) > 0 {
+	// A status line counts for itself, so the title leaves its own count out.
+	if s.c.multi && len(s.c.options) > 0 && s.c.status == nil {
 		selected := 0
 		for _, p := range s.picked {
 			if p {

@@ -19,7 +19,8 @@ import (
 const (
 	claudeLimitNote = "Claude models are always available. " +
 		"Add up to five models from other vendors."
-	claudeLimitStatus  = "%d of %d models from other vendors chosen. Claude models do not count."
+	claudeLimitStatus = "Up to %[2]d models from other vendors, %[1]d chosen. " +
+		"Claude models do not count."
 	claudeLimitRefusal = "Five models from other vendors are already chosen. Clear one to add another."
 	claudePlainLimit   = "Choose up to five models from other vendors. Claude models do not count."
 	claudeNoneChosen   = "Choose at least one model."

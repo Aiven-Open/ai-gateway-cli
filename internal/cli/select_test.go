@@ -591,7 +591,7 @@ func TestSelectRenderShowsStatusFollowingTicks(t *testing.T) {
 	}
 	after := strings.Join(s.render(80, 0), "\n")
 	if !strings.Contains(before, "0 chosen") || !strings.Contains(after, "1 chosen") ||
-		strings.Contains(after, "static") {
+		strings.Contains(after, "static") || strings.Contains(after, "selected)") {
 		t.Errorf("before %q\nafter %q", before, after)
 	}
 }
