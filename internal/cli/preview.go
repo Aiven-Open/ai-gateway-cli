@@ -6,10 +6,8 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/aymanbagabas/go-udiff"
@@ -32,7 +30,6 @@ type pendingPreview struct {
 	target      *setupTarget
 	files       []harness.File
 	write       []harness.File
-	preview     string
 	names       backupNames
 	prefAlias   string
 	prefChanged bool
@@ -122,8 +119,8 @@ func applySnapshot(
 	return plan, nil
 }
 
-// reviewAndApprove renders the rail-free Review table/diffs and obtains user consent (or returns reviewBack so the
-// caller can step backward to Beat 3 with zero disk writes).
+// reviewAndApprove prints what each target will get and obtains consent, or returns reviewBack so the caller can
+// step back to Beat 3 with nothing written.
 func reviewAndApprove(
 	deps Deps,
 	p presenter,
@@ -133,118 +130,63 @@ func reviewAndApprove(
 	targets []*setupTarget,
 	table []models.Model,
 ) ([]approvedWrite, reviewOutcome) {
-	var pending []pendingPreview
-	for _, t := range targets {
-		names := backupNames{deps.now(), map[string]string{}}
-		write, preview, err := changes(t.plan.Files, table, names)
-		if err != nil {
-			p.ui.heading(toolLabel(t.out.tool) + " configuration")
-			t.out.status, t.out.reason = statusFailed, err.Error()
-			_ = fail(deps, t.out.tool+": "+err.Error())
-			continue
-		}
-		prefAlias, prefChanged, err := launcherPrefUpdate(
-			t.out.tool,
-			table,
-			t.out.selection,
-			t.currentPref,
-		)
-		if err != nil {
-			p.ui.heading(toolLabel(t.out.tool) + " configuration")
-			t.out.status, t.out.reason = statusFailed, err.Error()
-			_ = fail(deps, t.out.tool+": "+err.Error())
-			continue
-		}
-		if len(write) == 0 && !prefChanged {
-			p.ui.heading(toolLabel(t.out.tool) + " configuration")
-			p.ui.line(2, "Already configured; no file needs a change.")
-			t.out.status = statusUnchanged
-			continue
-		}
-		pending = append(pending, pendingPreview{
-			target:      t,
-			files:       t.plan.Files,
-			write:       write,
-			preview:     preview,
-			names:       names,
-			prefAlias:   prefAlias,
-			prefChanged: prefChanged,
-		})
-	}
+	pending := pendingChanges(deps, p, targets, table)
 	if len(pending) == 0 {
 		return nil, reviewApproved
 	}
+	for _, item := range pending {
+		printSummary(p.ui, item, env, table)
+	}
+	if !yes && deps.Prompter != nil {
+		return approveInteractive(deps, p, pending, allowBack)
+	}
+	if yes {
+		return approvedFrom(pending), reviewApproved
+	}
+	for _, item := range pending {
+		item.target.out.status = statusSkipped
+		item.target.out.reason = "without a terminal, rerun with --yes to apply"
+	}
+	return nil, reviewApproved
+}
 
-	// Non-interactive or --yes: print each diff and apply (--yes) or skip (no terminal).
-	if yes || deps.Prompter == nil {
-		var approved []approvedWrite
-		for _, item := range pending {
-			printSinglePreviewHeader(p.ui, item, env)
-			if yes {
-				approved = append(approved, approvedWrite{
-					target:      item.target,
-					write:       item.write,
-					names:       item.names,
-					prefAlias:   item.prefAlias,
-					prefChanged: item.prefChanged,
-				})
-			} else {
-				item.target.out.status = statusSkipped
-				item.target.out.reason = "without a terminal, rerun with --yes to apply"
-			}
+// pendingChanges plans each target's writes and launcher preference; a target with neither is up to date.
+func pendingChanges(
+	deps Deps,
+	p presenter,
+	targets []*setupTarget,
+	table []models.Model,
+) []pendingPreview {
+	var pending []pendingPreview
+	for _, t := range targets {
+		names := backupNames{deps.now(), map[string]string{}}
+		write, _, err := changes(t.plan.Files, names)
+		prefAlias, prefChanged := "", false
+		if err == nil {
+			prefAlias, prefChanged, err = launcherPrefUpdate(
+				t.out.tool,
+				table,
+				t.out.selection,
+				t.currentPref,
+			)
 		}
-		return approved, reviewApproved
-	}
-
-	// Single-tool interactive review: rail-free diff + Apply / Show full diff / Back / Cancel.
-	if len(pending) == 1 {
-		item := pending[0]
-		printSinglePreviewHeader(p.ui, item, env)
-		approved, outcome := approveSingleInteractive(deps, p, item, table, allowBack)
-		return approved, outcome
-	}
-
-	// Multi-tool interactive review: compact rail-free table + Apply all / Inspect redacted diffs / Back / Cancel.
-	printReviewTable(p.ui, env, pending, table)
-	for {
-		action, err := promptMultiReview(deps, p, len(pending), allowBack)
 		switch {
-		case errors.Is(err, errBack):
-			return nil, reviewBack
-		case err != nil, action == multiActionCancel:
-			if err != nil {
-				_ = fail(deps, err.Error())
-			}
-			for _, item := range pending {
-				item.target.out.status, item.target.out.reason = statusCancelled, "no files written"
-			}
-			return nil, reviewCancelled
-		case action == multiActionBack:
-			return nil, reviewBack
-		case action == multiActionInspect:
-			for i, item := range pending {
-				p.ui.heading(fmt.Sprintf("[%d/%d] %s", i+1, len(pending), toolLabel(item.target.out.tool)))
-				printFileSummary(p.ui, 2, item, env)
-				if item.preview != "" {
-					p.ui.printf("\n")
-					p.ui.block(item.preview)
-				}
-			}
-			continue
-		case action == multiActionApply:
-			approved := make([]approvedWrite, 0, len(pending))
-			for _, item := range pending {
-				approved = append(approved, approvedWrite{
-					target:      item.target,
-					write:       item.write,
-					names:       item.names,
-					prefAlias:   item.prefAlias,
-					prefChanged: item.prefChanged,
-				})
-			}
-			return approved, reviewApproved
+		case err != nil:
+			p.ui.heading(toolLabel(t.out.tool))
+			t.out.status, t.out.reason = statusFailed, err.Error()
+			_ = fail(deps, t.out.tool+": "+err.Error())
+		case len(write) == 0 && !prefChanged:
+			p.ui.heading(toolLabel(t.out.tool))
+			p.ui.line(2, "Already configured; no file needs a change.")
+			t.out.status = statusUnchanged
+		default:
+			pending = append(pending, pendingPreview{
+				target: t, files: t.plan.Files, write: write, names: names,
+				prefAlias: prefAlias, prefChanged: prefChanged,
+			})
 		}
 	}
+	return pending
 }
 
 func launcherPrefUpdate(
@@ -261,296 +203,6 @@ func launcherPrefUpdate(
 		return "", false, err
 	}
 	return chosen, chosen != currentPref, nil
-}
-
-func printReviewTable(u ui, env config.Env, pending []pendingPreview, table []models.Model) {
-	rows := make([][]string, 0, len(pending))
-	for _, item := range pending {
-		t := item.target
-		model := resolvedToolModel(t.out.tool, env, table, t.plan, t.planSel)
-		direct := "launch only"
-		if t.out.asDefault {
-			direct = "yes"
-		}
-		var files []string
-		for _, f := range item.write {
-			files = append(files, shortHomePath(env.UserHome, f.Path))
-		}
-		if item.prefChanged {
-			files = append(files, shortHomePath(env.UserHome, config.ModelPrefsPath(env.UserHome)))
-		}
-		rows = append(rows, []string{
-			toolLabel(t.out.tool),
-			safe(model),
-			direct,
-			strings.Join(files, ", "),
-		})
-	}
-	u.printf("\n")
-	u.table(2, []string{"TOOL", "DEFAULT MODEL", "DEFAULT", "FILES"}, rows)
-}
-
-func printSinglePreviewHeader(u ui, item pendingPreview, env config.Env) {
-	u.heading(toolLabel(item.target.out.tool) + " configuration")
-	printFileSummary(u, 2, item, env)
-	if item.preview != "" {
-		u.line(2, "The preview is compact and redacted: generated model lists are summarised")
-		u.line(2, "and credentials are hidden. The full diff is redacted the same way.")
-		u.printf("\n")
-		u.block(item.preview)
-	}
-}
-
-func printFileSummary(u ui, indent int, item pendingPreview, env config.Env) {
-	tool := item.target.out.tool
-	for _, f := range item.write {
-		existed := f.Existed
-		if !f.Inspected {
-			_, _, existed, _ = inspectFile(f.Path)
-		}
-		if !existed {
-			u.line(indent, "Create "+f.Path)
-		} else if b := item.names.picked[f.Path]; b != "" {
-			u.line(indent, "Update "+f.Path)
-			u.line(indent+2, "previous version kept as "+b)
-		} else {
-			u.line(indent, "Update "+f.Path)
-		}
-	}
-	if item.prefChanged {
-		u.line(
-			indent,
-			fmt.Sprintf(
-				"Save launcher default model %s in %s",
-				safe(item.prefAlias),
-				config.ModelPrefsPath(env.UserHome),
-			),
-		)
-	}
-	if setupTools[tool].bin != "" {
-		if item.target.out.asDefault {
-			u.line(indent, "Default provider: Aiven becomes the default for "+toolLabel(tool))
-		} else {
-			u.line(indent, "Default provider: left as it is")
-		}
-	}
-}
-
-const (
-	multiActionApply = iota
-	multiActionInspect
-	multiActionBack
-	multiActionCancel
-)
-
-func promptMultiReview(deps Deps, p presenter, count int, allowBack bool) (int, error) {
-	p.ui.printf("\n")
-	applyDetail := fmt.Sprintf("write all %d tool configurations", count)
-	if p.inline != nil {
-		opts := []option{
-			{label: "Apply all", detail: applyDetail},
-			{label: "Inspect redacted diffs", detail: "view unified diffs, then return here"},
-		}
-		actions := []int{multiActionApply, multiActionInspect}
-		if allowBack {
-			opts = append(opts, option{label: "Back", detail: "change default provider or models"})
-			actions = append(actions, multiActionBack)
-		}
-		opts = append(opts, option{label: "Cancel", detail: "leave keys and files unchanged"})
-		actions = append(actions, multiActionCancel)
-		c := choice{
-			title:     "Apply configuration changes?",
-			options:   opts,
-			allowBack: allowBack,
-			theme:     &p.ui.th,
-		}
-		picked, err := p.inline.Select(c)
-		if err != nil {
-			return 0, err
-		}
-		return actions[picked[0]], nil
-	}
-	p.ui.line(2, "Apply configuration changes:")
-	p.ui.line(4, "1) Apply all ("+applyDetail+")")
-	p.ui.line(4, "2) Inspect redacted diffs (view unified diffs, then return here)")
-	maxOpt := 3
-	if allowBack {
-		p.ui.line(4, "3) Back (change default provider or models)")
-		p.ui.line(4, "4) Cancel (leave keys and files unchanged)")
-		maxOpt = 4
-	} else {
-		p.ui.line(4, "3) Cancel (leave keys and files unchanged)")
-	}
-	for range 3 {
-		answer, err := deps.Prompter.ReadLine("Choose apply option (Enter for 1): ")
-		if errors.Is(err, io.EOF) || errors.Is(err, errInputEnded) {
-			return 0, errInputEnded
-		}
-		if err != nil {
-			return 0, err
-		}
-		trimmed := strings.ToLower(strings.TrimSpace(answer))
-		if trimmed == "" || trimmed == "y" || trimmed == "yes" {
-			return multiActionApply, nil
-		}
-		if allowBack && (trimmed == "b" || trimmed == "back") {
-			return multiActionBack, nil
-		}
-		if trimmed == "n" || trimmed == "no" || trimmed == "c" || trimmed == "cancel" {
-			return multiActionCancel, nil
-		}
-		if n, err := strconv.Atoi(trimmed); err == nil && n >= 1 && n <= maxOpt {
-			if !allowBack && n == 3 {
-				return multiActionCancel, nil
-			}
-			return n - 1, nil
-		}
-		p.ui.line(2, fmt.Sprintf("Choose a number from 1 to %d.", maxOpt))
-	}
-	return 0, errors.New("no answer: expected apply option number")
-}
-
-func approveSingleInteractive(
-	deps Deps,
-	p presenter,
-	item pendingPreview,
-	table []models.Model,
-	allowBack bool,
-) ([]approvedWrite, reviewOutcome) {
-	tool := item.target.out.tool
-	showFull := func() error {
-		all := append([]harness.File(nil), item.files...)
-		for i := range all {
-			all[i].Models = false
-		}
-		_, preview, err := changes(all, table, item.names)
-		if err != nil {
-			return err
-		}
-		p.ui.printf("\n")
-		p.ui.block(preview)
-		return nil
-	}
-	if p.inline != nil {
-		const (
-			actApply = iota
-			actFull
-			actBack
-			actCancel
-		)
-		opts := []option{{label: "Apply", detail: "write the files shown"}}
-		acts := []int{actApply}
-		if item.preview != "" {
-			opts = append(opts, option{label: "Show full redacted diff", detail: "then ask again"})
-			acts = append(acts, actFull)
-		}
-		if allowBack {
-			opts = append(opts, option{label: "Back", detail: "change default provider or model"})
-			acts = append(acts, actBack)
-		}
-		opts = append(opts, option{label: "Cancel", detail: "leave keys and files unchanged"})
-		acts = append(acts, actCancel)
-		c := choice{
-			title:     "Apply these changes to " + toolLabel(tool) + "?",
-			options:   opts,
-			allowBack: allowBack,
-			theme:     &p.ui.th,
-		}
-		for range 10 {
-			p.ui.printf("\n")
-			picked, err := p.inline.Select(c)
-			if errors.Is(err, errBack) {
-				return nil, reviewBack
-			}
-			if err != nil {
-				item.target.out.status, item.target.out.reason = statusCancelled, "no files written"
-				_ = fail(deps, tool+": "+err.Error())
-				return nil, reviewCancelled
-			}
-			switch acts[picked[0]] {
-			case actApply:
-				return []approvedWrite{{
-					target:      item.target,
-					write:       item.write,
-					names:       item.names,
-					prefAlias:   item.prefAlias,
-					prefChanged: item.prefChanged,
-				}}, reviewApproved
-			case actFull:
-				if err := showFull(); err != nil {
-					item.target.out.status, item.target.out.reason = statusFailed, err.Error()
-					_ = fail(deps, tool+": "+err.Error())
-					return nil, reviewApproved
-				}
-			case actBack:
-				return nil, reviewBack
-			case actCancel:
-				item.target.out.status, item.target.out.reason = statusDeclined, "no files written"
-				return nil, reviewApproved
-			}
-		}
-		item.target.out.status = statusFailed
-		item.target.out.reason = "no answer: expected apply or cancel"
-		_ = fail(deps, tool+": "+item.target.out.reason)
-		return nil, reviewApproved
-	}
-
-	p.ui.printf("\n")
-	p.ui.line(2, "Apply these changes to "+toolLabel(tool)+":")
-	p.ui.line(4, "1) Apply (write the files shown)")
-	optNum := 2
-	fullOpt := 0
-	if item.preview != "" {
-		fullOpt = optNum
-		p.ui.line(4, fmt.Sprintf("%d) Show full redacted diff (then ask again)", fullOpt))
-		optNum++
-	}
-	backOpt := 0
-	if allowBack {
-		backOpt = optNum
-		p.ui.line(4, fmt.Sprintf("%d) Back (change default provider or model)", backOpt))
-		optNum++
-	}
-	cancelOpt := optNum
-	p.ui.line(4, fmt.Sprintf("%d) Cancel (leave %s unchanged)", cancelOpt, toolLabel(tool)))
-	prompt := fmt.Sprintf("Apply option for %s (Enter for 1): ", tool)
-	for range 10 {
-		answer, err := deps.Prompter.ReadLine(prompt)
-		if err != nil {
-			item.target.out.status, item.target.out.reason = statusCancelled, "no files written"
-			_ = fail(deps, tool+": "+errInputEnded.Error())
-			return nil, reviewCancelled
-		}
-		trimmed := strings.ToLower(strings.TrimSpace(answer))
-		switch {
-		case trimmed == "" || trimmed == "1" || trimmed == "y" || trimmed == "yes":
-			return []approvedWrite{{
-				target:      item.target,
-				write:       item.write,
-				names:       item.names,
-				prefAlias:   item.prefAlias,
-				prefChanged: item.prefChanged,
-			}}, reviewApproved
-		case fullOpt > 0 && (trimmed == strconv.Itoa(fullOpt) || trimmed == "v" || trimmed == "view"):
-			if err := showFull(); err != nil {
-				item.target.out.status, item.target.out.reason = statusFailed, err.Error()
-				_ = fail(deps, tool+": "+err.Error())
-				return nil, reviewApproved
-			}
-		case backOpt > 0 && (trimmed == strconv.Itoa(backOpt) || trimmed == "b" || trimmed == "back"):
-			return nil, reviewBack
-		case trimmed == strconv.Itoa(cancelOpt) || trimmed == "n" || trimmed == "no" ||
-			trimmed == "c" || trimmed == "cancel":
-			item.target.out.status, item.target.out.reason = statusDeclined, "no files written"
-			return nil, reviewApproved
-		default:
-			p.ui.line(2, fmt.Sprintf("Choose a number from 1 to %d.", cancelOpt))
-		}
-	}
-	item.target.out.status = statusFailed
-	item.target.out.reason = "no answer: expected apply option number"
-	_ = fail(deps, tool+": "+item.target.out.reason)
-	return nil, reviewApproved
 }
 
 func writeApproved(deps Deps, item approvedWrite) {
@@ -701,7 +353,6 @@ func partialWrite(err error, completed []string) error {
 // with their redacted unified diff preview.
 func changes(
 	files []harness.File,
-	table []models.Model,
 	names backupNames,
 ) ([]harness.File, string, error) {
 	var preview strings.Builder
@@ -729,7 +380,7 @@ func changes(
 			backup = names.name(f.Path)
 		}
 		out = append(out, f)
-		from, to := shown(f, base, table)
+		from, to := shown(f, base)
 		preview.WriteString(udiff.Unified(f.Path, f.Path+fileNote(found, backup), from, to))
 	}
 	return out, preview.String(), nil
@@ -744,21 +395,4 @@ func fileNote(existed bool, backup string) string {
 		return " (previous version: " + backup + ")"
 	}
 	return ""
-}
-
-// modelNames lists the first n aliases in sorted order and counts the rest.
-func modelNames(table []models.Model, n int) string {
-	var names []string
-	for _, m := range models.Sorted(table) {
-		names = append(names, m.Alias)
-	}
-	if len(names) <= n {
-		return fmt.Sprintf("%d models: %s", len(names), strings.Join(names, ", "))
-	}
-	return fmt.Sprintf(
-		"%d models: %s, … +%d more",
-		len(names),
-		strings.Join(names[:n], ", "),
-		len(names)-n,
-	)
 }

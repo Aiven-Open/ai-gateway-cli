@@ -83,7 +83,6 @@ func setUp(t *testing.T, in harness.Input) map[string]any {
 		t.Fatal(err)
 	}
 	if len(plan.Files) != 1 || plan.Files[0].Path != configPath(in) || !plan.Files[0].Backup ||
-		!plan.Files[0].Models ||
 		plan.Files[0].Reference == nil ||
 		plan.Argv != nil ||
 		plan.Env != nil {
