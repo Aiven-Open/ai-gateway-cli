@@ -173,7 +173,7 @@ func TestInlinePatternYBadgesUserClaudeLayerResolvesInlineAndTogglesDirect(t *te
 	}
 	endIdx := strings.Index(out, "└")
 	tableIdx := strings.Index(out, "Default provider  ")
-	launchIdx := strings.Index(out, "aiven-ai-gateway launch claude")
+	launchIdx := strings.Index(out, "aiven-ai-gateway claude")
 	if endIdx < 0 || tableIdx < endIdx || launchIdx < endIdx {
 		t.Errorf("rail did not close before Review table & launch commands:\n%s", out)
 	}

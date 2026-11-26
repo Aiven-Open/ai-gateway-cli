@@ -3,4 +3,4 @@
 
 import { run } from "../lib/launcher.mjs";
 
-run(process.argv.slice(2));
+run(process.argv.slice(2), "aiven-ai-gateway");

@@ -137,7 +137,7 @@ func fail(deps Deps, msg string) int {
 	_, _ = fmt.Fprintf(
 		deps.Stderr,
 		"aiven-ai-gateway: %s\n",
-		safe(strings.ReplaceAll(msg, "\n", "; ")),
+		safe(strings.ReplaceAll(rewriteHints(msg, deps.command()), "\n", "; ")),
 	)
 	return 1
 }

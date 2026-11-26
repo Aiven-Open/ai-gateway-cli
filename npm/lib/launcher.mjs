@@ -45,7 +45,8 @@ export function resolveBinary() {
   return binary;
 }
 
-export function run(argv) {
+// name is the command the calling bin script stands for; the shim a platform puts on PATH may hide it.
+export function run(argv, name = "aiven-ai-gateway") {
   let binary;
   try {
     binary = resolveBinary();
@@ -59,9 +60,15 @@ export function run(argv) {
     process.stderr.write("aiven-ai-gateway: cannot start native binary; reinstall @aivenio/ai-gateway\n");
     process.exitCode = 1;
   };
+  // npm leaves no command on PATH for npx, npm exec or a package script, so the tool's hints go through npx there.
+  const invokedAs = process.env.npm_command ? "npx" : name;
   let child;
   try {
-    child = spawn(binary, argv, { stdio: "inherit", shell: false });
+    child = spawn(binary, argv, {
+      stdio: "inherit",
+      shell: false,
+      env: { ...process.env, AIVEN_AI_GATEWAY_INVOKED_AS: invokedAs },
+    });
   } catch {
     // Node throws, rather than emitting "error", for any spawn failure other than EACCES, EAGAIN, EMFILE, ENFILE and
     // ENOENT; Windows reports a file that is not a valid executable that way.

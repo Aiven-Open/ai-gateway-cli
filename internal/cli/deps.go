@@ -38,6 +38,8 @@ type Deps struct {
 	LockWait time.Duration
 	// Build is the release metadata `--version` prints.
 	Build Build
+	// Command is how the user invoked the launcher, as CommandName gives it; empty means the long name.
+	Command string
 }
 
 // Build is set by main from linker flags.

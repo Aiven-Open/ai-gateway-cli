@@ -14,7 +14,7 @@ func TestDirectModelCommandNeedsPortableLiteral(t *testing.T) {
 	for _, tool := range []string{"pi", "opencode", "omp"} {
 		s := newSession(t, newGatewayDouble(t)).loggedIn(keyPercent)
 		r := s.run("setup", tool, "--yes")
-		if r.code != 0 || !strings.Contains(r.stderr, "aiven-ai-gateway launch "+tool) {
+		if r.code != 0 || !strings.Contains(r.stderr, "aiven-ai-gateway "+tool) {
 			t.Fatalf("%s: exit %d, stderr %q", tool, r.code, r.stderr)
 		}
 		direct := strings.Contains(r.stderr, "aiven/glm%PATH%")

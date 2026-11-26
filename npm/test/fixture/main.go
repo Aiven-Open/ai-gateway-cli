@@ -42,11 +42,13 @@ func main() {
 		Argv           []string
 		Input          string
 		Env            string
+		InvokedAs      string
 		GatewayKey     *string `json:",omitempty"`
 		GatewayKeySet  *bool   `json:",omitempty"`
 		AnthropicToken *string `json:",omitempty"`
 	}{
 		Argv: os.Args[1:], Input: string(input), Env: os.Getenv("AIVEN_NPM_TEST_ENV"),
+		InvokedAs: os.Getenv("AIVEN_AI_GATEWAY_INVOKED_AS"),
 	}
 	if os.Getenv("AIVEN_NPM_TEST_CAPTURE_AUTH") == "1" {
 		key, present := os.LookupEnv("AIVEN_AI_GATEWAY_KEY")

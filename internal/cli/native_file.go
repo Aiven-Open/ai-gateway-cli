@@ -3,6 +3,8 @@
 package cli
 
 import (
+	"strings"
+
 	"github.com/aiven-open/ai-gateway-cli/internal/config"
 	"github.com/aiven-open/ai-gateway-cli/internal/harness"
 )
@@ -36,12 +38,31 @@ func withholdUneditable(p presenter, eligible []*setupTarget) []*setupTarget {
 		}
 		p.ui.line(
 			2,
-			toolLabel(
-				t.out.tool,
-			)+" default config cannot be edited, so Aiven is available through the launch command only.",
+			toolLabel(t.out.tool)+" default config cannot be edited"+nativeReason(t.nativeErr)+
+				", so Aiven is available through the launch command only.",
 		)
 	}
 	return offered
+}
+
+// nativeReason is " because " and what err says is wrong, without the file it names, the remedy it adds after a
+// semicolon, or any parentheses and quotation marks; empty when err says nothing usable.
+func nativeReason(err error) string {
+	msg := err.Error()
+	if i := strings.LastIndex(msg, ": "); i >= 0 {
+		msg = msg[i+2:]
+	}
+	msg, _, _ = strings.Cut(msg, ";")
+	msg = strings.TrimSpace(strings.Map(func(r rune) rune {
+		if strings.ContainsRune("()\"`\u201c\u201d", r) {
+			return -1
+		}
+		return r
+	}, safe(msg)))
+	if msg == "" {
+		return ""
+	}
+	return " because " + msg
 }
 
 // nativeDefaultFile names t's native default file for the default-provider prompt, with ~ for the home.

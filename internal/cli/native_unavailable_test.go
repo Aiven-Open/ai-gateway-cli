@@ -17,7 +17,7 @@ func TestDefaultPromptWithholdsYesWhenNativeFileUneditable(t *testing.T) {
 	writeFile(t, config, aliased)
 	s.deps.Prompter = &scriptedPrompter{answers: []string{"", "", "1"}}
 	r := s.run("setup", "omp", "--plain")
-	const why = "OMP default config cannot be edited, so Aiven is available through the launch command only."
+	const why = "OMP default config cannot be edited because modelRoles must be a direct YAML mapping, so Aiven is available through the launch command only."
 	if r.code != 0 || !strings.Contains(r.stderr, why) ||
 		strings.Contains(r.stderr, "Yes — make Aiven the default") {
 		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
