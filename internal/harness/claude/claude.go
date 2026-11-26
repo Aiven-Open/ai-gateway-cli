@@ -592,7 +592,13 @@ func Launch(in Input) (harness.Plan, error) {
 	if err != nil {
 		return harness.Plan{}, err
 	}
-	s, err := withPins(in.Table, defaultSlots(in.Table), cfg, in.UserHome, in.WorkDir)
+	s, err := withPins(
+		in.Table,
+		defaultSlots(in.Table),
+		cfg,
+		in.UserHome,
+		PinWorkDir(in.Table, in.UserHome, in.WorkDir),
+	)
 	if err != nil {
 		return harness.Plan{}, err
 	}

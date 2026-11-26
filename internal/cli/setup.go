@@ -779,6 +779,7 @@ func obtainKey(
 	deps Deps,
 	p presenter,
 	o setupOptions,
+	saved keyFile,
 ) (string, []models.Model, error) {
 	if !p.ui.color {
 		p.ui.heading("Key check")
@@ -789,10 +790,7 @@ func obtainKey(
 		key, err := readKey(stdin, "")
 		return key, nil, err
 	}
-	fileKey, err := storedKey(env)
-	if err != nil {
-		return "", nil, err
-	}
+	fileKey := creds.Parse(saved.data)
 	if fileKey != "" {
 		if !p.ui.color {
 			p.ui.line(2, "Checking your saved key.")

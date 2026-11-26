@@ -122,3 +122,47 @@ func TestSetupNoWritesLeavesSavedKeyAloneWhenItWasRemoved(t *testing.T) {
 		t.Errorf("exit %d, stat %v:\n%s", code, statErr, out)
 	}
 }
+
+// swapWriter runs on once, when the output first holds marker.
+type swapWriter struct {
+	strings.Builder
+	marker string
+	on     func()
+	done   bool
+}
+
+func (w *swapWriter) Write(p []byte) (int, error) {
+	n, err := w.Builder.Write(p)
+	if !w.done && strings.Contains(w.String(), w.marker) {
+		w.done = true
+		w.on()
+	}
+	return n, err
+}
+
+// A login that replaces the saved key between setup's two reads of the file is the key setup checks and reuses, so
+// a logout during the checks that follow must still stop the run from writing it back.
+func TestSetupLeavesSavedKeyAloneWhenItChangedBetweenReads(t *testing.T) {
+	var path string
+	var armed atomic.Bool
+	srv := hookedGateway(t, &armed, func() { _ = os.Remove(path) })
+	env, _ := inlineSetupEnv(t, srv.URL)
+	path = creds.Path(env.UserHome, env.BaseURL)
+	if _, err := creds.Write(env.UserHome, env.BaseURL, "sk-saved", fsutil.WriteAtomic); err != nil {
+		t.Fatal(err)
+	}
+	stderr := &swapWriter{marker: "Key check", on: func() {
+		_ = fsutil.WriteAtomic(path, []byte("sk-other\n"), 0o600)
+		armed.Store(true)
+	}}
+	deps := inlineDeps(&scriptedSelector{}, stderr)
+	deps.Term = Terminal{}
+	deps.HTTP = srv.Client()
+	code := Run(t.Context(), []string{"setup", "claude", "--yes"}, env, deps)
+	_, statErr := os.Stat(path)
+	out := stderr.String()
+	if code == 0 || !os.IsNotExist(statErr) ||
+		!strings.Contains(out, "the saved key changed while setup was running; no key was written") {
+		t.Errorf("exit %d, stat %v:\n%s", code, statErr, out)
+	}
+}

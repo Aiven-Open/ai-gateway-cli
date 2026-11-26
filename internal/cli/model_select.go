@@ -94,10 +94,7 @@ func projectOverrideNote(env config.Env, c configuredModel) string {
 // claudeWorkDir is the folder whose project Claude files setup lets decide the model: none when they select a
 // model the key does not grant, since setup does not write them and plans and checks the files it does write.
 func claudeWorkDir(env config.Env, table []models.Model) string {
-	if _, _, _, bad := claude.ProjectUngranted(table, env.UserHome, env.WorkDir); bad {
-		return ""
-	}
-	return env.WorkDir
+	return claude.PinWorkDir(table, env.UserHome, env.WorkDir)
 }
 
 func inspectConfiguredModel(

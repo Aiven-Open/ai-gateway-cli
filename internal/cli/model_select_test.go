@@ -417,6 +417,32 @@ func TestClaudeUntouchedUserAndProjectLayerRecoveryBoundaries(t *testing.T) {
 			if _, err := os.Stat(s.keyPath()); err != nil {
 				t.Errorf("key not saved: %v", err)
 			}
+			// Launch ignores the same project pin: the child runs what setup checked, in env and in the overlay.
+			if lr := s.run("launch", "claude"); lr.code != 0 {
+				t.Fatalf("launch claude exit %d: %s", lr.code, lr.stderr)
+			}
+			c := s.launched()
+			var overlay struct {
+				Env map[string]string `json:"env"`
+			}
+			if err := json.Unmarshal([]byte(c.argv[2]), &overlay); err != nil {
+				t.Fatal(err)
+			}
+			for name, want := range map[string]string{
+				"ANTHROPIC_MODEL":                "deepseek-v3.2",
+				"ANTHROPIC_DEFAULT_OPUS_MODEL":   "deepseek-v3.2",
+				"ANTHROPIC_DEFAULT_SONNET_MODEL": "deepseek-v3.2",
+				"ANTHROPIC_DEFAULT_HAIKU_MODEL":  "glm-4.7-flash",
+				"ANTHROPIC_DEFAULT_FABLE_MODEL":  "deepseek-v3.2",
+				"ANTHROPIC_BASE_URL":             g.URL,
+			} {
+				if got, _ := c.envVar(name); got != want {
+					t.Errorf("child %s = %q, want %q", name, got, want)
+				}
+				if got, ok := overlay.Env[name]; ok && got != want {
+					t.Errorf("overlay %s = %q, want %q", name, got, want)
+				}
+			}
 		},
 	)
 }

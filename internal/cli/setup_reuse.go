@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"os"
 	"runtime"
-	"strings"
 
 	"github.com/aiven-open/ai-gateway-cli/internal/config"
 	"github.com/aiven-open/ai-gateway-cli/internal/creds"
@@ -19,10 +18,18 @@ const changedKeyMessage = "the saved key changed while setup was running; no key
 // obtainRunKey is obtainKey that also records what the key file held when the run reuses the saved key,
 // so the commit can tell a logout or a login that happened since.
 func (s *setupSession) obtainRunKey() (string, []models.Model, error) {
-	before, readErr := readKeyFile(s.env)
-	key, table, err := obtainKey(s.ctx, s.env, s.deps, s.p, s.opts)
-	if err == nil && readErr == nil && !s.opts.fromStdin && before.existed &&
-		strings.TrimSpace(string(before.data)) == key {
+	var before keyFile
+	if !s.opts.fromStdin {
+		if s.env.UserHome == "" {
+			return "", nil, config.ErrNoHome
+		}
+		var err error
+		if before, err = readKeyFile(s.env); err != nil {
+			return "", nil, err
+		}
+	}
+	key, table, err := obtainKey(s.ctx, s.env, s.deps, s.p, s.opts, before)
+	if err == nil && before.existed && creds.Parse(before.data) == key {
 		s.run.reusedKey = &before
 	}
 	return key, table, err

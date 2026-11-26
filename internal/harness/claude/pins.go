@@ -169,6 +169,15 @@ func ProjectUngranted(
 	return selectedPath, eff, selectedSetting, true
 }
 
+// PinWorkDir is the folder whose project .claude files may pin models for setup and for launch: none when they
+// select a model the key does not grant, so both ignore that layer and agree on the model that runs.
+func PinWorkDir(t []models.Model, userHome, workDir string) string {
+	if _, _, _, bad := ProjectUngranted(t, userHome, workDir); bad {
+		return ""
+	}
+	return workDir
+}
+
 // withPins adopts model pins from the dedicated settings cfg, then canonical user and project settings, local over
 // shared. When cfg holds an explicit launcher-only dedicated choice (granted model with blank env.ANTHROPIC_MODEL,
 // or granted env.ANTHROPIC_MODEL), user ~/.claude/settings.json pins do not override it; project layers always win.
