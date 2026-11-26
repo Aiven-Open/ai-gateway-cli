@@ -20,13 +20,68 @@ import (
 // or on Windows its embedded bash-like shell, and caches its output until a 401.
 func APIKey(baseURL string) string { return "!" + creds.CommandLine(baseURL, runtime.GOOS) }
 
+// Commands are OMP's subcommands, from omp --help (18.18.6). OMP reads a first word that is not one as a message.
+var Commands = []string{
+	"acp",
+	"agents",
+	"anonymize",
+	"auth",
+	"auth-broker",
+	"auth-gateway",
+	"bash",
+	"bench",
+	"browser-relay",
+	"cleanse",
+	"clip",
+	"collab",
+	"commit",
+	"completions",
+	"compress",
+	"config",
+	"dry-balance",
+	"find",
+	"gallery",
+	"gc",
+	"git",
+	"grep",
+	"grievances",
+	"if-bench",
+	"images",
+	"install",
+	"join",
+	"login",
+	"models",
+	"play",
+	"plugin",
+	"predict",
+	"ps",
+	"read",
+	"render",
+	"say",
+	"search",
+	"session",
+	"setup",
+	"sh",
+	"share",
+	"shell",
+	"skill",
+	"ssh",
+	"stats",
+	"stream",
+	"tiny-models",
+	"token",
+	"toks",
+	"ttsr",
+	"update",
+	"usage",
+	"worktree",
+	"zsh",
+}
+
 // ModelFor returns the --model value for sel against table, falling back to SonnetOrFirst.
 func ModelFor(table []models.Model, sel harness.ModelSelection) string {
 	return "aiven/" + harness.AliasFor(table, sel)
 }
-
-// Model is the --model value that picks the gateway's default alias.
-func Model(table []models.Model) string { return ModelFor(table, harness.ModelSelection{}) }
 
 // Setup updates the YAML OMP reads; only an explicit default choice changes modelRoles.
 func Setup(in harness.Input) (harness.Plan, error) {
@@ -75,7 +130,7 @@ func Setup(in harness.Input) (harness.Plan, error) {
 	if _, err := in.Selection.ResolveMain(in.Table); err != nil {
 		return harness.Plan{}, err
 	}
-	files := []harness.File{{Path: modelPath, Data: data, Backup: true, Models: true}}
+	files := []harness.File{{Path: modelPath, Data: data, Backup: true}}
 	if in.Default {
 		data, err = mergeConfig(configPath, "modelRoles", "default", ModelFor(in.Table, in.Selection))
 		if err != nil {
@@ -90,7 +145,7 @@ func Setup(in harness.Input) (harness.Plan, error) {
 // args unchanged.
 func Launch(in harness.Input) (harness.Plan, error) {
 	alias := harness.AliasFor(in.Table, in.Selection)
-	args := harness.ModelArgs(in.Args, "aiven/"+alias, "--model")
+	args := harness.ModelArgs(in.Args, "aiven/"+alias, "--model", Commands)
 	if len(args) != len(in.Args) {
 		if in.UserHome == "" {
 			return harness.Plan{}, config.ErrNoHome

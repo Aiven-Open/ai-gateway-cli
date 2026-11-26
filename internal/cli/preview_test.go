@@ -93,7 +93,7 @@ func configure(
 	return out, stderr.String()
 }
 
-func TestConfigureToolNamesTheBackupItKeeps(t *testing.T) {
+func TestConfigureToolNamesItsBackup(t *testing.T) {
 	env := previewEnv(t)
 	path := filepath.Join(env.UserHome, ".pi/agent/models.json")
 	const before = `{"providers":{}}`
@@ -104,8 +104,8 @@ func TestConfigureToolNamesTheBackupItKeeps(t *testing.T) {
 	if out.status != statusConfigured || len(out.written) != 1 || out.written[0] != path+note {
 		t.Fatalf("outcome %+v, stderr %q", out, stderr)
 	}
-	for _, want := range []string{"Update " + path + "\n", "previous version kept as " + backup + "\n", "+++ " + path + note + "\n",
-		"Default provider: left as it is\n", "[3 models: claude-sonnet-5-5, glm-5, … +1 more]"} {
+	for _, want := range []string{"  File              " + path + "\n", "                    " + backupNote + "\n",
+		"  Default provider  not changed\n"} {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("stderr lacks %q: %q", want, stderr)
 		}
@@ -129,7 +129,8 @@ func TestConfigureToolNamesTheBackupItKeeps(t *testing.T) {
 		true,
 		false,
 	); out.status != statusUnchanged ||
-		!strings.Contains(stderr, "Already configured") {
+		!strings.Contains(stderr, "\n"+toolLabel("pi")+"\n  Already configured") ||
+		strings.Contains(stderr, "configuration") {
 		t.Errorf("rerun: outcome %+v, stderr %q", out, stderr)
 	}
 }
@@ -200,14 +201,13 @@ func TestConfigureToolWritesXDGConfigHomeOutsideUserHome(t *testing.T) {
 	}
 }
 
-func TestConfigureToolKeepsCommentsAndSummarisesTheModels(t *testing.T) {
+func TestConfigureToolKeepsComments(t *testing.T) {
 	env := previewEnv(t)
 	path := filepath.Join(env.UserHome, ".pi/agent/models.json")
 	const before = "{\n  // local models\n  \"providers\": {\n    \"local\": {\"baseUrl\": \"http://localhost\"}, // mine\n  },\n}\n"
 	writeTestFile(t, path, before)
 	out, stderr := configure(t, env, Deps{}, true, false)
-	if out.status != statusConfigured ||
-		!strings.Contains(stderr, "[3 models: claude-sonnet-5-5, glm-5, … +1 more]") {
+	if out.status != statusConfigured {
 		t.Fatalf("outcome %+v, stderr %q", out, stderr)
 	}
 	got := readTestFile(t, path)
@@ -219,7 +219,7 @@ func TestConfigureToolKeepsCommentsAndSummarisesTheModels(t *testing.T) {
 	}
 }
 
-func TestConfigureToolSummarisesTheOMPModels(t *testing.T) {
+func TestConfigureToolWritesOMPModelsKeepingComments(t *testing.T) {
 	env := previewEnv(t)
 	path := filepath.Join(env.UserHome, ".omp/agent/models.yml")
 	writeTestFile(t, path, "# local models\nproviders:\n  local:\n    baseUrl: http://localhost\n")
@@ -231,20 +231,15 @@ func TestConfigureToolSummarisesTheOMPModels(t *testing.T) {
 	deps := Deps{Stderr: &stderr, Now: func() time.Time { return previewNow }}
 	out := targetOutcome{tool: "omp"}
 	configureToolForTest(deps, newPresenter(env, deps, true), true, &out, plan.Files, previewTable)
-	if out.status != statusConfigured ||
-		!strings.Contains(
-			stderr.String(),
-			"+    models: [3 models: claude-sonnet-5-5, glm-5, … +1 more]\n",
-		) ||
-		strings.Contains(stderr.String(), "gpt-6.1-sol") {
-		t.Fatalf("outcome %+v, stderr %q", out, stderr.String())
+	got := readTestFile(t, path)
+	if out.status != statusConfigured || !strings.HasPrefix(got, "# local models\n") ||
+		!strings.Contains(got, "baseUrl: http://localhost") {
+		t.Fatalf("outcome %+v, models.yml %q", out, got)
 	}
-	if got := readTestFile(
-		t,
-		path,
-	); !strings.HasPrefix(got, "# local models\n") ||
-		!strings.Contains(got, "id: gpt-6.1-sol") {
-		t.Errorf("models.yml = %q, want every gateway model", got)
+	for _, m := range previewTable {
+		if !strings.Contains(got, "id: "+m.Alias) {
+			t.Errorf("models.yml = %q, want model %s", got, m.Alias)
+		}
 	}
 }
 
@@ -257,13 +252,13 @@ func TestConfigureToolWritesOnlyOnConsent(t *testing.T) {
 		status   targetStatus
 		diffs    int
 	}{
-		{name: "--yes", yes: true, status: statusConfigured, diffs: 1},
-		{name: "enter", prompter: &lineAnswers{answers: []string{""}}, status: statusConfigured, diffs: 1},
-		{name: "y", prompter: &lineAnswers{answers: []string{"y"}}, status: statusConfigured, diffs: 1},
-		{name: "n", prompter: &lineAnswers{answers: []string{"n"}}, status: statusDeclined, diffs: 1},
-		{name: "full diff then n", prompter: &lineAnswers{answers: []string{"v", "n"}}, status: statusDeclined, diffs: 2},
-		{name: "end of input", prompter: &lineAnswers{}, status: statusCancelled, diffs: 1},
-		{name: "no terminal", status: statusSkipped, diffs: 1},
+		{name: "--yes", yes: true, status: statusConfigured},
+		{name: "enter", prompter: &lineAnswers{answers: []string{""}}, status: statusConfigured},
+		{name: "y", prompter: &lineAnswers{answers: []string{"y"}}, status: statusConfigured},
+		{name: "n", prompter: &lineAnswers{answers: []string{"n"}}, status: statusDeclined},
+		{name: "file changes then n", prompter: &lineAnswers{answers: []string{"v", "n"}}, status: statusDeclined, diffs: 1},
+		{name: "end of input", prompter: &lineAnswers{}, status: statusCancelled},
+		{name: "no terminal", status: statusSkipped},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			env := previewEnv(t)
@@ -543,7 +538,7 @@ func TestConfigureToolKeepsThePreviewedBackupNameWhenAnotherRunTakesIt(t *testin
 		Stderr: &stderr,
 		Now:    func() time.Time { return previewNow },
 		Prompter: &lineAnswers{
-			answers: []string{"y"},
+			answers: []string{"v", "y"},
 			hook:    func() { writeTestFile(t, taken, "another run") },
 		},
 	}
@@ -585,7 +580,7 @@ func TestConfigureToolReportsAPartialWrite(t *testing.T) {
 		stderr,
 		"partially configured; completed "+modelsPath+" (new file); remaining operation failed: replace "+settings,
 	) ||
-		!strings.Contains(stderr, "Default provider: Aiven becomes the default for Pi") {
+		!strings.Contains(stderr, "  Default provider  Aiven\n") {
 		t.Errorf("stderr %q", stderr)
 	}
 	if got := readTestFile(t, settings); got != before {
@@ -716,7 +711,7 @@ func TestYAMLPreviewRedactsCredentialsOnBothSides(t *testing.T) {
 			before := "providers:\n  unrelated:\n" + tc.body + "    baseUrl: https://example.invalid/v1\n"
 			after := before + "  aiven:\n    apiKey: " + creds.EnvVar + "\n"
 			f := harness.File{Path: "/home/ada/.omp/agent/models.yml", Data: []byte(after)}
-			from, to := shown(f, []byte(before), nil)
+			from, to := shown(f, []byte(before))
 			for _, secret := range tc.secrets {
 				if strings.Contains(from+to, secret) {
 					t.Errorf("credential shown: %q / %q", from, to)
@@ -731,7 +726,6 @@ func TestYAMLPreviewRedactsCredentialsOnBothSides(t *testing.T) {
 	if from, _ := shown(
 		harness.File{Path: "/x/models.yml"},
 		[]byte("a: [b\n"),
-		nil,
 	); from != "<redacted: YAML preview unavailable>\n" {
 		t.Errorf("unparsable YAML shown as %q", from)
 	}
@@ -739,7 +733,6 @@ func TestYAMLPreviewRedactsCredentialsOnBothSides(t *testing.T) {
 	if from, to := shown(
 		harness.File{Path: "/x/models.yml", Data: []byte(later + "x: 1\n")},
 		[]byte(later),
-		nil,
 	); strings.Contains(from+to, "SYNTHETIC") ||
 		!strings.Contains(from, "theme: dark") {
 		t.Errorf("aliased credential in a later document: %q / %q", from, to)
@@ -752,7 +745,7 @@ func preparePlanForTest(
 	tool string,
 	asDefault bool,
 ) (harness.Plan, error) {
-	snap, err := prepareSnapshot(env, tool)
+	snap, _, err := prepareSnapshot(env, tool)
 	if err != nil {
 		return harness.Plan{}, err
 	}

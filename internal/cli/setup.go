@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"os"
 	"runtime"
@@ -38,7 +37,7 @@ var setupTools = map[string]struct {
 	"pi": {
 		userConfig(pi.Setup),
 		func(_ config.Env, t []models.Model, sel harness.ModelSelection) string {
-			return "pi --model " + shellQuoteForOS(pi.ModelFor(t, sel), runtime.GOOS)
+			return modelCommand(runtime.GOOS, "pi --model ", pi.ModelFor(t, sel))
 		},
 		"pi",
 		[]string{"PI_CODING_AGENT_DIR"},
@@ -46,7 +45,7 @@ var setupTools = map[string]struct {
 	"opencode": {
 		userConfig(opencode.Setup),
 		func(_ config.Env, t []models.Model, sel harness.ModelSelection) string {
-			return "opencode -m " + shellQuoteForOS(opencode.ModelFor(t, sel), runtime.GOOS)
+			return modelCommand(runtime.GOOS, "opencode -m ", opencode.ModelFor(t, sel))
 		},
 		"opencode",
 		[]string{"OPENCODE_CONFIG", "OPENCODE_CONFIG_DIR"},
@@ -68,7 +67,7 @@ var setupTools = map[string]struct {
 	"omp": {
 		userConfig(omp.Setup),
 		func(_ config.Env, t []models.Model, sel harness.ModelSelection) string {
-			return "omp --model " + shellQuoteForOS(omp.ModelFor(t, sel), runtime.GOOS)
+			return modelCommand(runtime.GOOS, "omp --model ", omp.ModelFor(t, sel))
 		},
 		"omp",
 		[]string{"PI_CODING_AGENT_DIR", "OMP_PROFILE", "PI_PROFILE", "PI_CONFIG_DIR"},
@@ -198,6 +197,8 @@ type setupTarget struct {
 	out          *targetOutcome
 	snapshot     harness.Plan
 	plan         harness.Plan
+	nativeFile   string
+	nativeErr    error
 	planSel      harness.ModelSelection
 	currentPref  string
 	existing     configuredModel
@@ -238,6 +239,7 @@ func setup(ctx context.Context, args []string, env config.Env, deps Deps) int {
 			"setup: a harness is required without a terminal; use login for credential-only input",
 		)
 	}
+	printIntro(p.ui)
 	s := &setupSession{
 		ctx:        ctx,
 		env:        env,
@@ -290,7 +292,7 @@ func (s *setupSession) execute() int {
 	} else {
 		s.p.ui.line(0, "Gateway: "+safe(s.env.BaseURL))
 	}
-	key, table, err := obtainKey(s.ctx, s.env, s.deps, s.p, s.opts)
+	key, table, err := s.obtainRunKey()
 	if err != nil {
 		return s.run.sharedFailure(s.deps, "reading the key", err)
 	}
@@ -335,7 +337,7 @@ func (s *setupSession) preflightTool(tool string) *setupTarget {
 		)
 	}
 	if err == nil {
-		t.snapshot, err = prepareSnapshot(s.env, tool)
+		t.snapshot, t.nativeErr, err = prepareSnapshot(s.env, tool)
 	}
 	if err != nil {
 		t.preflightErr = err
@@ -367,8 +369,12 @@ func (s *setupSession) inspectCandidates() {
 			continue
 		}
 		t.plan = plan0
+		t.nativeFile = nativeFileOf(t.snapshot, plan0)
 		t.existing = inspectConfiguredModel(t.out.tool, s.env, s.table, t.snapshot, plan0)
 		t.badge = toolBadge(t.out.tool, s.env, s.table, t.existing)
+		if t.existing.overridden() {
+			t.out.note = projectOverrideNote(s.env, t.existing)
+		}
 	}
 }
 
@@ -379,6 +385,7 @@ func (s *setupSession) runBeats() (approved []approvedWrite, exitCode int, done 
 	if hasBeat1 {
 		step = stepHarnesses
 	} else if !interactive {
+		s.warnProjectOverrides(s.eligible())
 		step = stepReview
 	}
 
@@ -435,6 +442,7 @@ func (s *setupSession) runBeats() (approved []approvedWrite, exitCode int, done 
 				return nil, s.run.finish(), true
 			}
 			if !interactive {
+				s.warnProjectOverrides(s.eligible())
 				step = stepReview
 			} else {
 				step = stepModels
@@ -586,20 +594,20 @@ func draftSummary(eligible []*setupTarget, draft map[string]toolDraft) string {
 	return strings.Join(parts, ", ") + " (others: defaults)"
 }
 
+// warnProjectOverrides says once per tool that its project file keeps its own model, which setup leaves alone.
+func (s *setupSession) warnProjectOverrides(eligible []*setupTarget) {
+	for _, t := range eligible {
+		if t.existing.overridden() {
+			s.p.ui.railWarn(projectOverrideWarning(s.env, t.out.tool, t.existing))
+		}
+	}
+}
+
 func (s *setupSession) runBeatModels(
 	eligible []*setupTarget,
 	hasBeat1 bool,
 ) (exitCode int, nextStep setupStep, stop bool) {
-	// Project-level Claude overrides (.claude/settings*.json) are never written by setup, so refuse
-	// immediately instead of offering a repair that cannot fix them.
-	for _, t := range eligible {
-		if t.existing.present && !t.existing.granted && t.existing.unrepairable {
-			return s.refuseUngranted(
-				eligible,
-				notGranted(t.existing.file, t.existing.model, s.table),
-			), 0, true
-		}
-	}
+	s.warnProjectOverrides(eligible)
 	if len(eligible) >= 2 {
 		decision, err := selectMultiToolModels(s.deps, s.p, s.env, eligible, s.table, hasBeat1)
 		if errors.Is(err, errBack) && hasBeat1 {
@@ -614,7 +622,7 @@ func (s *setupSession) runBeatModels(
 		if !decision.customize {
 			draft := make(map[string]toolDraft, len(eligible))
 			for _, t := range eligible {
-				sel := decision.shared
+				sel := sharedSelection(t.out.tool, s.table, decision.shared)
 				label := decision.summaryLabel
 				set := !sel.IsZero()
 				if per, ok := decision.perTool[t.out.tool]; ok {
@@ -660,7 +668,7 @@ func (s *setupSession) runCustomizePerTool(
 				if t.existing.present && !t.existing.granted && !draft[t.out.tool].set {
 					return s.refuseUngranted(
 						eligible,
-						notGranted(t.existing.file, t.existing.model, s.table),
+						notGranted(s.env.UserHome, t.existing.file, t.existing.model, s.table),
 					), 0, true
 				}
 			}
@@ -763,74 +771,6 @@ func (s *setupSession) refuseUngranted(eligible []*setupTarget, err error) int {
 	return s.run.finish()
 }
 
-func (s *setupSession) commitApproved(approved []approvedWrite) int {
-	// Populate resolvedModel for ready targets (including unchanged ones).
-	for _, t := range s.selected {
-		if t.preflightErr == nil {
-			t.out.resolvedModel = resolvedToolModel(t.out.tool, s.env, s.table, t.plan, t.planSel)
-		}
-	}
-	if len(approved) == 0 {
-		hasUnchanged := false
-		for _, o := range s.run.targets {
-			if o.status == statusUnchanged {
-				hasUnchanged = true
-				break
-			}
-		}
-		if hasUnchanged {
-			s.run.credential = "unchanged; existing key files unchanged"
-		} else {
-			s.run.credential = "not saved by this run; existing key files unchanged; " +
-				"no configuration changes were approved"
-		}
-		return s.run.finish()
-	}
-
-	s.p.begin("Saving the key")
-	where, err := saveKey(s.env, s.deps, s.key)
-	if err != nil {
-		s.p.failed("the key was not saved")
-		for _, item := range approved {
-			item.target.out.status = statusPending
-			item.target.out.reason = "not attempted: saving the key failed"
-		}
-		return s.run.sharedFailure(s.deps, "saving the key", err)
-	}
-	s.p.passed("saved to " + where)
-	s.run.credential = "saved to " + where
-
-	prefUpdates := map[string]string{}
-	for _, item := range approved {
-		writeApproved(s.deps, item)
-		if item.target.out.status == statusConfigured && item.prefChanged && item.prefAlias != "" {
-			prefUpdates[item.target.out.tool] = item.prefAlias
-		}
-	}
-	if len(prefUpdates) > 0 {
-		if err := config.SaveModelPrefs(
-			s.env.UserHome,
-			s.env.BaseURL,
-			prefUpdates,
-			s.deps.WriteFile,
-		); err != nil {
-			_ = fail(s.deps, "saving launcher model preferences: "+err.Error())
-			for _, item := range approved {
-				if _, ok := prefUpdates[item.target.out.tool]; !ok {
-					continue
-				}
-				if len(item.target.out.written) > 0 {
-					item.target.out.status = statusPartial
-				} else {
-					item.target.out.status = statusFailed
-				}
-				item.target.out.reason = "saving launcher model preferences failed: " + err.Error()
-			}
-		}
-	}
-	return s.run.finish()
-}
-
 // obtainKey reads explicit stdin, a working saved key, a confirmed environment key or hidden terminal input.
 // A non-nil table means the key already passed model listing.
 func obtainKey(
@@ -839,6 +779,7 @@ func obtainKey(
 	deps Deps,
 	p presenter,
 	o setupOptions,
+	saved keyFile,
 ) (string, []models.Model, error) {
 	if !p.ui.color {
 		p.ui.heading("Key check")
@@ -849,10 +790,7 @@ func obtainKey(
 		key, err := readKey(stdin, "")
 		return key, nil, err
 	}
-	fileKey, err := storedKey(env)
-	if err != nil {
-		return "", nil, err
-	}
+	fileKey := creds.Parse(saved.data)
 	if fileKey != "" {
 		if !p.ui.color {
 			p.ui.line(2, "Checking your saved key.")
@@ -912,55 +850,6 @@ func obtainKey(
 	}
 	key, err := readKey(deps, connectPrompt)
 	return key, nil, err
-}
-
-func confirmEnvKey(deps Deps, p presenter, env config.Env, envKey string) (bool, error) {
-	if p.inline != nil {
-		c := choice{
-			title:    "Use " + creds.EnvVar + " (" + maskKey(envKey) + ")?",
-			subtitle: "Gateway: " + safe(env.BaseURL),
-			options: []option{
-				{label: "Use " + creds.EnvVar, detail: maskKey(envKey) + " with " + safe(env.BaseURL)},
-				{label: "Enter a different key", detail: "paste key with hidden input"},
-				{label: "Cancel", detail: "exit without reading or saving a key"},
-			},
-			rail:  true,
-			theme: &p.ui.th,
-		}
-		picked, err := p.inline.Select(c)
-		if err != nil {
-			return false, err
-		}
-		if picked[0] == 2 {
-			return false, errCancelled
-		}
-		return picked[0] == 0, nil
-	}
-	p.ui.line(2, "Key source: "+creds.EnvVar)
-	p.ui.line(2, "Key: "+maskKey(envKey))
-	p.ui.line(2, "Use this key with "+safe(env.BaseURL)+"?")
-	p.ui.line(4, "1) Use "+creds.EnvVar)
-	p.ui.line(4, "2) Enter a different key (default)")
-	p.ui.line(4, "3) Cancel")
-	for range 3 {
-		answer, err := deps.Prompter.ReadLine("Choose key option (Enter for 2): ")
-		if errors.Is(err, io.EOF) || errors.Is(err, errInputEnded) {
-			return false, errInputEnded
-		}
-		if err != nil {
-			return false, err
-		}
-		switch strings.ToLower(strings.TrimSpace(answer)) {
-		case "1", "y", "yes":
-			return true, nil
-		case "", "2", "n", "no":
-			return false, nil
-		case "3", "c", "cancel":
-			return false, errCancelled
-		}
-		p.ui.line(2, "Choose a number from 1 to 3.")
-	}
-	return false, errors.New("no answer: expected key option number")
 }
 
 func catalogueFamilies(table []models.Model) string {
@@ -1061,6 +950,8 @@ func gatewayCategory(err error) string {
 		return "the gateway rejected the key"
 	case errors.Is(err, gateway.ErrNoModels):
 		return "the key grants no models"
+	case errors.As(err, &unreachable) && unreachable.Timeout():
+		return "the gateway did not answer in time"
 	case errors.As(err, &unreachable):
 		return "the gateway could not be reached"
 	case errors.As(err, &he) && he.Status == 429:

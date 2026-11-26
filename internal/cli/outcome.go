@@ -40,8 +40,12 @@ func newPresenter(env config.Env, deps Deps, plain bool) presenter {
 	p := presenter{
 		ui: newUIWithEnv(deps.Stderr, deps.Term.StderrTTY, deps.Term.StderrWidth, plain, env.Environ),
 	}
+	p.ui.cmd = deps.command()
 	if sel, ok := deps.Prompter.(selector); ok && !plain && deps.Term.StdinTTY && deps.Term.StderrTTY {
 		p.inline = sel
+		if p.ui.cmd != longName {
+			p.inline = hintSelector{selector: sel, cmd: p.ui.cmd}
+		}
 	}
 	return p
 }
@@ -78,6 +82,8 @@ type targetOutcome struct {
 	// reason explains a status other than configured or unchanged; written lists files changed with recovery notes.
 	reason  string
 	written []string
+	// note is kept on the outcome line whatever the status.
+	note string
 }
 
 // ready reports whether the harness can launch on what this run left: configured now or already.
@@ -94,6 +100,8 @@ type setupRun struct {
 	targets    []*targetOutcome
 	cancelled  bool
 	checks     []protocolCheck
+	// reusedKey is the key file as inspected when the run reused the saved key, nil when the run was given its key.
+	reusedKey *keyFile
 }
 
 // sharedFailure ends a run whose credential stage failed: no target was configured, whatever passed preflight.
@@ -200,6 +208,9 @@ func (r *setupRun) finish() int {
 		if o.reason != "" {
 			u.printf("; %s", safe(o.reason))
 		}
+		if o.note != "" {
+			u.printf("; %s", safe(o.note))
+		}
 		u.printf("\n")
 		indent := 2 + labelWidth + 2
 		for _, w := range o.written {
@@ -227,28 +238,11 @@ func (r *setupRun) finish() int {
 	}
 	if len(ready) > 0 {
 		u.heading("Start a session")
-		cmdWidth := len("COMMAND")
-		hasModels := false
 		for _, o := range ready {
-			cmdWidth = max(cmdWidth, len("aiven-ai-gateway launch "+o.tool))
+			u.command(2, "aiven-ai-gateway "+o.tool)
+			// The model goes on a line of its own: a copied command line must not pass it to the tool.
 			if o.resolvedModel != "" && safe(o.resolvedModel) == o.resolvedModel {
-				hasModels = true
-			}
-		}
-		if hasModels {
-			u.printf("  %s  %s\n", u.th.dim(pad("COMMAND", cmdWidth)), u.th.dim("MODEL"))
-		}
-		for _, o := range ready {
-			cmd := "aiven-ai-gateway launch " + o.tool
-			if hasModels && o.resolvedModel != "" && safe(o.resolvedModel) == o.resolvedModel {
-				u.printf(
-					"  %s%s  %s\n",
-					u.th.cyan(cmd),
-					strings.Repeat(" ", cmdWidth-len(cmd)),
-					u.th.dim(o.resolvedModel),
-				)
-			} else {
-				u.command(2, cmd)
+				u.note(4, "Default model: "+o.resolvedModel)
 			}
 		}
 		type directEntry struct {
@@ -280,7 +274,7 @@ func (r *setupRun) finish() int {
 						"contains terminal controls.")
 					u.line(
 						2,
-						"Use aiven-ai-gateway launch "+entry.outcome.tool+" instead; its arguments remain literal.",
+						"Use aiven-ai-gateway "+entry.outcome.tool+" instead; its arguments remain literal.",
 					)
 				} else if entry.outcome.tool == "claude" {
 					showedClaude = true
@@ -342,25 +336,23 @@ func windowsSharedQuote(s string) (string, bool) {
 }
 
 // shellQuote makes s one literal word for bash, zsh, sh and fish, and avoids leaving '%' unquoted.
-func shellQuote(s string) string { return shellQuoteForOS(s, "unix") }
-
-// shellQuoteForOS quotes s for the target OS shell. Plainly safe words stay unquoted; on Windows plain paths with
-// spaces and no expansion characters use double quotes (valid in both PowerShell and cmd.exe), while values holding
-// expansion characters (%, $, backticks or quotes) use PowerShell single-quote escaping so neither %VAR% nor $VAR
-// expands. Unix/fish use POSIX single quotes.
-func shellQuoteForOS(s, goos string) string {
-	safeChars := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@+:,./-"
-	if goos == "windows" {
-		safeChars += "\\"
-	}
+func shellQuote(s string) string {
+	const safeChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@+:,./-"
 	if s != "" && strings.Trim(s, safeChars) == "" {
 		return s
 	}
-	if goos == "windows" {
-		if s != "" && !strings.ContainsAny(s, "%$`\"'\r\n") {
-			return `"` + s + `"`
-		}
-		return "'" + strings.ReplaceAll(s, "'", "''") + "'"
-	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// modelCommand is prefix and model as one command to paste, or "" on Windows when no spelling of model reads the same
+// in cmd.exe and PowerShell.
+func modelCommand(goos, prefix, model string) string {
+	if goos != "windows" {
+		return prefix + shellQuote(model)
+	}
+	quoted, ok := windowsSharedQuote(model)
+	if !ok {
+		return ""
+	}
+	return prefix + quoted
 }

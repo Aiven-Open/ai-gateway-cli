@@ -9,6 +9,29 @@ import (
 	"github.com/aiven-open/ai-gateway-cli/internal/models"
 )
 
+// Mutants: drop FirstAlias(own) from main; use ms instead of own for sonnet; drop the knownPublisher case.
+func TestAnthropicPresetUsesOwnership(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		ms   []models.Model
+		main string
+		ok   bool
+	}{
+		{"uncurated anthropic model", []models.Model{
+			{Alias: "claude-fable-5-2", Owner: "anthropic"}, {Alias: "gpt-5.4", Owner: "OpenAI"},
+		}, "claude-fable-5-2", true},
+		{"private familiar name", []models.Model{{Alias: "claude-sonnet-5-5", Owner: "Aiven"}}, "", false},
+		{"unreviewed owner", []models.Model{{Alias: "claude-sonnet-5-5", Owner: "x"}}, "claude-sonnet-5-5", true},
+		{"no owner", []models.Model{{Alias: "claude-opus-4-8"}}, "claude-opus-4-8", true},
+	} {
+		p, ok := models.FindPreset(tc.ms, models.PresetAnthropic)
+		if ok != tc.ok || p.Main != tc.main {
+			t.Errorf("%s: FindPreset = %q, %v; want %q, %v", tc.name, p.Main, ok, tc.main, tc.ok)
+		}
+	}
+}
+
 func TestPresetsFilterAndResolveByGrantedCatalogue(t *testing.T) {
 	t.Parallel()
 
@@ -173,4 +196,73 @@ func TestPresetsFilterAndResolveByGrantedCatalogue(t *testing.T) {
 			}
 		},
 	)
+}
+
+func TestGeminiPresetPrefersNeonThenCarbonThenArgon(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name        string
+		table       []models.Model
+		main, haiku string
+	}{
+		{
+			name: "all three and Hydrogen",
+			table: []models.Model{
+				{Alias: "gemini-4-argon"}, {Alias: "gemini-4-carbon"},
+				{Alias: "gemini-4-hydrogen"}, {Alias: "gemini-4-neon"},
+			},
+			main: "gemini-4-neon", haiku: "gemini-4-hydrogen",
+		},
+		{
+			name:  "Carbon and Argon",
+			table: []models.Model{{Alias: "gemini-4-argon"}, {Alias: "gemini-4-carbon"}},
+			main:  "gemini-4-carbon", haiku: "gemini-4-carbon",
+		},
+		{
+			name:  "Argon alone",
+			table: []models.Model{{Alias: "gemini-4-argon"}},
+			main:  "gemini-4-argon", haiku: "gemini-4-argon",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			p, ok := models.FindPreset(tc.table, models.PresetGemini)
+			if !ok || p.Main != tc.main || p.Haiku != tc.haiku {
+				t.Errorf("Gemini preset = %+v, %v; want main %s, haiku %s", p, ok, tc.main, tc.haiku)
+			}
+		})
+	}
+}
+
+func TestAnthropicTiersLeavesTierWithoutItsOwnModelEmpty(t *testing.T) {
+	t.Parallel()
+	got := models.AnthropicTiers([]models.Model{{Alias: "claude-sonnet-5-5"}, {Alias: "glm-5"}})
+	if got.Sonnet != "claude-sonnet-5-5" || got.Opus != "" || got.Haiku != "" || got.Fable != "" {
+		t.Errorf("tiers = %+v, want only Sonnet", got)
+	}
+}
+
+func TestAnthropicTiersRanksFableVersionsNumericallyWithOrWithoutOwner(t *testing.T) {
+	t.Parallel()
+	got := models.AnthropicTiers([]models.Model{
+		{Alias: "claude-fable-5-9"}, {Alias: "claude-fable-5-10"}, {Alias: "claude-fable-5-2"},
+	})
+	if got.Fable != "claude-fable-5-10" {
+		t.Errorf("fable = %q, want claude-fable-5-10", got.Fable)
+	}
+}
+
+func TestAnthropicTiersPrefersNewestGrantedFableAndSkipsAnotherVendorsClaude(t *testing.T) {
+	t.Parallel()
+	anthropic := func(a string) models.Model { return models.Model{Alias: a, Owner: "anthropic"} }
+	got := models.AnthropicTiers([]models.Model{
+		anthropic("claude-fable-5-1"), anthropic("claude-fable-5-2"), anthropic("claude-opus-5-5"),
+	})
+	if got.Fable != "claude-fable-5-2" || got.Opus != "claude-opus-5-5" {
+		t.Errorf("tiers = %+v, want fable claude-fable-5-2 and opus claude-opus-5-5", got)
+	}
+	aiven := models.AnthropicTiers([]models.Model{{Alias: "claude-opus-5-5", Owner: "Aiven"}})
+	if aiven != (models.Preset{ID: models.PresetAnthropic, Name: "Anthropic"}) {
+		t.Errorf("an Aiven-owned claude-opus-5-5 filled a tier: %+v", aiven)
+	}
 }

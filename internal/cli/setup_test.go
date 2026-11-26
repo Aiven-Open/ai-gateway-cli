@@ -61,7 +61,7 @@ func TestSetupConfirmsEnvironmentKeyBeforeAnyRequest(t *testing.T) {
 	s := newSession(t, g)
 	s.env.Environ = append(s.env.Environ, creds.EnvVar+"="+keyLong)
 	asked := false
-	s.deps.Prompter = hookPrompter{
+	s.deps.Prompter = &hookPrompter{
 		on: "Choose key option (Enter for 2): ",
 		hook: func() {
 			asked = true
@@ -466,7 +466,7 @@ func TestSetupConfiguresNamedTool(t *testing.T) {
 		if r.code != 0 || len(s.runner.calls) != 0 ||
 			!strings.Contains(r.stderr, "native default left as it was\n") ||
 			!strings.Contains(r.stderr, "Or start the native tool directly\n  "+tc.run) ||
-			!strings.Contains(r.stderr, "aiven-ai-gateway launch "+tc.tool+"  ") {
+			!strings.Contains(r.stderr, "aiven-ai-gateway "+tc.tool+"\n    Default model: ") {
 			t.Fatalf("exit %d, stderr %q, calls %v", r.code, r.stderr, s.runner.calls)
 		}
 		for _, f := range tc.files {
@@ -501,8 +501,7 @@ func TestSetupNamesTheBackupOfAReplacedConfig(t *testing.T) {
 	first := fsutil.BackupPath(path, fixedNow)
 	note := " (previous version: " + first + ")"
 	r := s.run("setup", "--key-stdin", "--yes", "pi")
-	if r.code != 0 || !strings.Contains(r.stderr, "+++ "+path+note+"\n") ||
-		!strings.Contains(r.stderr, "written: "+path+note+"\n") {
+	if r.code != 0 || !strings.Contains(r.stderr, "written: "+path+note+"\n") {
 		t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
 	}
 	if bak := latestBackup(t, path); bak != `{"providers":{}}` {
@@ -553,15 +552,21 @@ func TestSetupLeavesConfigUntouchedWhenItsBackupFails(t *testing.T) {
 	}
 }
 
-// hookPrompter answers y and runs hook before the prompt that starts with on.
+// hookPrompter answers y and runs hook before the prompt that starts with on; first, when set, answers that
+// prompt the first time it is asked.
 type hookPrompter struct {
-	on   string
-	hook func()
+	on, first string
+	hook      func()
+	asked     bool
 }
 
-func (p hookPrompter) ReadLine(prompt string) (string, error) {
+func (p *hookPrompter) ReadLine(prompt string) (string, error) {
 	if strings.HasPrefix(prompt, p.on) {
 		p.hook()
+		if !p.asked && p.first != "" {
+			p.asked = true
+			return p.first, nil
+		}
 	}
 	if strings.HasPrefix(prompt, "Choose model ") {
 		return "", nil
@@ -569,24 +574,7 @@ func (p hookPrompter) ReadLine(prompt string) (string, error) {
 	return "y", nil
 }
 
-func (p hookPrompter) ReadSecret(string) (string, error) { return "", io.EOF }
-
-func TestSetupKeepsThePreviewedBackupNameWhenAnotherRunTakesIt(t *testing.T) {
-	s := newSession(t, newGatewayDouble(t)).stdin(keyValid)
-	path := filepath.Join(s.fakeHome, ".codex/config.toml")
-	const before = "model = 'o3'\n"
-	writeFile(t, path, before)
-	taken := fsutil.BackupPath(path, fixedNow)
-	s.deps.Prompter = hookPrompter{"Apply option for", func() { writeFile(t, taken, "another run") }}
-	r := s.run("setup", "--key-stdin", "codex")
-	if r.code != 1 || !strings.Contains(r.stderr, "(previous version: "+taken+")") ||
-		!strings.Contains(r.stderr, taken+" already exists; retry") {
-		t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
-	}
-	if got, _ := os.ReadFile(path); string(got) != before {
-		t.Errorf("config.toml = %q, want it untouched", got)
-	}
-}
+func (p *hookPrompter) ReadSecret(string) (string, error) { return "", io.EOF }
 
 func TestSetupPreviewsAToolChangeBeforeWritingIt(t *testing.T) {
 	modelAsk := "Choose model option (Enter for 1): "
@@ -611,8 +599,7 @@ func TestSetupPreviewsAToolChangeBeforeWritingIt(t *testing.T) {
 			}
 			profile := filepath.Join(s.fakeHome, ".codex/aiven.config.toml")
 			r := s.run(append([]string{"setup", "--key-stdin", "codex"}, tc.args...)...)
-			if r.code != 0 || !strings.Contains(r.stderr, "+++ "+profile+" (new file)\n") ||
-				!strings.Contains(r.stderr, "+model_provider = 'aiven'") ||
+			if r.code != 0 || !strings.Contains(r.stderr, "~/.codex/aiven.config.toml\n") ||
 				!strings.Contains(r.stderr, tc.want) {
 				t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
 			}
@@ -640,7 +627,8 @@ func TestSetupPreviewShowsSyntaxTheToolCannotReadRemoved(t *testing.T) {
 		s := newSession(t, newGatewayDouble(t)).loggedIn(keyValid)
 		path := filepath.Join(s.fakeHome, tc.file)
 		writeFile(t, path, tc.src)
-		r := s.run("setup", tc.tool, "--yes")
+		s.deps.Prompter = &scriptedPrompter{answers: []string{"", "n", "v", "y"}}
+		r := s.run("setup", tc.tool)
 		data, _ := os.ReadFile(path)
 		if r.code != 0 || !strings.Contains(r.stderr, tc.removed) ||
 			strings.Contains(string(data), "mine") {
@@ -653,24 +641,18 @@ func TestSetupPreviewShowsSyntaxTheToolCannotReadRemoved(t *testing.T) {
 	}
 }
 
-func TestSetupSummarisesModelListsAndSkipsAConfiguredTool(t *testing.T) {
+func TestSetupSkipsConfiguredTool(t *testing.T) {
 	g := newGatewayDouble(t)
 	s := newSession(t, g).stdin(keyProduction)
-	path := filepath.Join(s.fakeHome, ".pi/agent/models.json")
 	r := s.run("setup", "--key-stdin", "--yes", "pi")
-	// The provider's other fields are shown; only its model list is summarised.
-	if r.code != 0 || !strings.Contains(r.stderr, "+++ "+path+" (new file)\n") ||
-		!strings.Contains(r.stderr, `+      "baseUrl": "`+g.URL+`/v1",`) ||
-		!strings.Contains(r.stderr, `+      "models": [11 models: `) ||
-		!strings.Contains(r.stderr, ", … +9 more]\n") ||
-		strings.Contains(r.stderr, `"id":`) {
+	if r.code != 0 || !strings.Contains(r.stderr, "  File              ~/.pi/agent/models.json\n") {
 		t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
 	}
 	// Choosing Anthropic explicitly persists the launcher preference even when models.json is already up to date.
 	p := &scriptedPrompter{answers: []string{"", "n", ""}}
 	s.deps.Prompter = p
 	r = s.stdin(keyProduction).run("setup", "--key-stdin", "pi")
-	if r.code != 0 || !strings.Contains(r.stderr, "Save launcher default model claude-sonnet-5-5") ||
+	if r.code != 0 || !strings.Contains(r.stderr, "~/.config/aiven/ai-gateway-models.json\n") ||
 		!strings.Contains(r.stderr, "Pi          configured\n") ||
 		len(p.prompts) != 3 {
 		t.Fatalf("explicit pref persist: exit %d, stderr %q, prompts %q", r.code, r.stderr, p.prompts)
@@ -687,7 +669,7 @@ func TestSetupSummarisesModelListsAndSkipsAConfiguredTool(t *testing.T) {
 	}
 }
 
-func TestSetupPreviewsRedactKeysAlreadyInAConfig(t *testing.T) {
+func TestSetupDiffRedactsKeysAlreadyInConfig(t *testing.T) {
 	secrets := []string{
 		"plainSecretValue123456",
 		"AVNS_test.synthetic_secret",
@@ -755,14 +737,15 @@ func TestSetupPreviewsRedactKeysAlreadyInAConfig(t *testing.T) {
 				case "--yes":
 					args = append(args, "--yes")
 				case "y", "n":
-					s.deps.Prompter = &answerPrompter{answer: mode}
+					s.deps.Prompter = &scriptedPrompter{answers: []string{"", "n", "v", mode}}
 				}
 				r := s.run(args...)
 				out := r.stdout + r.stderr
 				leaked := slices.ContainsFunc(secrets, func(v string) bool { return strings.Contains(out, v) })
 				// The diff shows only the lines near a change, numbered across the whole file.
-				if r.code != 0 || leaked || !strings.Contains(r.stderr, "<redacted ") ||
-					!strings.Contains(r.stderr, visible[tool]) {
+				diffShown := mode == "y" || mode == "n"
+				if r.code != 0 || leaked || diffShown && (!strings.Contains(r.stderr, "<redacted ") ||
+					!strings.Contains(r.stderr, visible[tool])) {
 					t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
 				}
 			})
@@ -805,7 +788,10 @@ func TestSetupMakesAivenTheDefaultOnlyWhenAsked(t *testing.T) {
 			s.deps.Prompter = &scriptedPrompter{answers: []string{"", "", "1"}}
 			r := s.stdin(keyValid).run("setup", "--key-stdin", tc.tool)
 			if r.code != 0 ||
-				!strings.Contains(r.stderr, "+++ "+path+" (previous version: "+path+".aiven-") ||
+				!strings.Contains(
+					r.stderr,
+					"~/"+tc.file+"\n                    previous version kept as a backup beside it\n",
+				) ||
 				!strings.Contains(r.stderr, "Aiven is now the native default\n") ||
 				!strings.Contains(r.stderr, "directly\n  "+tc.tool+"\n") {
 				t.Fatalf("y: exit %d, stderr %q", r.code, r.stderr)

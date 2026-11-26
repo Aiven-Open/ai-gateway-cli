@@ -6,17 +6,23 @@ Detailed command contracts, protocol routing, credential handling,
 configuration editing and stream rules for `aiven-ai-gateway`. For
 installation and quickstart usage, see [`README.md`](../README.md).
 
+`avn-aig` and `aiven-ai-gateway` are the same command; `go install` provides
+only the long name, and after `npx` setup prints `npx @aivenio/ai-gateway`
+commands. The npm package also installs `ai-gateway`, which is what
+`npx @aivenio/ai-gateway` runs; typed directly, it prints hints as `ai-gateway`.
+
 ## Terminal Interaction and Plain Mode
 
-Bare `aiven-ai-gateway` and `--help` display help and exit zero, even
-without credentials or a valid gateway environment. `--version` (or
-`version`) prints the build's version, commit and date without reading
-credentials or configuration. The primary commands (`setup` and `launch`)
+`avn-aig --help` prints this help, and so does bare `avn-aig` without a
+terminal; both exit zero, even without credentials or a valid gateway
+environment. `avn-aig claude --help` passes `--help` to Claude Code.
+`--version` (or `version`) prints the build's version, commit and date without
+reading credentials or configuration. The primary commands (`setup` and `launch`)
 accept `claude`, `codex`, `pi`, `opencode` or `omp`; without a terminal,
 name the harness explicitly.
 
 Bare `setup` first scans `PATH` locally. When no supported harness is
-installed, it prints installation hints and `aiven-ai-gateway login` and
+installed, it prints installation hints and `avn-aig login` and
 exits cleanly without asking for a key. Otherwise it validates the key,
 lists `/v1/models`, snapshots candidate configurations read-only, and opens
 an inline multi-select list of installed harnesses pre-selected with live
@@ -70,57 +76,96 @@ layers), interactive `setup` runs three reversible steps before review:
    `Keep unchanged (refuse setup)`.
 3. **Default provider:** asks *"Use Aiven AI Gateway as the default?"*,
    defaulting to `Yes` for all selected tools, with options to keep
-   launcher-only (`aiven-ai-gateway launch`) or choose per tool (naming
+   launcher-only (`avn-aig launch`) or choose per tool (naming
    each config file).
 
-In Claude Code, recommended defaults stay on Claude models whenever
-Anthropic models are granted (removing any stale `ANTHROPIC_CUSTOM_MODEL_OPTION`).
-Picking a preset sets `model` (replacing any non-blank
-`env.ANTHROPIC_MODEL`) and the preset's tier slots
-(`ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL`). Picking a single
-custom model sets `model` and `ANTHROPIC_CUSTOM_MODEL_OPTION` while
-keeping the Claude tier slots intact whenever Anthropic models are granted
-(or filling the tier slots with the chosen model on keys without Anthropic
-models), and recomputes context-window variables and `[1m]`. In Codex, the choice updates `aiven.config.toml` (and canonical
-`config.toml` when Aiven is set as the default provider). In Pi, OpenCode
-and OMP, the full granted catalogue is written to the provider file, the
-chosen default alias is persisted per gateway in
-`~/.config/aiven/ai-gateway-models.json` (`0600`) for `aiven-ai-gateway
-launch <tool>`, and the native default is updated when Aiven is set as the
-default provider.
+Claude Code has its own menu instead of presets: `Recommended defaults` and
+`Choose models`, plus `Keep current` when the key grants the configured model.
+The other tools keep their preset list. `Recommended defaults` stays on Claude
+models whenever Anthropic models are granted and removes any stale
+`ANTHROPIC_CUSTOM_MODEL_OPTION`. A shared vendor preset in the Default model
+step sets Claude Code's default model, and the custom model option when that
+model is not one of the tier models. The tiers stay on granted Claude models. On
+a key with no Anthropic models every tier takes the chosen model. On the
+single-model path, taken by a shared vendor model or by `Recommended defaults`
+when no preset fits, the chosen model replaces any non-blank
+`env.ANTHROPIC_MODEL`. `Keep current`, `--yes` and the shared
+`Recommended defaults` keep every tier slot the key still grants, including an
+older setup with one model in all tiers. `Recommended defaults` in Claude Code's
+own menu resets them.
+
+`Choose models` lists every granted model by vendor. Tick any number of Claude
+models and up to five models from other vendors; a sixth is refused. The
+arrow-key list refuses it where you tick it, and plain mode refuses the answer
+and asks again. A model counts as a Claude model when the gateway lists it under
+Anthropic, or its publisher is missing or not one the CLI has reviewed and its
+id starts with `claude-`. Then choose
+the default, which setup writes to `model`. A ticked Claude model goes in the
+tier its id names, and when two ticked models name the same tier the first
+ticked takes it. The other picks fill `ANTHROPIC_CUSTOM_MODEL_OPTION` first,
+then the tier slots `ANTHROPIC_DEFAULT_{FABLE,OPUS,SONNET,HAIKU}_MODEL`: first
+tiers with no granted Claude model, then tiers holding a Claude model you did
+not tick, then tiers holding one you ticked, and the haiku tier last. Order
+within each group is fable, opus, sonnet, haiku. Choosing again with the same
+picks gives the same slots, because an explicit choice takes tier defaults from
+the gateway's catalogue and not from pins already in the file. `Keep current`
+and `--yes` keep every slot the key still grants.
+
+Claude Code sends some work to a tier by name, so a non-Claude model in a tier
+slot receives that work. Setup sets
+`CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1`, which lists the granted Claude
+models in `/model` too, including one moved out of its tier. This discovery
+behaviour was observed in Claude Code and is not documented. Every chosen model
+gets at least one basic check request, so several picks mean several requests. A
+chosen model that fails its check fails Claude Code only; other selected tools
+still proceed. To change the picks, run setup again. Setup recomputes
+context-window variables and `[1m]` for each slot. In Codex, the choice updates
+`aiven.config.toml` (and canonical `config.toml` when Aiven is set as the
+default provider). In Pi, OpenCode and OMP, the full granted catalogue is
+written to the provider file, the chosen default alias is persisted per gateway
+in `~/.config/aiven/ai-gateway-models.json` (`0600`) for `avn-aig <tool>`, and
+the native default is updated when Aiven is set as the default provider.
 
 With `--yes` or without a terminal, `setup` skips interactive model and
 default-provider menus: fresh configurations use natural defaults
 (falling back through the Open-weight preference order when no Anthropic or
 OpenAI model is granted), existing granted models stay unchanged, and
-ungranted Codex or Claude Code models (across dedicated, user and project
-layers) fail before probes or writes, naming any derived gateway alias.
+ungranted Codex or Claude Code models (across dedicated and user layers) fail
+before probes or writes, naming any derived gateway alias. An ungranted model
+selected by a project `.claude/settings*.json` does not stop setup, which never
+writes project files: setup warns, plans and probes its own model, and keeps a
+note on the Claude Code outcome line.
 
 Next, `setup` prints one dimmed usage notice and probes each distinct
 uncached `(protocol, model)` concurrently (Chat Completions, Messages or
 Responses, 1 output token each) with a live spinner on styled terminals and
 deterministic sorted status rows with elapsed latency. Completed probe
 results are memoized across `Back` navigation so stepping back and forward
-never re-sends already-verified probes. These basic checks may incur usage.
+never re-sends already-verified probes. A check that times out before any response is sent once more, so a
+model can receive two one-token requests; a timeout after the response has started is reported and not sent again.
+These basic checks may incur usage.
 They do not show that a tool's own requests, or the models its other slots
 and pins name, are accepted. A refusal fails only the tools depending on
 that model; authentication failure cancels remaining checks and prevents
 saving any key or configuration.
 
-Finally, `setup` closes the vertical rail (`└`) and presents a rail-free
-review table (for multiple tools: `Apply all`, `Inspect redacted diffs`,
-`Back`, `Cancel`) or diff preview (for one tool: `Apply`, `Show full
-redacted diff`, `Back`, `Cancel`). Only after explicit approval (or `--yes`)
-does `setup` save the key (`0600`), write approved files atomically with
-timestamped `.bak` backups, and persist launcher model preferences for
-approved Pi, OpenCode and OMP targets. When zero configuration changes are
-approved (cancelled, declined, or non-interactive without `--yes`), neither
-the key nor `ai-gateway-models.json` is written.
+Finally, `setup` closes the vertical rail (`└`) and shows, for each tool, the
+default model, the other models Claude Code's `/model` will list, the default
+provider and the files it will write, then asks `Apply` (`Apply all` for several
+tools), `Show file changes`, `Back` or `Cancel`. `Show file changes` prints the
+full redacted diff, model lists included, and asks again; `--yes` and runs
+without a terminal print the same table and no diff. Only after explicit approval (or `--yes`)
+does `setup` write approved files atomically with timestamped `.bak` backups
+and persist launcher model preferences for approved Pi, OpenCode and OMP
+targets. With changes to write, the key is saved
+before the approved changes. With nothing to write, a new key is saved only when
+every selected tool is already up to date, also in unattended runs without `--yes`. If no tool ends up ready or with a
+file written, the previous key is put back unless another process changed the
+key file meanwhile. Setup, login and logout hold one lock file, `~/.config/aiven/ai-gateway.lock`, while they change a key file or the model preferences, so they never interleave; one that waits more than 10 seconds stops and asks you to retry. When no configuration change is approved,
+`ai-gateway-models.json` is not written.
 
-Ready tools end with a compact launch table (`COMMAND` / `MODEL`, without
-shell comment markers so commands paste cleanly in `cmd.exe`, PowerShell,
-`bash`, `zsh` and `fish`) and the direct native command. Tools that need attention or were declined get the
-`aiven-ai-gateway setup <harness>` command to run again. The exit status is
+Ready tools end with one launch command per line, each followed by its default model on a line of its own so that a copied command passes no extra argument, and the direct native command. Tools that need attention or were declined get the
+`avn-aig setup <harness>` command to run again. The exit status is
 nonzero when any tool failed, was not installed, was partially written or
 the run was cancelled; a decline alone exits zero but is not reported as
 complete.
@@ -133,23 +178,23 @@ equivalents for your shell:
 
 ```sh
 # bash / zsh
-alias claude-aiven='aiven-ai-gateway launch claude'
-alias codex-aiven='aiven-ai-gateway launch codex'
-alias pi-aiven='aiven-ai-gateway launch pi'
-alias opencode-aiven='aiven-ai-gateway launch opencode'
-alias omp-aiven='aiven-ai-gateway launch omp'
+alias claude-aiven='avn-aig claude'
+alias codex-aiven='avn-aig codex'
+alias pi-aiven='avn-aig pi'
+alias opencode-aiven='avn-aig opencode'
+alias omp-aiven='avn-aig omp'
 ```
 
 ```fish
 # fish
-abbr -a claude-aiven 'aiven-ai-gateway launch claude'
-abbr -a pi-aiven 'aiven-ai-gateway launch pi'
+abbr -a claude-aiven 'avn-aig claude'
+abbr -a pi-aiven 'avn-aig pi'
 ```
 
 ```powershell
 # PowerShell
-function claude-aiven { aiven-ai-gateway launch claude @args }
-function pi-aiven { aiven-ai-gateway launch pi @args }
+function claude-aiven { avn-aig claude @args }
+function pi-aiven { avn-aig pi @args }
 ```
 
 When forwarding native arguments to Pi, OpenCode or OMP without a model,
@@ -162,7 +207,7 @@ after `run`). Pass an explicit `--model` or `-m` to override it.
 Setup displays the selected gateway URL before reading or checking a key. It
 uses `--key-stdin` first, otherwise the key saved for that gateway. A
 working saved key is reused automatically without prompting; run
-`aiven-ai-gateway login` or pass `--key-stdin` to replace it. Without a
+`avn-aig login` or pass `--key-stdin` to replace it. Without a
 usable saved key, interactive setup shows the masked `AIVEN_AI_GATEWAY_KEY`
 and asks whether to use it with the displayed gateway (via an inline menu on
 styled terminals or a numbered menu in plain mode). Only an explicit approval sends
@@ -172,11 +217,12 @@ does not answer this question.
 For unattended setup without a working saved key, provide the key with
 `--key-stdin`, even when `AIVEN_AI_GATEWAY_KEY` is set. Add `--yes` to apply
 configuration without further prompts. Without a terminal or `--yes`,
-configuration is skipped and no key is saved. Never put a key in command
+configuration is skipped and no key is saved, unless every selected tool is already up to date: then a new key from
+`--key-stdin` is saved even without `--yes`. Never put a key in command
 arguments; clipboard input is not supported.
 
 ```text
-aiven-ai-gateway setup pi --key-stdin --yes < /path/to/gateway-key
+avn-aig setup pi --key-stdin --yes < /path/to/gateway-key
 ```
 
 ## Protocol Routing and Model Catalogue
@@ -241,7 +287,7 @@ environment entries stay.
 
 The generated helpers do not fall back to `AIVEN_AI_GATEWAY_KEY`, which
 names no gateway. The Aiven Console's helper does, so launch refuses a tool
-configured with it until `aiven-ai-gateway setup <tool>` rewires it. A save
+configured with it until `avn-aig setup <tool>` rewires it. A save
 replaces the key file in one rename, and a new key for a gateway reaches a
 running session of a tool set up for it the next time that tool runs its
 helper.
@@ -264,12 +310,12 @@ and `PI_CONFIG_DIR`.
 
 ## Diff Previews, Redaction and File Replacement
 
-Setup shows configuration changes and their backup paths before writing. Pi,
-OpenCode and OMP catalogue previews show two model names; `v` displays the
-full redacted diff. Both diff sides redact unrelated provider and MCP
+Setup shows what it will configure before writing, and its table says that a previous version is kept beside each changed file; `Show
+file changes`, or `v` at a numbered prompt, prints the full redacted diff with the backup paths. Both diff sides redact unrelated provider and MCP
 credentials. Redaction goes by field name: it masks the values of fields
 named like a key, token, secret, password, credential, bearer, auth, cookie
-or session, comments that mention one, URL user info and key-shaped strings.
+or session, except the number in a token count such as `max_tokens` or `CLAUDE_CODE_MAX_CONTEXT_TOKENS`,
+comments that mention one, URL user info and key-shaped strings.
 A credential under another name, under an escaped JSON field name, or in a
 TOML table whose header alone names a credential (`[auth]`), is shown.
 
@@ -305,7 +351,7 @@ configurations saves neither the key nor model preferences.
 ### Shared Launch Rules
 
 `launch` requires compatible native Aiven setup for the target gateway.
-Missing or incompatible wiring prints `aiven-ai-gateway setup <harness>` and
+Missing or incompatible wiring prints `avn-aig setup <harness>` and
 exits. Compatible manual configuration counts; no launcher completion marker
 is used. Launch displays the selected gateway on stderr, announces its
 model-access request, and selects a session profile/model without refreshing
@@ -426,7 +472,7 @@ not trigger that refusal. Setup never changes the database.
 ## Output Streams and Terminal Safety
 
 Help and the model list go to stdout. Prompts, progress, previews, errors
-and next steps go to stderr, so `aiven-ai-gateway models > models.txt`
+and next steps go to stderr, so `avn-aig models > models.txt`
 captures only the list. Each stream is checked separately: colour and the
 inline lists need a terminal on stderr (and stdin for the lists), whatever
 stdout is. Help and the model list are styled only when stdout itself is a

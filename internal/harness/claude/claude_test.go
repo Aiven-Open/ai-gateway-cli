@@ -104,6 +104,7 @@ func TestSetupWritesTheGatewaySettingsBesideTheUsersOwn(t *testing.T) {
 	data := plan.Files[0].Data
 	got := decode(t, data)
 	wantEnv := map[string]any{
+		"CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1",
 		"FOO":                             "bar",
 		"ANTHROPIC_BASE_URL":              baseURL,
 		"ANTHROPIC_DEFAULT_OPUS_MODEL":    "claude-opus[1m]",
@@ -1322,4 +1323,342 @@ func TestSetupPresetClearsInheritedUserCustomModelOptionOnLaunch(t *testing.T) {
 	if !slices.Contains(lp.Env, "ANTHROPIC_CUSTOM_MODEL_OPTION=") {
 		t.Errorf("launch missing cleared custom option: %v", lp.Env)
 	}
+}
+
+const discoveryVar = "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"
+
+func TestSetupTurnsOnGatewayModelDiscoveryForChoiceOrFreshFile(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, existing string
+		sel            harness.ModelSelection
+		want           any
+	}{
+		{name: "fresh file", want: "1"},
+		{name: "keep current", existing: `{"model":"glm"}`, want: nil},
+		{
+			name:     "chosen models",
+			existing: `{"model":"glm"}`,
+			sel:      harness.ModelSelection{Model: "glm", Models: []string{"glm", "gpt-sol"}},
+			want:     "1",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			in := input(t)
+			if tc.existing != "" {
+				write(t, filepath.Join(in.UserHome, claude.SettingsFile), tc.existing)
+			}
+			in.Selection = tc.sel
+			plan, err := claude.Setup(in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			env, _ := decode(t, plan.Files[0].Data)["env"].(map[string]any)
+			if got := env[discoveryVar]; got != tc.want {
+				t.Errorf("%s = %v, want %v", discoveryVar, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestLaunchCarriesChosenModelsOnceAndGatewayModelDiscovery(t *testing.T) {
+	t.Parallel()
+	in := input(t)
+	in.Table = []models.Model{
+		{Alias: "claude-opus-5-5"}, {Alias: "claude-sonnet-5-5"}, {Alias: "claude-haiku-5-5"},
+		{Alias: "gemini-4-neon", Context: ptr(1_000_000)}, {Alias: "gpt-6-astra"},
+		{Alias: "deepseek-v4.1-flash"},
+	}
+	in.Selection = harness.ModelSelection{
+		Model:  "gemini-4-neon",
+		Models: []string{"gemini-4-neon", "gpt-6-astra", "deepseek-v4.1-flash"},
+	}
+	setUp(t, in)
+	in.Selection = harness.ModelSelection{}
+	plan, err := claude.Launch(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(plan.Env, discoveryVar+"=1") {
+		t.Errorf("child env lacks %s=1: %q", discoveryVar, plan.Env)
+	}
+	if env, _ := decode(t, []byte(plan.Argv[2]))["env"].(map[string]any); env[discoveryVar] != "1" {
+		t.Errorf("inline settings env = %v", env)
+	}
+	slotVars := []string{
+		"ANTHROPIC_CUSTOM_MODEL_OPTION", "ANTHROPIC_DEFAULT_FABLE_MODEL",
+		"ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+	}
+	for _, id := range []string{"gemini-4-neon[1m]", "gpt-6-astra", "deepseek-v4.1-flash"} {
+		n := 0
+		for _, v := range slotVars {
+			if slices.Contains(plan.Env, v+"="+id) {
+				n++
+			}
+		}
+		if n != 1 {
+			t.Errorf("%s is in %d slots, want 1: %q", id, n, plan.Env)
+		}
+	}
+}
+
+func TestLaunchKeepsChosenModelOverTierPinsInUsersOwnSettings(t *testing.T) {
+	t.Parallel()
+	in := input(t)
+	in.Table = []models.Model{
+		{Alias: "claude-opus-5-5"}, {Alias: "claude-sonnet-5-5"}, {Alias: "claude-haiku-5-5"},
+		{Alias: "gemini-4-neon", Context: ptr(1_000_000)}, {Alias: "gpt-6-astra"},
+	}
+	in.Selection = harness.ModelSelection{
+		Model:  "gpt-6-astra",
+		Models: []string{"gpt-6-astra", "gemini-4-neon"},
+	}
+	write(t, filepath.Join(in.UserHome, ".claude", "settings.json"), `{"env":{
+		"ANTHROPIC_DEFAULT_FABLE_MODEL":"claude-opus-5-5","ANTHROPIC_DEFAULT_OPUS_MODEL":"claude-opus-5-5",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL":"claude-sonnet-5-5","ANTHROPIC_DEFAULT_HAIKU_MODEL":"claude-haiku-5-5",
+		"ANTHROPIC_CUSTOM_MODEL_OPTION":"claude-haiku-5-5"}}`)
+	setUp(t, in)
+	in.Selection = harness.ModelSelection{}
+	plan, err := claude.Launch(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(plan.Env, "ANTHROPIC_MODEL=gpt-6-astra") {
+		t.Errorf("chosen model did not reach the session: %q", plan.Env)
+	}
+	for _, id := range []string{"gpt-6-astra", "gemini-4-neon[1m]"} {
+		n := 0
+		for _, e := range plan.Env {
+			if strings.HasSuffix(e, "="+id) && !strings.HasPrefix(e, "ANTHROPIC_MODEL=") {
+				n++
+			}
+		}
+		if n != 1 {
+			t.Errorf("%s is in %d slots, want 1: %q", id, n, plan.Env)
+		}
+	}
+}
+
+var mixTable = []models.Model{
+	{Alias: "claude-opus-5-5"}, {Alias: "claude-sonnet-5-5"}, {Alias: "claude-haiku-5-5"},
+	{Alias: "gemini-4-neon", Context: ptr(1_000_000)}, {Alias: "gpt-6-astra"},
+	{Alias: "deepseek-v4.1-flash"},
+}
+
+var mixSelection = harness.ModelSelection{
+	Model:  "gemini-4-neon",
+	Models: []string{"gemini-4-neon", "gpt-6-astra", "deepseek-v4.1-flash"},
+}
+
+func fileEnv(t *testing.T, path string) map[string]any {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env, _ := decode(t, data)["env"].(map[string]any)
+	return env
+}
+
+func TestKeepCurrentKeepsEveryGrantedSlotAndCustomOption(t *testing.T) {
+	t.Parallel()
+	in := input(t)
+	in.Table = mixTable
+	in.Selection = mixSelection
+	setUp(t, in)
+	path := filepath.Join(in.UserHome, claude.SettingsFile)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.Selection = harness.ModelSelection{}
+	setUp(t, in)
+	if after, _ := os.ReadFile(path); string(after) != string(before) {
+		t.Errorf("Keep current changed the slots:\n%s\nwas:\n%s", after, before)
+	}
+}
+
+func TestKeepCurrentLeavesBlankCustomOptionBlank(t *testing.T) {
+	t.Parallel()
+	in := input(t)
+	in.Table = []models.Model{{Alias: "claude-sonnet-5-5"}}
+	write(t, filepath.Join(in.UserHome, ".claude/settings.json"),
+		`{"env":{"ANTHROPIC_CUSTOM_MODEL_OPTION":"retired-model"}}`)
+	in.Selection = harness.ModelSelection{Preset: models.PresetAnthropic}
+	setUp(t, in)
+	in.Selection = harness.ModelSelection{}
+	setUp(t, in)
+	env := fileEnv(t, filepath.Join(in.UserHome, claude.SettingsFile))
+	if v, ok := env["ANTHROPIC_CUSTOM_MODEL_OPTION"]; !ok || v != "" {
+		t.Errorf("custom option = %v (present %v), want blank", v, ok)
+	}
+}
+
+func TestKeepCurrentWithNativeDefaultCopiesMixToBothFiles(t *testing.T) {
+	t.Parallel()
+	in := input(t)
+	in.Table = mixTable
+	in.Selection = mixSelection
+	setUp(t, in)
+	in.Selection = harness.ModelSelection{}
+	in.Default = true
+	setUp(t, in)
+	dedicated := filepath.Join(in.UserHome, claude.SettingsFile)
+	native := filepath.Join(in.UserHome, ".claude", "settings.json")
+	want, got := fileEnv(t, dedicated), fileEnv(t, native)
+	for _, k := range []string{
+		"ANTHROPIC_CUSTOM_MODEL_OPTION", "ANTHROPIC_DEFAULT_FABLE_MODEL",
+		"ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+	} {
+		if got[k] != want[k] {
+			t.Errorf("native %s = %v, dedicated %v", k, got[k], want[k])
+		}
+	}
+	if m, _ := os.ReadFile(native); decode(t, m)["model"] != "gemini-4-neon[1m]" {
+		t.Errorf("native model = %v", decode(t, m)["model"])
+	}
+}
+
+func TestKeepCurrentWithNativeDefaultGivesNativeFileDedicatedSlotsAsSet(t *testing.T) {
+	t.Parallel()
+	in := input(t)
+	in.Table = mixTable
+	dedicated := filepath.Join(in.UserHome, claude.SettingsFile)
+	native := filepath.Join(in.UserHome, ".claude", "settings.json")
+	in.Default = true
+	setUp(t, in) // an earlier native-default run: default Claude tier pins in both files
+	in.Default = false
+	in.Selection = mixSelection
+	setUp(t, in)
+	data, err := os.ReadFile(dedicated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := decode(t, data)
+	cfg["permissions"] = map[string]any{"allow": []any{"Bash"}}
+	cfg["env"].(map[string]any)["UNRELATED_KEY"] = "x"
+	out, _ := json.Marshal(cfg)
+	write(t, dedicated, string(out))
+	in.Selection = harness.ModelSelection{}
+	in.Default = true
+	setUp(t, in)
+	want, got := fileEnv(t, dedicated), fileEnv(t, native)
+	for _, k := range []string{
+		"ANTHROPIC_CUSTOM_MODEL_OPTION", "ANTHROPIC_DEFAULT_FABLE_MODEL",
+		"ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+	} {
+		if got[k] != want[k] {
+			t.Errorf("native %s = %v, dedicated %v", k, got[k], want[k])
+		}
+	}
+	if want["ANTHROPIC_DEFAULT_OPUS_MODEL"] != "deepseek-v4.1-flash" {
+		t.Fatalf("dedicated lost the mix: %v", want)
+	}
+	nativeData, _ := os.ReadFile(native)
+	nativeCfg := decode(t, nativeData)
+	if _, leaked := got["UNRELATED_KEY"]; leaked || nativeCfg["permissions"] != nil {
+		t.Errorf("unrelated dedicated settings reached the native file: %s", nativeData)
+	}
+}
+
+func TestKeepCurrentDropsSlotsPinnedToModelKeyNoLongerGrants(t *testing.T) {
+	t.Parallel()
+	in := input(t)
+	in.Table = mixTable
+	path := filepath.Join(in.UserHome, claude.SettingsFile)
+	write(t, path, `{"env":{"ANTHROPIC_DEFAULT_OPUS_MODEL":"retired-model",`+
+		`"ANTHROPIC_DEFAULT_SONNET_MODEL":"gpt-6-astra","ANTHROPIC_CUSTOM_MODEL_OPTION":"retired-custom"}}`)
+	setUp(t, in)
+	env := fileEnv(t, path)
+	if env["ANTHROPIC_DEFAULT_OPUS_MODEL"] != "claude-opus-5-5" ||
+		env["ANTHROPIC_DEFAULT_SONNET_MODEL"] != "gpt-6-astra" {
+		t.Errorf("tier pins = %v", env)
+	}
+	if v, ok := env["ANTHROPIC_CUSTOM_MODEL_OPTION"]; ok {
+		t.Errorf("custom option = %v, want dropped", v)
+	}
+}
+
+func TestKeepCurrentWithNativeDefaultKeepsTierAliasAsNativeModel(t *testing.T) {
+	t.Parallel()
+	for model, want := range map[string]string{
+		"opus": "opus", "sonnet[1m]": "sonnet[1m]", "default": "default", "retired-model": "gemini-4-neon[1m]",
+	} {
+		in := input(t)
+		in.Table = mixTable
+		in.Selection = mixSelection
+		setUp(t, in)
+		native := filepath.Join(in.UserHome, ".claude", "settings.json")
+		write(t, native, `{"model":"`+model+`"}`)
+		in.Selection = harness.ModelSelection{}
+		in.Default = true
+		setUp(t, in)
+		data, _ := os.ReadFile(native)
+		if got := decode(t, data)["model"]; got != want {
+			t.Errorf("native model %q became %v, want %q", model, got, want)
+		}
+	}
+}
+
+func TestKeepCurrentWithNativeDefaultLeavesNonStringNativeModelAlone(t *testing.T) {
+	t.Parallel()
+	for name, raw := range map[string]string{"number": `5`, "object": `{"id":"retired-model"}`, "list": `["opus"]`} {
+		in := input(t)
+		in.Table = mixTable
+		in.Selection = mixSelection
+		setUp(t, in)
+		native := filepath.Join(in.UserHome, ".claude", "settings.json")
+		write(t, native, `{"model":`+raw+`}`)
+		in.Selection = harness.ModelSelection{}
+		in.Default = true
+		setUp(t, in)
+		data, _ := os.ReadFile(native)
+		var got, want any
+		if err := json.Unmarshal([]byte(raw), &want); err != nil {
+			t.Fatal(err)
+		}
+		got = decode(t, data)["model"]
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("%s native model became %v, want %v", name, got, want)
+		}
+	}
+}
+
+func TestChoosingModelsDropsBlankCustomOptionKeepCurrentLeft(t *testing.T) {
+	t.Parallel()
+	in := input(t)
+	in.Table = []models.Model{{Alias: "claude-sonnet-5-5"}}
+	path := filepath.Join(in.UserHome, claude.SettingsFile)
+	write(t, path, `{"env":{"ANTHROPIC_CUSTOM_MODEL_OPTION":""}}`)
+	in.Selection = harness.ModelSelection{Preset: models.PresetAnthropic}
+	setUp(t, in)
+	env := fileEnv(t, path)
+	if v, ok := env["ANTHROPIC_CUSTOM_MODEL_OPTION"]; ok {
+		t.Errorf("custom option = %q, want dropped on a chosen selection", v)
+	}
+}
+
+func TestKeepCurrentWithNativeDefaultKeepsGrantedNativePinWhenNoDedicatedFileExists(t *testing.T) {
+	t.Parallel()
+	in := input(t)
+	in.Table = mixTable
+	native := filepath.Join(in.UserHome, ".claude", "settings.json")
+	write(t, native, `{"env":{"ANTHROPIC_DEFAULT_OPUS_MODEL":"deepseek-v4.1-flash"}}`)
+	in.Default = true
+	plan, err := claude.Setup(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range plan.Files {
+		if f.Path != native {
+			continue
+		}
+		env := decode(t, f.Data)["env"].(map[string]any)
+		if env["ANTHROPIC_DEFAULT_OPUS_MODEL"] != "deepseek-v4.1-flash" {
+			t.Errorf("native opus pin = %v, want deepseek-v4.1-flash", env["ANTHROPIC_DEFAULT_OPUS_MODEL"])
+		}
+		return
+	}
+	t.Fatal("plan has no native file")
 }

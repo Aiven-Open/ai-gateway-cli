@@ -20,9 +20,16 @@ import (
 const (
 	keyOpenWeightLA    = "sk-test-open-weight-la"
 	keyProductionOwned = "sk-test-production-owned"
+	keyGeminiFour      = "sk-test-gemini-four"
 )
 
 func init() {
+	keyModels[keyGeminiFour] = []string{
+		`{"id":"gemini-4-argon","object":"model","created":0,"owned_by":"Google"}`,
+		`{"id":"gemini-4-carbon","object":"model","created":0,"owned_by":"Google"}`,
+		`{"id":"gemini-4-hydrogen","object":"model","created":0,"owned_by":"Google"}`,
+		`{"id":"gemini-4-neon","object":"model","created":0,"owned_by":"Google"}`,
+	}
 	keyModels[keyOpenWeightLA] = []string{
 		`{"id":"deepseek-v3.2","object":"model","created":0,"owned_by":"DeepSeek","context_window_tokens":163840}`,
 		`{"id":"devstral-2-123b","object":"model","created":0,"owned_by":"Mistral AI","context_window_tokens":262144}`,
@@ -209,8 +216,12 @@ func TestSetupPlainFreshOpenWeightPresetOnLAKey(t *testing.T) {
 			if r.code != 0 {
 				t.Fatalf("exit %d, stderr %s", r.code, r.stderr)
 			}
-			if !strings.Contains(r.stderr, "1) Open-weight (deepseek-v3.2") {
-				t.Fatalf("expected Open-weight as default option 1:\n%s", r.stderr)
+			first := "1) Open-weight (deepseek-v3.2"
+			if tool == "claude" {
+				first = "1) Recommended defaults (deepseek-v3.2)"
+			}
+			if !strings.Contains(r.stderr, first) {
+				t.Fatalf("expected %q as default option 1:\n%s", first, r.stderr)
 			}
 			gotProbes := probes()
 			switch tool {
@@ -337,7 +348,7 @@ func TestClaudeUntouchedUserAndProjectLayerRecoveryBoundaries(t *testing.T) {
 			probes := recordProbes(t, g)
 			s := newSession(t, g).stdin(keyOpenWeightLA)
 			s.writeUserSettings("settings.json", `{"env":{"ANTHROPIC_MODEL":"claude-retired"}}`)
-			// Beat 2: 1=Keep unchanged, 2=Open-weight (deepseek-v3.2); Beat 3: 2=No (direct OFF); Review: 1=Apply.
+			// Beat 2: 1=Keep unchanged, 2=Recommended defaults (Open-weight deepseek-v3.2); Beat 3: 2=No; Review: 1=Apply.
 			s.deps.Prompter = &scriptedPrompter{answers: []string{"2", "2", "1"}}
 			r := s.run("setup", "claude", "--key-stdin", "--plain")
 			if r.code != 0 {
@@ -366,26 +377,74 @@ func TestClaudeUntouchedUserAndProjectLayerRecoveryBoundaries(t *testing.T) {
 		},
 	)
 
-	t.Run("project settings.local.json ungranted refuses without fake repair", func(t *testing.T) {
-		t.Parallel()
-		g := newGatewayDouble(t)
-		s := newSession(t, g).stdin(keyOpenWeightLA)
-		s.writeProjectSettings("settings.local.json", `{"env":{"ANTHROPIC_MODEL":"claude-retired"}}`)
-		p := &scriptedPrompter{answers: []string{"2", "1", "1"}}
-		s.deps.Prompter = p
-		r := s.run("setup", "claude", "--key-stdin", "--plain")
-		projPath := filepath.Join(s.env.WorkDir, ".claude", "settings.local.json")
-		if r.code == 0 || !strings.Contains(r.stderr, projPath) ||
-			!strings.Contains(r.stderr, "does not grant") {
-			t.Fatalf("exit %d, stderr:\n%s", r.code, r.stderr)
-		}
-		if len(p.prompts) != 0 {
-			t.Errorf("offered Beat 2 repair prompts for unrepairable project override: %q", p.prompts)
-		}
-		if _, err := os.Stat(s.keyPath()); !os.IsNotExist(err) {
-			t.Error("key saved despite unrepairable project override")
-		}
-	})
+	t.Run(
+		"project settings.local.json ungranted is warned about once and the model step runs",
+		func(t *testing.T) {
+			t.Parallel()
+			g := newGatewayDouble(t)
+			probes := recordProbes(t, g)
+			s := newSession(t, g).stdin(keyOpenWeightLA)
+			s.env.WorkDir = filepath.Join(s.fakeHome, "work")
+			s.writeProjectSettings("settings.local.json", `{"env":{"ANTHROPIC_MODEL":"claude-retired"}}`)
+			// Models: 1=Recommended defaults (deepseek-v3.2); Default provider: 2=No; Review: 1=Apply.
+			s.deps.Prompter = &scriptedPrompter{answers: []string{"1", "2", "1"}}
+			r := s.run("setup", "claude", "--key-stdin", "--plain")
+			if r.code != 0 {
+				t.Fatalf("exit %d, stderr:\n%s", r.code, r.stderr)
+			}
+			for _, want := range []string{
+				"Claude Code: this folder has its own settings in ~/work/.claude/settings.local.json. " +
+					"They select claude-retired, which this key does not grant. " +
+					"Setup does not change project files.",
+				"configured; this folder has its own settings in ~/work/.claude/settings.local.json " +
+					"that select claude-retired, which this key does not grant; " +
+					"aiven-ai-gateway claude overrides them, plain claude started here uses them",
+				"Default model     deepseek-v3.2\n",
+			} {
+				if strings.Count(r.stderr, want) != 1 {
+					t.Errorf("want exactly one %q in:\n%s", want, r.stderr)
+				}
+			}
+			if got := probes()["/v1/messages"]; !slices.Equal(got, []string{"deepseek-v3.2"}) {
+				t.Errorf("probes = %v, want [deepseek-v3.2]", got)
+			}
+			if cfg := readJSON(
+				t,
+				filepath.Join(s.fakeHome, claude.SettingsFile),
+			); cfg["model"] != "deepseek-v3.2" {
+				t.Errorf("aiven.settings.json = %v, want model deepseek-v3.2", cfg)
+			}
+			if _, err := os.Stat(s.keyPath()); err != nil {
+				t.Errorf("key not saved: %v", err)
+			}
+			// Launch ignores the same project pin: the child runs what setup checked, in env and in the overlay.
+			if lr := s.run("launch", "claude"); lr.code != 0 {
+				t.Fatalf("launch claude exit %d: %s", lr.code, lr.stderr)
+			}
+			c := s.launched()
+			var overlay struct {
+				Env map[string]string `json:"env"`
+			}
+			if err := json.Unmarshal([]byte(c.argv[2]), &overlay); err != nil {
+				t.Fatal(err)
+			}
+			for name, want := range map[string]string{
+				"ANTHROPIC_MODEL":                "deepseek-v3.2",
+				"ANTHROPIC_DEFAULT_OPUS_MODEL":   "deepseek-v3.2",
+				"ANTHROPIC_DEFAULT_SONNET_MODEL": "deepseek-v3.2",
+				"ANTHROPIC_DEFAULT_HAIKU_MODEL":  "glm-4.7-flash",
+				"ANTHROPIC_DEFAULT_FABLE_MODEL":  "deepseek-v3.2",
+				"ANTHROPIC_BASE_URL":             g.URL,
+			} {
+				if got, _ := c.envVar(name); got != want {
+					t.Errorf("child %s = %q, want %q", name, got, want)
+				}
+				if got, ok := overlay.Env[name]; ok && got != want {
+					t.Errorf("overlay %s = %q, want %q", name, got, want)
+				}
+			}
+		},
+	)
 }
 
 // R4: Repeat setup (--yes --plain) probes the persisted launcher model (deepseek-v3.2) rather than SonnetOrFirst.
@@ -413,16 +472,16 @@ func TestRepeatSetupProbesPersistedLauncherModel(t *testing.T) {
 	}
 }
 
-func TestSetupPlainSelectsGeminiPreset(t *testing.T) {
+func TestSetupPlainChoosesGeminiModelForClaudeCode(t *testing.T) {
 	t.Parallel()
 	g := newGatewayDouble(t)
 	probes := recordProbes(t, g)
 	s := newSession(t, g).stdin(keyProductionOwned)
-	// Beat 2: 1=Anthropic, 2=OpenAI, 3=Gemini (gemini-4-argon), 4=Open-weight; Beat 3: 2=No; Review: 1=Apply.
-	s.deps.Prompter = &scriptedPrompter{answers: []string{"3", "2", "1"}}
+	// Beat 2: 2=Choose models, then gemini-4-argon by id; Beat 3: 2=No; Review: 1=Apply.
+	s.deps.Prompter = &scriptedPrompter{answers: []string{"2", "gemini-4-argon", "2", "1"}}
 	r := s.run("setup", "claude", "--key-stdin", "--plain")
 	if r.code != 0 {
-		t.Fatalf("setup claude Gemini exit %d: %s", r.code, r.stderr)
+		t.Fatalf("setup exit %d: %s", r.code, r.stderr)
 	}
 	if got := probes()["/v1/messages"]; !slices.Equal(got, []string{"gemini-4-argon"}) {
 		t.Fatalf("probes = %v, want [gemini-4-argon]", got)
@@ -430,7 +489,19 @@ func TestSetupPlainSelectsGeminiPreset(t *testing.T) {
 	cfg := readJSON(t, filepath.Join(s.fakeHome, claude.SettingsFile))
 	env := cfg["env"].(map[string]any)
 	if cfg["model"] != "gemini-4-argon[1m]" ||
-		env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] != "gemini-3.8-flash[1m]" {
-		t.Fatalf("claude Gemini settings = %v", cfg)
+		env["ANTHROPIC_CUSTOM_MODEL_OPTION"] != "gemini-4-argon[1m]" ||
+		env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] != "claude-haiku-5.5" {
+		t.Fatalf("claude settings = %v", cfg)
+	}
+}
+
+func TestSetupGeminiPresetDefaultsToNeon(t *testing.T) {
+	t.Parallel()
+	s := newSession(t, newGatewayDouble(t)).stdin(keyGeminiFour)
+	// Beat 2: 1=Gemini; Beat 3: 2=No; Review: y=Apply.
+	s.deps.Prompter = &scriptedPrompter{answers: []string{"1", "2", "y"}}
+	r := s.run("setup", "opencode", "--key-stdin", "--plain")
+	if r.code != 0 || !strings.Contains(r.stderr, "opencode -m aiven/gemini-4-neon\n") {
+		t.Fatalf("exit %d, stderr:\n%s", r.code, r.stderr)
 	}
 }

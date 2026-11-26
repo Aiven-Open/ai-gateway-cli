@@ -502,3 +502,96 @@ func TestMultiSelectShowsLiveSelectionCountAndDynamicToggleHint(t *testing.T) {
 		t.Fatalf("out-of-range cursor = %d, want 0", c2.cursor)
 	}
 }
+
+func atMostTwo(picked []bool, _ int) string {
+	n := 0
+	for _, p := range picked {
+		if p {
+			n++
+		}
+	}
+	if n >= 2 {
+		return "Two at most."
+	}
+	return ""
+}
+
+func TestOrderedMultiSelectKeepsTickOrderAndRefusesInPlace(t *testing.T) {
+	t.Parallel()
+	c := choice{title: "Models", multi: true, ordered: true, refuse: atMostTwo,
+		options: []option{{label: "a"}, {label: "b"}, {label: "c"}}}
+	st := newSelectState(c)
+	// Tick c, then a.
+	if _, _, err := st.keys([]byte("\x1b[B\x1b[B \x1b[A\x1b[A ")); err != nil {
+		t.Fatal(err)
+	}
+	// A third tick is refused and its reason shows.
+	if _, _, err := st.keys([]byte("\x1b[B ")); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(st.render(100, 20), "\n"); !strings.Contains(got, "Two at most.") {
+		t.Fatalf("refusal not shown:\n%s", got)
+	}
+	picked, done, err := st.keys([]byte("\r"))
+	if err != nil || !done || !slices.Equal(picked, []int{2, 0}) {
+		t.Fatalf("picked %v, done %v, err %v; want [2 0]", picked, done, err)
+	}
+	all := newSelectState(c)
+	if picked, _, _ := all.keys([]byte("a\r")); !slices.Equal(picked, []int{0, 1}) {
+		t.Errorf("a ticked %v, want [0 1]", picked)
+	}
+	kept := c
+	kept.options = []option{{label: "a", picked: true}, {label: "b"}, {label: "c", picked: true}}
+	kept.order = []int{2, 0}
+	if picked, _, _ := newSelectState(kept).keys([]byte("\r")); !slices.Equal(picked, []int{2, 0}) {
+		t.Errorf("kept picks came back as %v, want [2 0]", picked)
+	}
+}
+
+func TestOrderedMultiSelectFilteredTickAndLimit(t *testing.T) {
+	t.Parallel()
+	c := choice{title: "Models", multi: true, ordered: true, refuse: atMostTwo}
+	for _, l := range []string{"a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "b1"} {
+		c.options = append(c.options, option{label: l})
+	}
+	st := newSelectState(c) // nine options start in filter mode
+	// Filter to b1 and tick it, then to a1 and tick it.
+	if _, _, err := st.keys([]byte("b1 \x7f\x7fa1 ")); err != nil {
+		t.Fatal(err)
+	}
+	// Filter to a2: a third tick is refused.
+	if _, _, err := st.keys([]byte("\x7f2 ")); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(st.render(100, 20), "\n"); !strings.Contains(got, "Two at most.") {
+		t.Fatalf("refusal not shown while filtering:\n%s", got)
+	}
+	picked, _, _ := st.keys([]byte("\r"))
+	if !slices.Equal(picked, []int{8, 0}) {
+		t.Fatalf("filtered ticks picked %v, want [8 0]", picked)
+	}
+}
+
+func TestSelectRenderShowsStatusFollowingTicks(t *testing.T) {
+	c := toolChoice(true)
+	c.subtitle = "static"
+	c.status = func(picked []bool) string {
+		n := 0
+		for _, ok := range picked {
+			if ok {
+				n++
+			}
+		}
+		return fmt.Sprintf("%d chosen", n)
+	}
+	s := newSelectState(c)
+	before := strings.Join(s.render(80, 0), "\n")
+	if _, finished, err := s.keys([]byte(" ")); finished || err != nil {
+		t.Fatalf("selection ended: finished=%v err=%v", finished, err)
+	}
+	after := strings.Join(s.render(80, 0), "\n")
+	if !strings.Contains(before, "0 chosen") || !strings.Contains(after, "1 chosen") ||
+		strings.Contains(after, "static") || strings.Contains(after, "selected)") {
+		t.Errorf("before %q\nafter %q", before, after)
+	}
+}

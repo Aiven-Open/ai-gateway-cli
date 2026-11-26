@@ -4,6 +4,8 @@ package models
 
 import (
 	"cmp"
+	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -43,7 +45,7 @@ var (
 		"gpt-6.1-sol", "gpt-6-sol", "gpt-5.4", "gpt-5.5",
 	}
 	geminiMainOrder = []string{
-		"gemini-4-carbon", "gemini-4-argon", "gemini-4-neon",
+		"gemini-4-neon", "gemini-4-carbon", "gemini-4-argon",
 		"gemini-3.8-pro", "gemini-3.5-pro", "gemini-2.5-pro",
 	}
 	geminiFastOrder = []string{
@@ -77,26 +79,9 @@ func Presets(ms []Model) []Preset {
 func FindPreset(ms []Model, id PresetID) (Preset, bool) {
 	switch id {
 	case PresetAnthropic:
-		sonnet := FirstGranted(ms, anthropicSonnetOrder...)
-		opus := FirstGranted(ms, anthropicOpusOrder...)
-		haiku := FirstGranted(ms, anthropicHaikuOrder...)
-		main := cmp.Or(sonnet, opus, haiku)
-		if main == "" {
-			return Preset{}, false
-		}
-		opus = cmp.Or(opus, main)
-		sonnet = cmp.Or(sonnet, main)
-		haiku = cmp.Or(haiku, main)
-		fable := cmp.Or(FirstGranted(ms, "claude-opus-5-5", "claude-fable"), opus, main)
-		return Preset{
-			ID:     PresetAnthropic,
-			Name:   "Anthropic",
-			Main:   main,
-			Opus:   opus,
-			Sonnet: sonnet,
-			Haiku:  haiku,
-			Fable:  fable,
-		}, true
+		own := claudeModels(ms)
+		// A granted Claude model outside the curated orders still keeps Claude Code on Claude.
+		return anthropicPreset(own, FirstAlias(own))
 	case PresetOpenAI:
 		main := openAIMain(ms)
 		if main == "" {
@@ -187,4 +172,90 @@ func OpenWeightOrFirst(ms []Model) string {
 		return a
 	}
 	return FirstAlias(ms)
+}
+
+// anthropicPreset is the Anthropic preset from the curated orders over ms, with fallback as the main model when
+// none of them is granted; false when there is no main model.
+func anthropicPreset(ms []Model, fallback string) (Preset, bool) {
+	sonnet := FirstGranted(ms, anthropicSonnetOrder...)
+	opus := FirstGranted(ms, anthropicOpusOrder...)
+	haiku := FirstGranted(ms, anthropicHaikuOrder...)
+	main := cmp.Or(sonnet, opus, haiku, fallback)
+	if main == "" {
+		return Preset{}, false
+	}
+	opus = cmp.Or(opus, main)
+	sonnet = cmp.Or(sonnet, main)
+	haiku = cmp.Or(haiku, main)
+	fable := cmp.Or(FirstGranted(ms, "claude-opus-5-5", "claude-fable"), opus, main)
+	return Preset{
+		ID:     PresetAnthropic,
+		Name:   "Anthropic",
+		Main:   main,
+		Opus:   opus,
+		Sonnet: sonnet,
+		Haiku:  haiku,
+		Fable:  fable,
+	}, true
+}
+
+// CuratedAnthropic is the Anthropic preset from the curated orders alone, whoever owns the models, for fills that
+// drop a model another vendor owns themselves. A model outside the orders never becomes its main.
+func CuratedAnthropic(ms []Model) (Preset, bool) { return anthropicPreset(ms, "") }
+
+// IsClaude reports whether m is an Anthropic model: the catalogue files it under Anthropic, or its publisher is missing
+// or not one the CLI has reviewed and the alias starts with claude-. A model a known vendor owns, such as an
+// Aiven-owned claude-opus-5-5, is not.
+func (m Model) IsClaude() bool {
+	switch g := m.Group(); {
+	case g == "Anthropic":
+		return true
+	case g == UnknownGroup, g != RoutingGroup && !knownPublisher(g):
+		return strings.HasPrefix(m.Alias, "claude-")
+	}
+	return false
+}
+
+// claudeModels is ms without the models IsClaude rejects.
+func claudeModels(ms []Model) []Model {
+	return slices.DeleteFunc(slices.Clone(ms), func(m Model) bool { return !m.IsClaude() })
+}
+
+// AnthropicTiers returns the first granted Anthropic model of each Claude tier's own order. A model
+// the catalogue files under another vendor (an Aiven-owned claude-opus-5-5) is no Anthropic model.
+// A tier the key grants none of stays empty, where FindPreset would fill it from another tier. The
+// fable tier takes the highest-versioned granted claude-fable model.
+func AnthropicTiers(ms []Model) Preset {
+	own := claudeModels(ms)
+	var fables []string
+	for _, m := range own {
+		if strings.Contains(m.Alias, "claude-fable") {
+			fables = append(fables, m.Alias)
+		}
+	}
+	return Preset{
+		ID:     PresetAnthropic,
+		Name:   "Anthropic",
+		Opus:   FirstGranted(own, anthropicOpusOrder...),
+		Sonnet: FirstGranted(own, anthropicSonnetOrder...),
+		Haiku:  FirstGranted(own, anthropicHaikuOrder...),
+		Fable: cmp.Or(
+			slices.MaxFunc(append([]string{""}, fables...), compareVersions),
+			FirstGranted(own, "claude-opus-5-5"),
+		),
+	}
+}
+
+// compareVersions orders aliases by the numbers in them, part by part, so 5-10 ranks above 5-9.
+func compareVersions(a, b string) int {
+	isNotDigit := func(r rune) bool { return r < '0' || r > '9' }
+	pa, pb := strings.FieldsFunc(a, isNotDigit), strings.FieldsFunc(b, isNotDigit)
+	for i := 0; i < min(len(pa), len(pb)); i++ {
+		x, _ := strconv.Atoi(pa[i])
+		y, _ := strconv.Atoi(pb[i])
+		if c := cmp.Compare(x, y); c != 0 {
+			return c
+		}
+	}
+	return cmp.Compare(len(pa), len(pb))
 }

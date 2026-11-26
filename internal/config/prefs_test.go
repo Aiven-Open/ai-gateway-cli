@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/aiven-open/ai-gateway-cli/internal/config"
@@ -130,5 +131,38 @@ func TestModelPrefsErrors(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(outside); len(entries) != 0 {
 		t.Errorf("SaveModelPrefs created files outside home: %v", entries)
+	}
+}
+
+// Only a missing file means no preferences; anything present that is not a map of non-empty aliases
+// is refused. Mutant: drop the raw == nil or alias == nil check in decodePrefs.
+func TestMalformedPreferencesAreRefused(t *testing.T) {
+	for name, data := range map[string]string{
+		"empty file":     "",
+		"blank file":     " \n",
+		"null":           "null",
+		"null gateway":   `{"https://gw.example": null}`,
+		"null tool":      `{"https://gw.example": {"pi": null}}`,
+		"empty alias":    `{"https://gw.example": {"pi": ""}}`,
+		"number alias":   `{"https://gw.example": {"pi": 7}}`,
+		"trailing value": `{} {}`,
+		"empty array":    `[]`,
+		"array gateway":  `{"gw": []}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			home := t.TempDir()
+			path := config.ModelPrefsPath(home)
+			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := config.LoadModelPrefs(home)
+			if err == nil || !strings.Contains(err.Error(), path) ||
+				!strings.Contains(err.Error(), "is not a valid model preference file") {
+				t.Fatalf("LoadModelPrefs(%q) = %v, want it to name %s and refuse it", data, err, path)
+			}
+		})
 	}
 }

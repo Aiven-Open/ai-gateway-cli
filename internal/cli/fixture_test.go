@@ -44,6 +44,12 @@ const (
 	keyMidContext = "sk-test-mid-context"
 	keyFable      = "sk-test-fable"
 	keyProduction = "sk-test-production"
+	// An Anthropic model outside the curated lists beside an OpenAI one.
+	keyOwnedFable = "sk-test-owned-fable"
+	// A privately owned id with a familiar Claude name beside a real Anthropic model.
+	keyPrivateSonnet = "sk-test-private-sonnet"
+	// A Claude-named id owned by a publisher the CLI has not reviewed beside a real Anthropic model.
+	keyUnreviewedOwner = "sk-test-unreviewed-owner"
 	// Production ids minus each ladder's first choice.
 	keyProductionFallback = "sk-test-production-fallback"
 	// ai.aiven.io names beside historical aliases for the same models.
@@ -55,6 +61,8 @@ const (
 	keyNoInfer    = "sk-test-no-inference"
 	// Grants an alias holding a double quote.
 	keyQuoted = "sk-test-quoted"
+	// Grants an id holding %, which cmd.exe expands.
+	keyPercent = "sk-test-percent"
 )
 
 // fixedNow is every session's first clock reading; each later one is a second on, as a real clock would be, so the
@@ -110,8 +118,21 @@ const (
 )
 
 var keyModels = map[string][]string{
+	keyOwnedFable: {
+		`{"id":"claude-fable-5-2","object":"model","created":0,"owned_by":"anthropic"}`,
+		`{"id":"gpt-5.4","object":"model","created":0,"owned_by":"OpenAI"}`,
+	},
+	keyPrivateSonnet: {
+		`{"id":"claude-sonnet-5-5","object":"model","created":0,"owned_by":"Aiven"}`,
+		`{"id":"claude-haiku-5-5","object":"model","created":0,"owned_by":"anthropic"}`,
+	},
+	keyUnreviewedOwner: {
+		`{"id":"claude-sonnet-5-5","object":"model","created":0,"owned_by":"mystery-lab"}`,
+		`{"id":"claude-haiku-5-5","object":"model","created":0,"owned_by":"anthropic"}`,
+	},
 	keyValid:      {routerEntry, sonnetEntry, opusEntry, solEntry, glmEntry},
 	keyEmpty:      {},
+	keyPercent:    {`{"id":"glm%PATH%","object":"model","created":0,"owned_by":"zai"}`},
 	keyClaudeOnly: {opusEntry, sonnetEntry, haikuEntry},
 	keyFlash:      {routerEntry, opusEntry, flashEntry},
 	keyRouterOnly: {routerEntry},
@@ -404,7 +425,8 @@ func (s *session) homeFiles() []string {
 	var files []string
 	for _, root := range []string{s.fakeHome, s.env.WorkDir} {
 		_ = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
-			if err == nil && !d.IsDir() && p != s.keyPath() {
+			if err == nil && !d.IsDir() && p != s.keyPath() &&
+				p != filepath.Join(s.fakeHome, filepath.FromSlash(config.LockFile)) {
 				files = append(files, p)
 			}
 			return nil

@@ -46,6 +46,7 @@ type ui struct {
 	// width is the terminal's width in cells, or 0 when the stream is not a terminal: layout never follows COLUMNS
 	// or a guess there, so redirected output is the same everywhere.
 	width int
+	cmd   string // the invoked command, which runnable hints are rewritten to
 }
 
 func newUI(w io.Writer, tty bool, width func() int, plain bool) ui {
@@ -67,7 +68,12 @@ func newUIWithEnv(w io.Writer, tty bool, width func() int, plain bool, environ [
 
 func (u ui) paint(code, s string) string { return u.th.paint(code, s) }
 
-func (u ui) printf(format string, args ...any) { _, _ = fmt.Fprintf(u.w, format, args...) }
+func (u ui) printf(format string, args ...any) {
+	u.verbatim(rewriteHints(fmt.Sprintf(format, args...), u.cmd))
+}
+
+// verbatim writes s unchanged: diffs, file content and the model list show what is on disk or in the catalogue.
+func (u ui) verbatim(s string) { _, _ = fmt.Fprint(u.w, s) }
 
 // heading starts a section after a blank line.
 func (u ui) heading(s string) { u.printf("\n%s\n", u.th.bold(safe(s))) }
@@ -172,68 +178,14 @@ func (u ui) railEnd(text string) {
 	u.printf("%s  %s\n", u.th.dim(u.th.g.railEnd), u.th.bold(safe(text)))
 }
 
-// table prints an aligned multi-column table with optional dimmed column headers.
-func (u ui) table(indent int, headers []string, rows [][]string) {
-	if len(rows) == 0 && len(headers) == 0 {
-		return
-	}
-	cols := len(headers)
-	for _, r := range rows {
-		cols = max(cols, len(r))
-	}
-	widths := make([]int, cols)
-	for i, h := range headers {
-		widths[i] = max(widths[i], cells(safe(h)))
-	}
-	for _, r := range rows {
-		for i, c := range r {
-			widths[i] = max(widths[i], cells(safe(c)))
-		}
-	}
-	prefix := strings.Repeat(" ", indent)
-	if len(headers) > 0 {
-		var b strings.Builder
-		b.WriteString(prefix)
-		for i := range cols {
-			h := ""
-			if i < len(headers) {
-				h = safe(headers[i])
-			}
-			if i < cols-1 {
-				b.WriteString(u.th.dim(pad(h, widths[i])))
-				b.WriteString("  ")
-			} else {
-				b.WriteString(u.th.dim(h))
-			}
-		}
-		u.printf("%s\n", b.String())
-	}
-	for _, r := range rows {
-		var b strings.Builder
-		b.WriteString(prefix)
-		for i := range cols {
-			val := ""
-			if i < len(r) {
-				val = safe(r[i])
-			}
-			if i < cols-1 {
-				b.WriteString(pad(val, widths[i]))
-				b.WriteString("  ")
-			} else {
-				b.WriteString(val)
-			}
-		}
-		u.printf("%s\n", b.String())
-	}
-}
-
 // command either preserves the executable text exactly or refuses to display it. Sanitizing a quoted token
 // would silently change its argument; tabs are also unrepresentable when copied from a terminal.
 func (u ui) command(indent int, s string) bool {
-	if strings.ContainsRune(s, '\t') || safe(s) != s {
+	if s == "" || strings.ContainsRune(s, '\t') || safe(s) != s {
 		return false
 	}
-	u.printf("%s%s\n", strings.Repeat(" ", indent), u.th.cyan(s))
+	// The hint is rewritten before the colour codes go on: the pattern needs a word boundary before the name.
+	u.printf("%s%s\n", strings.Repeat(" ", indent), u.th.cyan(rewriteHints(s, u.cmd)))
 	return true
 }
 
@@ -252,7 +204,7 @@ func (u ui) block(text string) {
 		case strings.HasPrefix(line, "@@"):
 			code = cyan
 		}
-		u.printf("%s\n", u.paint(code, safe(line)))
+		u.verbatim(u.paint(code, safe(line)) + "\n")
 	}
 }
 
@@ -326,7 +278,7 @@ func renderModels(u ui, table []models.Model) {
 		if i > 0 {
 			u.printf("\n")
 		}
-		u.printf("%s\n", u.th.bold(safe(g.Name)))
+		u.verbatim(u.th.bold(safe(g.Name)) + "\n")
 		// The readable name leads; the exact id harness flags take follows it, once when the two are the same.
 		nameWidth := 0
 		for _, m := range g.Models {
@@ -356,7 +308,7 @@ func renderModels(u ui, table []models.Model) {
 				if j >= len(entries) {
 					break
 				}
-				u.printf("%s", entries[j])
+				u.verbatim(entries[j])
 				if next := (c+1)*rows + r; next < len(entries) {
 					u.printf("%s", strings.Repeat(" ", cellWidth-cells(plain[j])+gap))
 				}

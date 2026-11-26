@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
+	"strings"
 
 	"github.com/aiven-open/ai-gateway-cli/internal/config"
 	"github.com/aiven-open/ai-gateway-cli/internal/harness"
@@ -70,11 +70,6 @@ func projectLayerPaths(userHome, workDir string) []string {
 	}
 }
 
-// IsProjectPath reports whether path is one of the read-only project .claude/settings*.json layers.
-func IsProjectPath(userHome, workDir, path string) bool {
-	return path != "" && slices.Contains(projectLayerPaths(userHome, workDir), path)
-}
-
 func nativeLayerSpecs(userHome, workDir string) []layerSpec {
 	specs := []layerSpec{{kind: layerUser, path: filepath.Join(userHome, ".claude", "settings.json")}}
 	for _, p := range projectLayerPaths(userHome, workDir) {
@@ -124,6 +119,17 @@ func layerSelectsModel(settings map[string]any) bool {
 	return bare(v) != ""
 }
 
+// layerPinsTier reports whether settings sets a non-blank tier slot variable.
+func layerPinsTier(settings map[string]any) bool {
+	env, _ := settings["env"].(map[string]any)
+	for _, v := range tierVars {
+		if s, ok := env[v].(string); ok && bare(s) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // layerHasCustomOption reports whether settings sets a non-blank env.ANTHROPIC_CUSTOM_MODEL_OPTION.
 func layerHasCustomOption(settings map[string]any) bool {
 	if len(settings) == 0 {
@@ -161,6 +167,15 @@ func ProjectUngranted(
 		return "", "", "", false
 	}
 	return selectedPath, eff, selectedSetting, true
+}
+
+// PinWorkDir is the folder whose project .claude files may pin models for setup and for launch: none when they
+// select a model the key does not grant, so both ignore that layer and agree on the model that runs.
+func PinWorkDir(t []models.Model, userHome, workDir string) string {
+	if _, _, _, bad := ProjectUngranted(t, userHome, workDir); bad {
+		return ""
+	}
+	return workDir
 }
 
 // withPins adopts model pins from the dedicated settings cfg, then canonical user and project settings, local over
@@ -246,11 +261,11 @@ func pinnedFrom(t []models.Model, s slots, layers ...layer) (slots, string, stri
 			continue
 		}
 		if v, _ := l.settings["model"].(string); bare(v) != "" {
-			model, modelPath = bare(v), l.path
+			model, modelPath = defaultAlias(bare(v), defaults), l.path
 		}
 		if v, ok := env["ANTHROPIC_MODEL"].(string); ok {
 			if b := bare(v); b != "" {
-				envModel, envModelPath = b, l.path
+				envModel, envModelPath = defaultAlias(b, defaults), l.path
 			} else {
 				envModel, envModelPath = "", ""
 			}
@@ -271,6 +286,14 @@ func pinnedFrom(t []models.Model, s slots, layers ...layer) (slots, string, stri
 		return s, modelPath, "model"
 	}
 	return s, "", ""
+}
+
+// defaultAlias is the main model of defaults when model is Claude Code's default alias, else model.
+func defaultAlias(model string, defaults slots) string {
+	if id, ok := tierSlot(defaults, model); ok && strings.EqualFold(model, "default") {
+		return id
+	}
+	return model
 }
 
 // pin returns the string set under key without its `[1m]` suffix, cleared when that is blank, and current when key is

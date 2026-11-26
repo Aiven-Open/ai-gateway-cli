@@ -58,15 +58,34 @@ func LoadModelPrefs(userHome string) (map[string]map[string]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read model preferences: %w", err)
 	}
-	prefs := map[string]map[string]string{}
-	if len(bytes.TrimSpace(data)) == 0 {
-		return prefs, nil
+	return decodePrefs(path, data)
+}
+
+// decodePrefs reads data, the content of the preference file at path: a JSON object of gateways,
+// each an object of tools and non-empty aliases. A null, a missing alias or trailing text is
+// refused rather than read as no preference.
+func decodePrefs(path string, data []byte) (map[string]map[string]string, error) {
+	malformed := fmt.Errorf(
+		"%s is not a valid model preference file; fix or remove it, then retry",
+		path,
+	)
+	var raw map[string]map[string]*string
+	if err := json.Unmarshal(data, &raw); err != nil || raw == nil {
+		return nil, malformed
 	}
-	if err := json.Unmarshal(data, &prefs); err != nil {
-		return nil, fmt.Errorf("%s is not valid JSON; fix or remove it, then retry", path)
-	}
-	if prefs == nil {
-		prefs = map[string]map[string]string{}
+	prefs := make(map[string]map[string]string, len(raw))
+	for origin, tools := range raw {
+		if tools == nil {
+			return nil, malformed
+		}
+		gw := make(map[string]string, len(tools))
+		for tool, alias := range tools {
+			if alias == nil || *alias == "" {
+				return nil, malformed
+			}
+			gw[tool] = *alias
+		}
+		prefs[origin] = gw
 	}
 	return prefs, nil
 }
@@ -82,6 +101,7 @@ func LoadModelPref(userHome, origin, tool string) (string, error) {
 
 // SaveModelPrefs atomically merges updates (tool -> alias) for origin into userHome's
 // model preference file with mode 0600, refusing symlinked parent directories. An empty alias removes that tool.
+// Callers hold LockFile; the read, merge and rename are not atomic on their own.
 func SaveModelPrefs(
 	userHome, origin string,
 	updates map[string]string,

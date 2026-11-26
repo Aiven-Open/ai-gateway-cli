@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pelletier/go-toml/v2"
 
@@ -169,7 +170,7 @@ func TestPreviewHidesCredentialListsWithCommentsAndMultilineStrings(t *testing.T
 				t.Fatalf("invalid fixture: %v, %v", decoded, err)
 			}
 			f := harness.File{Path: tc.file, Data: []byte(strings.Replace(tc.data, "old", "new", 1))}
-			before, after := shown(f, []byte(tc.data), nil)
+			before, after := shown(f, []byte(tc.data))
 			for side, text := range map[string]string{"before": before, "after": after} {
 				for _, secret := range []string{"first-private", "second-private"} {
 					if strings.Contains(text, secret) {
@@ -207,7 +208,7 @@ func TestRedactHidesAValueThatReadsLikeAPlaceholder(t *testing.T) {
 		if ext == ".yaml" {
 			old, next = "password: first-synthetic\n", "password: '<redacted 1>'\n"
 		}
-		before, after := shown(harness.File{Path: "config" + ext, Data: []byte(next)}, []byte(old), nil)
+		before, after := shown(harness.File{Path: "config" + ext, Data: []byte(next)}, []byte(old))
 		if strings.Contains(before+after, "first-synthetic") ||
 			strings.Contains(before+after, "<redacted 1>") ||
 			strings.ContainsAny(before+after, "\x00") ||
@@ -220,7 +221,6 @@ func TestRedactHidesAValueThatReadsLikeAPlaceholder(t *testing.T) {
 		before, after := shown(
 			harness.File{Path: "config.yaml", Data: []byte("password: next\n")},
 			[]byte(old),
-			nil,
 		)
 		if strings.Contains(before+after, "<redacted 1>") {
 			t.Errorf("%q: before %q, after %q", old, before, after)
@@ -228,50 +228,102 @@ func TestRedactHidesAValueThatReadsLikeAPlaceholder(t *testing.T) {
 	}
 }
 
-func TestCollapseModelsTouchesOnlyTheGatewayProvidersList(t *testing.T) {
-	text := string(harness.JSON(map[string]any{
-		"mcp": map[string]any{"aiven": map[string]any{"models": []any{"keep-me"}}},
-		"provider": map[string]any{
-			"aiven": map[string]any{"models": map[string]any{"m1": map[string]any{}}, "npm": "x"},
-		},
-	}))
-	block, got := collapseModels(text, "[S]")
-	if !strings.Contains(got, `"keep-me"`) || !strings.Contains(got, `      "models": [S],`) ||
-		!strings.Contains(block, `"m1"`) {
-		t.Errorf("block %q, collapsed %s", block, got)
+func TestRedactShowsTokenCountsAndHidesTokens(t *testing.T) {
+	for _, line := range []string{
+		`"CLAUDE_CODE_MAX_CONTEXT_TOKENS": "163840"`,
+		`"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "200000"`,
+		`"maxTokens": 32000`,
+		`max_output_tokens = 64000`,
+		`"context_window_tokens": 1000000`,
+	} {
+		if got := newRedactor(nil).redact(line); got != line {
+			t.Errorf("redact(%s) = %s, want it unchanged", line, got)
+		}
+	}
+	for _, line := range []string{
+		`"ACCESS_TOKEN": "opaque"`,
+		`"GITHUB_TOKENS": "opaque"`,
+		`"max_auth_tokens": "opaque"`,
+		`"token": 42`,
+		`api_tokens = "opaque"`,
+	} {
+		if got := newRedactor(nil).redact(line); !strings.Contains(got, "<redacted 1>") {
+			t.Errorf("redact(%s) = %s, want the value hidden", line, got)
+		}
 	}
 }
 
-func TestCollapseYAMLModelsTouchesOnlyTheGatewayProvidersList(t *testing.T) {
-	const text = "mcp:\n  aiven:\n    models:\n    - keep-me\nproviders:\n  aiven:\n    models:\n    - id: m1\n      # first\n" +
-		"      name: M1\n\n    - id: m2\n    # about npm\n    npm: x\n  local:\n    models:\n    - keep-too\n"
-	block, got := collapseYAMLModels(text, "[S]")
-	want := "mcp:\n  aiven:\n    models:\n    - keep-me\nproviders:\n  aiven:\n    models: [S]\n    # about npm\n    npm: x\n" +
-		"  local:\n    models:\n    - keep-too\n"
-	if got != want || !strings.HasSuffix(block, "    - id: m2\n") {
-		t.Errorf("block %q, collapsed %q", block, got)
+func TestRedactHidesNonNumbersUnderTokenCountNames(t *testing.T) {
+	hidden := map[string]string{
+		"MAX_REFRESH_TOKENS":   `"MAX_REFRESH_TOKENS": "opaque09"`,
+		"GITHUB_OUTPUT_TOKENS": `"GITHUB_OUTPUT_TOKENS": "opaque10"`,
+		"MINT_TOKENS":          `"MINT_TOKENS": "opaque11"`,
+		"max_pat_tokens":       `"max_pat_tokens": "opaque12"`,
+		"input_tokens":         `"input_tokens": "opaque16"`,
+		"JSON list":            `"max_tokens": ["opaque13"]`,
+		"JSON object":          `"max_tokens": {"x": "opaque14"}`,
+		"TOML float":           `max_tokens = 1e5opaque`,
+	}
+	for name, line := range hidden {
+		if got := newRedactor(
+			nil,
+		).redact(line); strings.Contains(got, "opaque") ||
+			strings.Contains(got, "1e5") {
+			t.Errorf("%s: redact(%s) = %s, want the value hidden", name, line, got)
+		}
+	}
+	for name, text := range map[string]string{
+		"YAML list":   "max_tokens:\n  - opaque18\n",
+		"YAML scalar": "max_tokens: opaque19\n",
+		"YAML quoted": "MAX_REFRESH_TOKENS: \"opaque20\"\n",
+		"YAML object": "max_tokens:\n  x: opaque21\n",
+	} {
+		if got := newRedactor(nil).yaml(text); strings.Contains(got, "opaque") {
+			t.Errorf("%s: yaml(%q) = %q, want the value hidden", name, text, got)
+		}
+	}
+	for _, line := range []string{
+		`"ANTHROPIC_AUTH_TOKEN": "opaque01"`,
+		`"AWS_BEARER_TOKEN_BEDROCK": "opaque02"`,
+		`"OPENAI_API_KEY": "opaque03"`,
+		`"note": "sk-abcdefgh12345678"`,
+	} {
+		if got := newRedactor(
+			nil,
+		).redact(line); strings.Contains(got, "opaque") ||
+			strings.Contains(got, "sk-abc") {
+			t.Errorf("redact(%s) = %s, want the value hidden", line, got)
+		}
 	}
 }
 
-func TestShownSummarisesAnUnchangedYAMLModelListOnBothSides(t *testing.T) {
-	const list = "    models:\n    - id: glm-5\n      name: GLM 5\n"
-	before := "providers:\n  aiven:\n    baseUrl: https://old.invalid/v1\n" + list
-	after := "providers:\n  aiven:\n    baseUrl: https://new.invalid/v1\n" + list
-	summary := "    models: [3 models: claude-sonnet-5-5, glm-5, … +1 more]\n"
-	from, to := shown(
-		harness.File{Path: "models.yml", Data: []byte(after), Models: true},
-		[]byte(before),
-		previewTable,
-	)
-	if !strings.HasSuffix(from, summary) || !strings.HasSuffix(to, summary) {
-		t.Errorf("same list: %q / %q", from, to)
+func TestRedactShowsTokenCountNumbersInYAMLAndJSON(t *testing.T) {
+	for _, line := range []string{
+		`"CLAUDE_CODE_MAX_CONTEXT_TOKENS": "200000"`,
+		`"CLAUDE_CODE_MAX_CONTEXT_TOKENS": 200000`,
+	} {
+		if got := newRedactor(nil).redact(line); got != line {
+			t.Errorf("redact(%s) = %s, want it unchanged", line, got)
+		}
 	}
-	from, _ = shown(
-		harness.File{Path: "models.yml", Data: []byte(after + "    - id: m2\n"), Models: true},
-		[]byte(before),
-		previewTable,
-	)
-	if !strings.HasSuffix(from, "    models: [the previous model list]\n") {
-		t.Errorf("changed list: %q", from)
+	for _, text := range []string{"max_tokens: 200000\n", "max_tokens: \"200000\"\n"} {
+		if got := newRedactor(nil).yaml(text); got != text {
+			t.Errorf("yaml(%q) = %q, want it unchanged", text, got)
+		}
+	}
+}
+
+// Show file changes goes through changes, so the context window a settings file declares is readable there.
+func TestShowChangesKeepsContextWindowAndHidesToken(t *testing.T) {
+	f := harness.File{
+		Path: filepath.Join(t.TempDir(), "aiven.settings.json"),
+		Data: []byte(
+			`{"env":{"CLAUDE_CODE_MAX_CONTEXT_TOKENS":"163840","ANTHROPIC_AUTH_TOKEN":"opaque-value"}}` + "\n",
+		),
+	}
+	_, diff, err := changes([]harness.File{f}, backupNames{time.Unix(0, 0), map[string]string{}})
+	if err != nil || !strings.Contains(diff, `"CLAUDE_CODE_MAX_CONTEXT_TOKENS":"163840"`) ||
+		strings.Contains(diff, "opaque-value") {
+		t.Fatalf("diff %q, %v", diff, err)
 	}
 }

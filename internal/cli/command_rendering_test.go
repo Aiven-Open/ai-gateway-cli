@@ -199,3 +199,12 @@ func TestCommandRenderingEquivalenceGrid(t *testing.T) {
 		}
 	}
 }
+
+// Windows has no shared spelling for some models, so the command is empty there; nothing is printed for it.
+func TestCommandPrintsNothingForEmptyCommand(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	if newUI(&out, false, nil, true).command(2, "") || out.Len() != 0 {
+		t.Errorf("empty command printed %q", out.String())
+	}
+}

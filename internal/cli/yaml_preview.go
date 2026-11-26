@@ -20,6 +20,11 @@ import (
 
 var yamlCredential = regexp.MustCompile(`(?i)^` + redact.Name + `$`)
 
+// credentialName reports whether a YAML field name may hold a credential.
+func credentialName(name string) bool {
+	return yamlCredential.MatchString(name)
+}
+
 // YAML admits unquoted and block values; quoted-string redaction cannot protect its original diff side.
 func (r redactor) yaml(text string) string {
 	if strings.TrimSpace(text) == "" {
@@ -54,7 +59,7 @@ func (r redactor) yamlValues(value any, field string) {
 	case map[string]any:
 		for key, child := range value {
 			name := key
-			if yamlCredential.MatchString(field) {
+			if credentialName(field) {
 				name = field
 			}
 			r.yamlValues(child, name)
@@ -66,7 +71,7 @@ func (r redactor) yamlValues(value any, field string) {
 	case nil:
 	default:
 		text := fmt.Sprint(value)
-		if yamlCredential.MatchString(field) && !r.keeps(field+":", strconv.Quote(text)) {
+		if credentialName(field) && !r.keeps(field+":", strconv.Quote(text)) {
 			r.mask(text)
 		}
 	}
@@ -99,7 +104,7 @@ func (r yamlRedactor) value(name string, node ast.Node) ast.Node {
 		value = node.String()
 	}
 	text := fmt.Sprint(value)
-	if !yamlCredential.MatchString(name) && r.seen[text] == 0 {
+	if (!credentialName(name) || redact.Count(strings.ToLower(name), text)) && r.seen[text] == 0 {
 		return node
 	}
 	masked := r.mask(text)

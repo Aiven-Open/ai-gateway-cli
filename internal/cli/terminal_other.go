@@ -16,5 +16,3 @@ func probeOutputVT(*os.File) bool { return true }
 func enableOutputVT(...io.Writer) func() { return func() {} }
 
 func enableVT(*os.File, io.Writer) (func(), bool) { return func() {}, true }
-
-func restoreAllVT() {}

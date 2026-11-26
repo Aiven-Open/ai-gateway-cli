@@ -83,24 +83,24 @@ func TestSetupAnnouncesEachRequestBeforeSendingItAndSavesOnlyAfterTheProbe(t *te
 		if probe.method != http.MethodPost ||
 			!strings.Contains(
 				probe.stderr,
-				"Sending one 1-token check per configured protocol and model (may incur usage).\n",
+				"Sending 1-token checks for each configured protocol and model (may incur usage).\n",
 			) || probe.keySaved {
 			t.Errorf("probe arrived after %q (key saved %v)", probe.stderr, probe.keySaved)
 		}
 	}
 	out := stderr.String()
 	if !strings.Contains(out, "OK Responses with gpt-sol: HTTP 200 (") ||
-		!strings.Contains(out, "; basic check passed\n\nPi configuration\n") {
+		!strings.Contains(out, "; basic check passed\n\nPi\n") {
 		t.Errorf("missing probe summary before preview: %q", out)
 	}
 	saveIdx := strings.Index(out, "  Saving the key…\n  OK saved to "+s.keyPath()+"\n")
-	lastPreviewIdx := strings.LastIndex(out, "OMP configuration\n")
+	lastPreviewIdx := strings.LastIndex(out, "\nOMP\n")
 	if saveIdx < 0 || lastPreviewIdx < 0 || saveIdx < lastPreviewIdx {
 		t.Errorf("key saved before all previews completed: %q", out)
 	}
 	// Each configured protocol and model is checked once before saving the key.
 	for _, tool := range []string{"Pi", "OpenCode", "Codex", "Claude Code", "OMP"} {
-		if !strings.Contains(out, "\n"+tool+" configuration\n") ||
+		if !strings.Contains(out, "\n"+tool+"\n") ||
 			!strings.Contains(out, "\n  "+tool+strings.Repeat(" ", 13-len(tool))+"configured\n") {
 			t.Errorf("%s was not configured and summarised: %q", tool, out)
 		}
@@ -149,7 +149,7 @@ func TestSetupSummaryNamesEachOutcomeAndItsRecovery(t *testing.T) {
 	}{
 		{
 			name: "configured", args: []string{"--yes"},
-			want:   []string{"Setup complete\n", "  Codex       configured\n", "Start a session\n  COMMAND                        MODEL\n  aiven-ai-gateway launch codex  gpt-sol\n", "Or start the native tool directly\n  codex -p aiven\n"},
+			want:   []string{"Setup complete\n", "  Codex       configured\n", "Start a session\n  aiven-ai-gateway codex\n    Default model: gpt-sol\n", "Or start the native tool directly\n  codex -p aiven\n"},
 			absent: []string{"Needs attention", "Configure later", "Optional bash/zsh shortcuts", "alias ", "# gpt-sol"},
 		},
 		{

@@ -59,10 +59,29 @@ test("full literal argv, empty/bare invocation, streams, environment and statuse
       env: { ...env, AIVEN_NPM_TEST_ENV: "synthetic-env", AIVEN_NPM_TEST_STATUS: String(status) },
     });
     assert.equal(result.status, status, result.stderr);
-    assert.deepEqual(JSON.parse(result.stdout), { Argv: argv, Input: "literal stdin", Env: "synthetic-env" });
+    assert.deepEqual(JSON.parse(result.stdout), { Argv: argv, Input: "literal stdin", Env: "synthetic-env", InvokedAs: "aiven-ai-gateway" });
     assert.equal(result.stderr, "fixture stderr");
   }
   assert.deepEqual(JSON.parse(run(process.execPath, [wrapper]).stdout).Argv, []);
+});
+
+test("each bin script tells the tool its own name", () => {
+  const { root } = installation();
+  const invoked = (script, extra = {}) =>
+    JSON.parse(run(process.execPath, [join(root, "bin", script)], { env: { ...env, ...extra } }).stdout).InvokedAs;
+  assert.equal(invoked("aiven-ai-gateway.mjs"), "aiven-ai-gateway");
+  assert.equal(invoked("ai-gateway.mjs"), "ai-gateway");
+  assert.equal(invoked("ai-gateway.mjs", { npm_command: "exec" }), "npx");
+  assert.equal(invoked("avn-aig.mjs"), "avn-aig");
+  assert.equal(invoked("avn-aig.mjs", { npm_command: "exec" }), "npx");
+  assert.equal(invoked("aiven-ai-gateway.mjs", { npm_command: "run-script" }), "npx");
+  assert.equal(invoked("avn-aig.mjs", { AIVEN_AI_GATEWAY_INVOKED_AS: "forged" }), "avn-aig");
+  assert.equal(invoked("aiven-ai-gateway.mjs", { AIVEN_AI_GATEWAY_INVOKED_AS: "avn-aig" }), "aiven-ai-gateway");
+  assert.deepEqual(metadata.bin, {
+    "ai-gateway": "./bin/ai-gateway.mjs",
+    "aiven-ai-gateway": "./bin/aiven-ai-gateway.mjs",
+    "avn-aig": "./bin/avn-aig.mjs",
+  });
 });
 
 test("resolution ignores PATH", () => {
@@ -230,6 +249,13 @@ test("registry fixture installs only matching optional binary; global/local/npx 
     assert.equal(result.status, 23, result.stderr);
     assert.deepEqual(JSON.parse(result.stdout).Argv, argv);
   }
+  // The documented command: no --package and no bin name, so npm must find the one bin named like the package.
+  const documented = await runAsync(process.execPath, [npmCLI, "exec", "--offline", "--yes", "--", "@aivenio/ai-gateway", "--help"], {
+    cwd: workspace, env: { ...npmEnv, AIVEN_NPM_TEST_STATUS: "0" },
+  });
+  assert.equal(documented.status, 0, documented.stderr);
+  const seen = JSON.parse(documented.stdout);
+  assert.deepEqual([seen.Argv, seen.InvokedAs], [["--help"], "npx"]);
   assert.deepEqual(downloaded.sort(), ["@aivenio/ai-gateway", name].sort(), "offline runs must not request any tarball");
   t.diagnostic(JSON.stringify({
     downloaded, target, globalInstallStatus: install.status,

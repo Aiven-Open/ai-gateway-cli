@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/aiven-open/ai-gateway-cli/internal/config"
@@ -79,7 +80,7 @@ func Setup(in harness.Input) (harness.Plan, error) {
 	if err != nil {
 		return harness.Plan{}, err
 	}
-	files := []harness.File{{Path: path, Data: data, Backup: true, Models: true, Reference: Reference}}
+	files := []harness.File{{Path: path, Data: data, Backup: true, Reference: Reference}}
 	if stale != nil {
 		files = append(files, *stale)
 	}
@@ -121,9 +122,6 @@ func ModelFor(table []models.Model, sel harness.ModelSelection) string {
 	return "aiven/" + harness.AliasFor(table, sel)
 }
 
-// Model is the -m value that picks the gateway's default alias.
-func Model(table []models.Model) string { return ModelFor(table, harness.ModelSelection{}) }
-
 // takesValue reports OpenCode CLI flags whose next argument is a value rather than a subcommand.
 func takesValue(flag string) bool {
 	switch flag {
@@ -132,6 +130,35 @@ func takesValue(flag string) bool {
 		return true
 	}
 	return false
+}
+
+// commands are OpenCode's management subcommands, from opencode --help (1.18.25); auth and plug are aliases of
+// providers and plugin.
+var commands = []string{
+	"acp",
+	"agent",
+	"attach",
+	"auth",
+	"completion",
+	"db",
+	"debug",
+	"export",
+	"generate",
+	"github",
+	"help",
+	"import",
+	"mcp",
+	"models",
+	"plug",
+	"plugin",
+	"pr",
+	"providers",
+	"serve",
+	"session",
+	"stats",
+	"uninstall",
+	"upgrade",
+	"web",
 }
 
 // ModelArgs injects -m model for OpenCode interactive launches (including a positional project path or
@@ -167,10 +194,7 @@ func ModelArgs(args []string, model string) []string {
 			insertAt = i + 1
 			continue
 		}
-		switch a {
-		case "auth", "models", "serve", "acp", "agent", "attach", "completion", "db", "debug",
-			"export", "generate", "github", "help", "import", "mcp", "pr", "session", "stats",
-			"uninstall", "upgrade", "web":
+		if slices.Contains(commands, a) {
 			return args
 		}
 	}

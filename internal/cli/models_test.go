@@ -207,7 +207,7 @@ func TestUnreachableGatewayNamesURL(t *testing.T) {
 	}
 }
 
-func TestSlowGatewayTimesOutAsUnreachable(t *testing.T) {
+func TestSlowGatewayTimesOutWithLimit(t *testing.T) {
 	release := make(chan struct{})
 	srv := httptest.NewTLSServer(
 		http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }),
@@ -220,8 +220,8 @@ func TestSlowGatewayTimesOutAsUnreachable(t *testing.T) {
 	s.deps.HTTP = &client
 	r := s.run("models")
 	if want := "Gateway: " + srv.URL + "\n" + catalogueFailed(
-		"the gateway could not be reached",
-		"cannot reach gateway at ",
+		"the gateway did not answer in time",
+		"the gateway at "+srv.URL+" did not answer within 50ms",
 	); r.code != 1 ||
 		!strings.HasPrefix(r.stderr, strings.TrimSuffix(want, "\n")) {
 		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)

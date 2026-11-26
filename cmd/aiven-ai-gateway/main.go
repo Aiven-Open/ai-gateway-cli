@@ -34,6 +34,7 @@ func main() {
 		Prompter: cli.TerminalPrompter(os.Stdin, os.Stderr),
 		Term:     cli.DetectTerminal(os.Stdin, os.Stdout, os.Stderr),
 		Build:    b,
+		Command:  cli.CommandName(os.Args[0], os.Environ()),
 	}
 	if handled, code := cli.Informational(os.Args[1:], os.Environ(), deps); handled {
 		os.Exit(code)

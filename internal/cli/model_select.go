@@ -61,12 +61,40 @@ func effectiveToolSelection(
 }
 
 type configuredModel struct {
-	present      bool
-	granted      bool
-	unrepairable bool
-	file         string
-	setting      string
-	model        string
+	present bool
+	granted bool
+	file    string
+	setting string
+	model   string
+	// overrideFile and overrideModel are a project Claude file's ungranted model, which setup never writes.
+	overrideFile  string
+	overrideModel string
+}
+
+func (c configuredModel) overridden() bool { return c.overrideFile != "" }
+
+// projectOverrideWarning is the models-step line for a project file that selects a model the key does not grant.
+func projectOverrideWarning(env config.Env, tool string, c configuredModel) string {
+	return fmt.Sprintf(
+		"%s: this folder has its own settings in %s. They select %s, which this key does not grant. "+
+			"Setup does not change project files.",
+		toolLabel(tool),
+		shortHomePath(env.UserHome, c.overrideFile),
+		safe(c.overrideModel),
+	)
+}
+
+// projectOverrideNote is kept on the tool's outcome line.
+func projectOverrideNote(env config.Env, c configuredModel) string {
+	return fmt.Sprintf("this folder has its own settings in %s that select %s, which this key does "+
+		"not grant; aiven-ai-gateway claude overrides them, plain claude started here uses them",
+		shortHomePath(env.UserHome, c.overrideFile), safe(c.overrideModel))
+}
+
+// claudeWorkDir is the folder whose project Claude files setup lets decide the model: none when they select a
+// model the key does not grant, since setup does not write them and plans and checks the files it does write.
+func claudeWorkDir(env config.Env, table []models.Model) string {
+	return claude.PinWorkDir(table, env.UserHome, env.WorkDir)
 }
 
 func inspectConfiguredModel(
@@ -121,21 +149,17 @@ func inspectConfiguredModel(
 		for _, f := range snapshot.Files {
 			snapByPath[f.Path] = f
 		}
-		// Check read-only project layers first: an ungranted project model cannot be repaired by setup,
-		// even when an ungranted user-level ANTHROPIC_MODEL would otherwise mask it during Effective resolution.
-		if projPath, projAlias, projSetting, bad := claude.ProjectUngranted(
+		// An ungranted project model cannot be repaired by setup: inspect without the project layers and
+		// carry the override alongside, even when an ungranted user-level ANTHROPIC_MODEL would mask it.
+		if projPath, projAlias, _, bad := claude.ProjectUngranted(
 			table,
 			env.UserHome,
 			env.WorkDir,
 		); bad {
-			return configuredModel{
-				present:      true,
-				granted:      false,
-				unrepairable: true,
-				file:         projPath,
-				setting:      projSetting,
-				model:        projAlias,
-			}
+			env.WorkDir = ""
+			c := inspectConfiguredModel(tool, env, table, snapshot, plan0)
+			c.overrideFile, c.overrideModel = projPath, projAlias
+			return c
 		}
 		// Check effective layered model (covers dedicated, ~/.claude/settings.json and project layers).
 		if effPath, effAlias, effSetting, err := claude.Effective(
@@ -148,12 +172,11 @@ func inspectConfiguredModel(
 			_, granted := models.Find(table, effAlias)
 			if !granted {
 				return configuredModel{
-					present:      true,
-					granted:      false,
-					unrepairable: claude.IsProjectPath(env.UserHome, env.WorkDir, effPath),
-					file:         effPath,
-					setting:      cmp.Or(effSetting, "model"),
-					model:        effAlias,
+					present: true,
+					granted: false,
+					file:    effPath,
+					setting: cmp.Or(effSetting, "model"),
+					model:   effAlias,
 				}
 			}
 			if effPath != "" && effSetting != "" {
@@ -206,7 +229,7 @@ func inspectConfiguredModel(
 		}
 		return firstGranted
 	}
-	return configuredModel{}
+	return launcherPrefModel(env, table, tool)
 }
 
 // shortHomePath renders path with a leading "~" when it lies under userHome.
@@ -235,7 +258,15 @@ func toolBadge(
 			shortHomePath(env.UserHome, existing.file),
 		)
 	}
-	if existing.present && existing.granted {
+	if existing.overridden() {
+		return fmt.Sprintf(
+			"! ungranted: %s in %s",
+			safe(existing.overrideModel),
+			shortHomePath(env.UserHome, existing.overrideFile),
+		)
+	}
+	// A launcher tool's model is only a saved preference, which says nothing about its files; Ready below does.
+	if existing.present && existing.granted && !isLauncherPrefTool(tool) {
 		return fmt.Sprintf("configured (%s)", safe(existing.model))
 	}
 	switch tool {
@@ -285,7 +316,7 @@ func resolvedToolModel(
 		if _, alias, _, err := claude.Effective(
 			table,
 			env.UserHome,
-			env.WorkDir,
+			claudeWorkDir(env, table),
 			planned,
 		); err == nil &&
 			alias != "" {
@@ -310,25 +341,6 @@ func resolvedToolModel(
 		return harness.AliasFor(table, sel)
 	}
 	return models.SonnetOrFirst(table)
-}
-
-func nativeDefaultFile(tool string, env config.Env) string {
-	switch tool {
-	case "claude":
-		return "~/.claude/settings.json"
-	case "codex":
-		return "~/.codex/config.toml"
-	case "pi":
-		return "~/.pi/agent/settings.json"
-	case "opencode":
-		if env.ConfigHome != "" {
-			return filepath.Join(env.ConfigHome, "opencode", "opencode.json")
-		}
-		return "~/.config/opencode/opencode.json"
-	case "omp":
-		return "~/.omp/agent/config.yml"
-	}
-	return ""
 }
 
 type modelMenuItem struct {
@@ -414,7 +426,7 @@ func selectMultiToolModels(
 	}
 	for _, pr := range models.Presets(table) {
 		items = append(items, modelMenuItem{
-			option: option{label: pr.Name, detail: multiPresetDetail(pr, eligible, table)},
+			option: option{label: pr.Name, detail: safe(pr.Main)},
 			sel:    harness.ModelSelection{Preset: pr.ID},
 		})
 	}
@@ -447,7 +459,7 @@ func selectMultiToolModels(
 	chosen := items[pickedIdx]
 	if chosen.refuse {
 		c0 := conflicted[0]
-		return multiModelDecision{}, notGranted(c0.existing.file, c0.existing.model, table)
+		return multiModelDecision{}, notGranted(env.UserHome, c0.existing.file, c0.existing.model, table)
 	}
 	if chosen.customize {
 		return multiModelDecision{customize: true}, nil
@@ -503,7 +515,7 @@ func selectCustomizeHub(
 		switch {
 		case entry.set:
 			customizedAny = true
-			detail = entry.label
+			detail = safe(entry.label)
 		case t.existing.present && !t.existing.granted:
 			hasUnresolved = true
 			if firstUnresolved < 0 {
@@ -614,17 +626,6 @@ func multiToolSubtitle(eligible []*setupTarget, table []models.Model) string {
 	return sub
 }
 
-func multiPresetDetail(pr models.Preset, eligible []*setupTarget, table []models.Model) string {
-	hasClaude := slices.ContainsFunc(
-		eligible,
-		func(t *setupTarget) bool { return t.out.tool == "claude" },
-	)
-	if hasClaude {
-		return safe(presetDetail(pr, "claude"))
-	}
-	return safe(pr.Main)
-}
-
 func recommendedDefaultsDetail(
 	env config.Env,
 	eligible []*setupTarget,
@@ -682,9 +683,6 @@ func buildModelMenu(
 		prefix = fmt.Sprintf("[%d/%d] ", index, total)
 	}
 	switch tool {
-	case "claude":
-		title = "Model preset for Claude Code"
-		subtitle = "Sets default model and opus/sonnet/haiku slots"
 	case "codex":
 		title = "Default model for Codex"
 	default:
@@ -694,38 +692,18 @@ func buildModelMenu(
 			len(table),
 		)
 	}
-	if existing.present && !existing.granted {
-		title = fmt.Sprintf("%s%s (current %s is not granted)", prefix, title, safe(existing.model))
+	title, items = ungrantedItems(prefix+title, env, table, existing)
+	if existing.present && existing.granted {
 		items = append(items, modelMenuItem{
 			option: option{
-				label:  "Keep unchanged (refuse setup)",
-				detail: "leave " + safe(shortHomePath(env.UserHome, existing.file)) + " as it is",
+				label:  fmt.Sprintf("Keep current (%s)", safe(existing.model)),
+				detail: "leave current model unchanged",
 			},
-			refuse: true,
 		})
-		if alias := models.ProviderAlias(table, existing.model); alias != "" {
-			items = append(items, modelMenuItem{
-				option: option{
-					label:  fmt.Sprintf("Switch to %s (matches %s)", safe(alias), safe(existing.model)),
-					detail: modelDisplayDetail(table, alias),
-				},
-				sel: harness.ModelSelection{Model: alias},
-			})
-		}
-	} else {
-		title = prefix + title
-		if existing.present && existing.granted {
-			items = append(items, modelMenuItem{
-				option: option{
-					label:  fmt.Sprintf("Keep current (%s)", safe(existing.model)),
-					detail: "leave current model unchanged",
-				},
-			})
-		}
 	}
 	for _, pr := range models.Presets(table) {
 		items = append(items, modelMenuItem{
-			option: option{label: pr.Name, detail: safe(presetDetail(pr, tool))},
+			option: option{label: pr.Name, detail: safe(pr.Main)},
 			sel:    harness.ModelSelection{Preset: pr.ID},
 		})
 	}
@@ -750,16 +728,21 @@ func modelDisplayDetail(table []models.Model, alias string) string {
 	return ""
 }
 
-func presetDetail(pr models.Preset, tool string) string {
-	if tool == "claude" {
-		if pr.ID == models.PresetAnthropic && (pr.Opus != pr.Main || pr.Haiku != pr.Main) {
-			return fmt.Sprintf("%s (opus: %s, haiku: %s)", pr.Main, pr.Opus, pr.Haiku)
-		}
-		if pr.Haiku != "" && pr.Haiku != pr.Main {
-			return fmt.Sprintf("%s (fast: %s)", pr.Main, pr.Haiku)
-		}
+// sharedSelection is the shared Default model answer as tool takes it. Claude Code takes a vendor
+// preset as its default model only, so its tier slots stay on granted Claude models.
+func sharedSelection(
+	tool string,
+	table []models.Model,
+	sel harness.ModelSelection,
+) harness.ModelSelection {
+	if tool != "claude" || sel.Preset == "" {
+		return sel
 	}
-	return pr.Main
+	main, err := sel.ResolveMain(table)
+	if err != nil || main == "" {
+		return sel
+	}
+	return harness.ModelSelection{Model: main}
 }
 
 func selectToolModel(
@@ -776,6 +759,9 @@ func selectToolModel(
 		p.ui.railWarn(fmt.Sprintf("%s: %s (%s) selects %s, which this key does not grant.",
 			toolLabel(tool), existing.file, existing.setting, existing.model))
 	}
+	if tool == "claude" {
+		return selectClaudeModels(deps, p, env, table, existing, index, total, allowBack)
+	}
 	title, subtitle, items := buildModelMenu(tool, env, table, existing, index, total)
 	if len(items) == 0 {
 		return harness.ModelSelection{}, "", nil
@@ -791,7 +777,12 @@ func selectToolModel(
 		}
 		chosen := items[pickedIdx]
 		if chosen.refuse {
-			return harness.ModelSelection{}, "", notGranted(existing.file, existing.model, table)
+			return harness.ModelSelection{}, "", notGranted(
+				env.UserHome,
+				existing.file,
+				existing.model,
+				table,
+			)
 		}
 		if !chosen.custom {
 			return chosen.sel, chosen.option.label, nil
@@ -920,11 +911,7 @@ func pickSpecificModel(
 		}
 		for _, g := range groups {
 			for _, m := range g.Models {
-				detail := safe(g.Name)
-				if name := safe(m.DisplayName()); name != "" && name != safe(m.Alias) {
-					detail = name + " · " + detail
-				}
-				c.options = append(c.options, option{label: safe(m.Alias), detail: detail})
+				c.options = append(c.options, option{label: safe(m.Alias), detail: modelDetail(m)})
 			}
 		}
 		picked, err := p.inline.Select(c)
@@ -934,18 +921,7 @@ func pickSpecificModel(
 		return flat[picked[0]].Alias, nil
 	}
 	p.ui.line(2, "Select a model for "+toolLabel(tool)+":")
-	idx := 0
-	for _, g := range groups {
-		p.ui.line(4, g.Name)
-		for _, m := range g.Models {
-			idx++
-			entry := fmt.Sprintf("%d) %s", idx, m.Alias)
-			if name := safe(m.DisplayName()); name != "" && name != safe(m.Alias) {
-				entry += " (" + name + ")"
-			}
-			p.ui.line(6, entry)
-		}
-	}
+	printGroupedModels(p, groups)
 	for range 3 {
 		answer, err := deps.Prompter.ReadLine(`Choose model number or id (or "back"): `)
 		if errors.Is(err, io.EOF) || errors.Is(err, errInputEnded) {
@@ -978,13 +954,13 @@ func selectDirectInvocation(
 	env config.Env,
 	eligible []*setupTarget,
 ) (string, error) {
-	if len(eligible) == 0 {
+	if eligible = withholdUneditable(p, eligible); len(eligible) == 0 {
 		return "none", nil
 	}
 	if len(eligible) == 1 {
 		t := eligible[0]
 		tool := t.out.tool
-		nativeFile := nativeDefaultFile(tool, env)
+		nativeFile := nativeDefaultFile(t, env)
 		yesDetail := "updates " + nativeFile
 		if tool == "claude" && t.existing.present && !t.existing.granted &&
 			t.existing.file == filepath.Join(env.UserHome, ".claude", "settings.json") {
@@ -996,7 +972,7 @@ func selectDirectInvocation(
 				detail: yesDetail,
 			},
 			{
-				label:  fmt.Sprintf("No — only via 'aiven-ai-gateway launch %s'", tool),
+				label:  fmt.Sprintf("No — only via 'aiven-ai-gateway %s'", tool),
 				detail: "keeps existing " + nativeFile + " default",
 			},
 		}
@@ -1022,7 +998,7 @@ func selectDirectInvocation(
 			detail: "running tools directly uses Aiven automatically",
 		},
 		{
-			label:  "No — only via 'aiven-ai-gateway launch'",
+			label:  "No — only via 'aiven-ai-gateway <tool>'",
 			detail: "keeps your current defaults",
 		},
 		{
@@ -1121,7 +1097,7 @@ func selectDirectPerTool(
 			theme:     &p.ui.th,
 		}
 		for _, t := range eligible {
-			detail := nativeDefaultFile(t.out.tool, env)
+			detail := nativeDefaultFile(t, env)
 			if t.out.tool == "claude" && t.existing.present && !t.existing.granted &&
 				t.existing.file == filepath.Join(env.UserHome, ".claude", "settings.json") {
 				detail += " (fixes ungranted model)"
@@ -1148,7 +1124,7 @@ func selectDirectPerTool(
 			}
 		}
 		if len(names) == 0 {
-			return "via 'aiven-ai-gateway launch <tool>'", nil
+			return "via 'aiven-ai-gateway <tool>'", nil
 		}
 		return strings.Join(names, ", ") + " directly", nil
 	}
@@ -1159,7 +1135,7 @@ func selectDirectPerTool(
 		offered[i] = t.out.tool
 		p.ui.line(
 			4,
-			fmt.Sprintf("%d) %s (%s)", i+1, toolLabel(t.out.tool), nativeDefaultFile(t.out.tool, env)),
+			fmt.Sprintf("%d) %s (%s)", i+1, toolLabel(t.out.tool), nativeDefaultFile(t, env)),
 		)
 	}
 	for range 3 {
@@ -1188,7 +1164,7 @@ func selectDirectPerTool(
 			}
 		}
 		if len(names) == 0 {
-			return "via 'aiven-ai-gateway launch <tool>'", nil
+			return "via 'aiven-ai-gateway <tool>'", nil
 		}
 		return strings.Join(names, ", ") + " directly", nil
 	}

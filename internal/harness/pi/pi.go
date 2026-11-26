@@ -112,7 +112,7 @@ func Setup(in harness.Input) (harness.Plan, error) {
 	if _, err := in.Selection.ResolveMain(in.Table); err != nil {
 		return harness.Plan{}, err
 	}
-	files := []harness.File{{Path: path, Data: data, Backup: true, Models: true}}
+	files := []harness.File{{Path: path, Data: data, Backup: true}}
 	if in.Default {
 		settings["defaultProvider"], settings["defaultModel"] = "aiven", harness.AliasFor(
 			in.Table,
@@ -127,19 +127,19 @@ func Setup(in harness.Input) (harness.Plan, error) {
 	return harness.Plan{Files: files}, nil
 }
 
+// Commands are Pi's package subcommands, from pi --help (0.80.3); uninstall is its alias for remove.
+var Commands = []string{"install", "remove", "uninstall", "update", "list", "config"}
+
 // ModelFor returns the --model value for sel against table, falling back to SonnetOrFirst.
 func ModelFor(table []models.Model, sel harness.ModelSelection) string {
 	return "aiven/" + harness.AliasFor(table, sel)
 }
 
-// Model is the --model value that picks the gateway's default alias.
-func Model(table []models.Model) string { return ModelFor(table, harness.ModelSelection{}) }
-
 // Launch selects the gateway default (or persisted setup) model in an already configured provider when there are no
 // native args, and passes native args unchanged.
 func Launch(in harness.Input) (harness.Plan, error) {
 	alias := harness.AliasFor(in.Table, in.Selection)
-	args := harness.ModelArgs(in.Args, "aiven/"+alias, "--model")
+	args := harness.ModelArgs(in.Args, "aiven/"+alias, "--model", Commands)
 	if len(args) != len(in.Args) {
 		if in.UserHome == "" {
 			return harness.Plan{}, config.ErrNoHome

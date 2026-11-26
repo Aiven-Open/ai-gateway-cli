@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/aiven-open/ai-gateway-cli/internal/fsutil"
@@ -19,16 +20,25 @@ import (
 // keeps existing configured models and uses automatic defaults for fresh setups.
 type ModelSelection struct {
 	Preset models.PresetID
-	Model  string
+	// Model is the default; with Models it is one of them.
+	Model string
+	// Models are several models chosen at once, in the order chosen.
+	// Only Claude Code takes more than one.
+	Models []string
 }
 
 // IsZero reports whether no explicit preset or model was chosen.
-func (s ModelSelection) IsZero() bool { return s.Preset == "" && s.Model == "" }
+func (s ModelSelection) IsZero() bool {
+	return s.Preset == "" && s.Model == "" && len(s.Models) == 0
+}
 
 // ResolveMain returns the chosen main alias against table, or "" when zero or table is empty.
 func (s ModelSelection) ResolveMain(table []models.Model) (string, error) {
 	if s.Model != "" {
 		return s.Model, nil
+	}
+	if len(s.Models) > 0 {
+		return s.Models[0], nil
 	}
 	if s.Preset != "" {
 		if len(table) == 0 {
@@ -75,8 +85,6 @@ type File struct {
 	Data []byte
 	// Backup copies a file the user already has to <Path>.aiven-<UTC time>.bak before it is replaced.
 	Backup bool
-	// Models marks a file that lists every gateway model; a preview names a few models instead of diffing it.
-	Models bool
 	// Reference reports whether value, in a field named like a credential (field, lower case), names where a key is
 	// in this file's own syntax rather than holding one, so a preview may show it. Nil means no value does.
 	Reference func(field, value string) bool
@@ -119,17 +127,13 @@ func hasExplicitModelOrMeta(args []string) bool {
 	return false
 }
 
-// ModelArgs prepends flag and model when args do not already specify a model, provider, help/version flag,
-// or non-session management subcommand.
-func ModelArgs(args []string, model, flag string) []string {
+// ModelArgs prepends flag and model when args specify no model, provider or help/version flag and do not start with
+// one of commands, the tool's own management subcommands.
+func ModelArgs(args []string, model, flag string, commands []string) []string {
 	if len(args) == 0 {
 		return []string{flag, model}
 	}
-	if args[0] == "--" || hasExplicitModelOrMeta(args) {
-		return args
-	}
-	switch args[0] {
-	case "update", "install", "remove", "list", "config", "plugin", "commit":
+	if args[0] == "--" || hasExplicitModelOrMeta(args) || slices.Contains(commands, args[0]) {
 		return args
 	}
 	out := make([]string, 0, len(args)+2)

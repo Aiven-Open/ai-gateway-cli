@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -42,9 +43,16 @@ var (
 type UnreachableError struct {
 	BaseURL string
 	Err     error
+	// Limit is how long the request was allowed to take.
+	Limit time.Duration
+	// Answered is set when the gateway had sent response headers, so it took the request before the failure.
+	Answered bool
 }
 
 func (e *UnreachableError) Error() string {
+	if e.Timeout() {
+		return fmt.Sprintf("the gateway at %s did not answer within %s", e.BaseURL, e.Limit)
+	}
 	cause := e.Err
 	if ue := new(url.Error); errors.As(cause, &ue) {
 		cause = ue.Err // the request URL is already in the message
@@ -52,6 +60,20 @@ func (e *UnreachableError) Error() string {
 	return "cannot reach gateway at " + e.BaseURL + ": " + cause.Error()
 }
 func (e *UnreachableError) Unwrap() error { return e.Err }
+
+// Timeout reports whether the request ran out of its time rather than failing to connect.
+func (e *UnreachableError) Timeout() bool {
+	var ne net.Error
+	return e.Limit > 0 && errors.As(e.Err, &ne) && ne.Timeout()
+}
+
+// requestLimit is the shorter of Timeout and the client's own timeout, the time one request has.
+func requestLimit(hc *http.Client) time.Duration {
+	if hc.Timeout > 0 && hc.Timeout < Timeout {
+		return hc.Timeout
+	}
+	return Timeout
+}
 
 // HTTPError retains bounded, credential-redacted gateway error details.
 type HTTPError struct {
@@ -143,6 +165,12 @@ func (c Client) Probe(
 	}
 	defer func() { _ = resp.Body.Close() }()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	var timeout net.Error
+	if errors.As(err, &timeout) && timeout.Timeout() {
+		return resp.StatusCode, &UnreachableError{
+			BaseURL: c.BaseURL, Err: err, Limit: requestLimit(c.HTTP), Answered: true,
+		}
+	}
 	if err != nil {
 		return resp.StatusCode, fmt.Errorf("read basic check response: %w", err)
 	}
@@ -188,7 +216,7 @@ func (c Client) do(
 	resp, err := hc.Do(req)
 	if err != nil {
 		cancel()
-		return nil, &UnreachableError{BaseURL: c.BaseURL, Err: err}
+		return nil, &UnreachableError{BaseURL: c.BaseURL, Err: err, Limit: requestLimit(c.HTTP)}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))

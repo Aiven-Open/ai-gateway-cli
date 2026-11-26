@@ -8,6 +8,7 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync,
 import { createServer } from "node:https";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import { inspectArtifacts } from "./artifacts.mjs";
 import { packageName, selectTarget } from "../lib/platforms.mjs";
 
@@ -70,6 +71,20 @@ const shimHelp = spawnSync(shim, ["--help"], {
 });
 assert.equal(shimHelp.status, 0, shimHelp.stderr);
 assert.equal(shimHelp.stdout, help.stdout);
+const shortShim = isWin ? join(prefix, "avn-aig.cmd") : join(prefix, "bin/avn-aig");
+const shortHelp = spawnSync(shortShim, ["--help"], {
+  env, encoding: "utf8", timeout: 30_000, shell: isWin, cwd: isolated,
+});
+assert.equal(shortHelp.status, 0, shortHelp.stderr);
+const npmShim = isWin ? join(prefix, "ai-gateway.cmd") : join(prefix, "bin/ai-gateway");
+const npmHelp = spawnSync(npmShim, ["--help"], {
+  env, encoding: "utf8", timeout: 30_000, shell: isWin, cwd: isolated,
+});
+assert.equal(npmHelp.status, 0, npmHelp.stderr);
+assert(npmHelp.stdout.startsWith("usage: ai-gateway <command> [args]\n"), npmHelp.stdout);
+// Each bin script names itself, so the usage line is the same on every platform, whatever the shim is.
+assert(shimHelp.stdout.startsWith("usage: aiven-ai-gateway <command> [args]\n"), shimHelp.stdout);
+assert(shortHelp.stdout.startsWith("usage: avn-aig <command> [args]\n"), shortHelp.stdout);
 
 // Setup and launch each tool against a loopback gateway, with a synthetic key and a fixture standing in for the tool.
 const key = "sk-smoke-synthetic";
@@ -168,10 +183,10 @@ const expected = {
       return parsed.env?.ANTHROPIC_BASE_URL === toolEnv.AIVEN_AI_GATEWAY_BASE_URL && typeof parsed.apiKeyHelper === "string";
     },
   },
-  codex: { files: [".codex/aiven.config.toml", ".codex/config.toml"], argv: (a) => a.join(" ") === "-p aiven" },
-  pi: { files: [".pi/agent/models.json"], argv: (a) => a.join(" ") === "--model aiven/claude-sonnet" },
-  opencode: { files: [".config/opencode/opencode.json"], argv: (a) => a.join(" ") === "-m aiven/claude-sonnet" },
-  omp: { files: [".omp/agent/models.yml"], argv: (a) => a.join(" ") === "--model aiven/claude-sonnet" },
+  codex: { files: [".codex/aiven.config.toml", ".codex/config.toml"], argv: (a) => isDeepStrictEqual(a, ["-p", "aiven"]) },
+  pi: { files: [".pi/agent/models.json"], argv: (a) => isDeepStrictEqual(a, ["--model", "aiven/claude-sonnet"]) },
+  opencode: { files: [".config/opencode/opencode.json"], argv: (a) => isDeepStrictEqual(a, ["-m", "aiven/claude-sonnet"]) },
+  omp: { files: [".omp/agent/models.yml"], argv: (a) => isDeepStrictEqual(a, ["--model", "aiven/claude-sonnet"]) },
 };
 const launches = {};
 for (const name of names) {
@@ -179,7 +194,7 @@ for (const name of names) {
   const setup = await runAsync(["setup", name, "--key-stdin", "--yes", "--plain"], `${key}\n`);
   assert.equal(setup.status, 0, `${name} setup: ${setup.stdout}${setup.stderr}`);
   assert(setup.stderr.includes(`Gateway: ${toolEnv.AIVEN_AI_GATEWAY_BASE_URL}\n`), `${name} setup omitted the gateway`);
-  const written = files(home).filter((file) => !before.has(file) && !file.includes("ai-gateway-key"))
+  const written = files(home).filter((file) => !before.has(file) && !file.includes("ai-gateway-key") && !file.endsWith("ai-gateway.lock"))
     .map((file) => file.slice(home.length + 1).replaceAll("\\", "/")).sort();
   assert.deepEqual(written, expected[name].files, `${name} setup wrote ${written}`);
   for (const file of written) {
@@ -188,7 +203,7 @@ for (const name of names) {
     assert(!text.includes(key), `${name} setup wrote the key into ${file}`);
   }
   const argv = ["two words", "", 'quote"slash\\', "a & b | c < d > e (f) ^ %USERPROFILE%", '{"inline":"x && y || z"}'];
-  for (const launchArgs of [["launch", name, ...argv], ["launch", name, "--", ...argv]]) {
+  for (const launchArgs of [["launch", name, ...argv], ["launch", name, "--", ...argv], [name, ...argv]]) {
     const launch = await runAsync(launchArgs, "");
     assert.equal(launch.status, 23, `${name} launch: ${launch.stderr}`);
     assert(launch.stderr.includes(`Gateway: ${toolEnv.AIVEN_AI_GATEWAY_BASE_URL}\n`), `${name} launch omitted the gateway`);

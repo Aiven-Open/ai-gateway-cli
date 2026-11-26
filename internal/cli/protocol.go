@@ -28,7 +28,8 @@ const maxConcurrentProbes = 4
 // nothing else and saves neither the key nor any tool.
 var errNotGranted = errors.New("which this key does not grant")
 
-func notGranted(path, model string, table []models.Model) error {
+func notGranted(userHome, path, model string, table []models.Model) error {
+	path = shortHomePath(userHome, path)
 	if alias := models.ProviderAlias(table, model); alias != "" {
 		return fmt.Errorf("%s selects %s, %w (try %s; aiven-ai-gateway models lists granted "+
 			"models), then update it or rerun setup interactively", path, model, errNotGranted, alias)
@@ -102,38 +103,32 @@ func toolChecks(
 		}
 		alias, _ := cfg["model"].(string)
 		if _, granted := models.Find(table, alias); !granted {
-			return nil, notGranted(plan.Files[len(plan.Files)-1].Path, alias, table)
+			return nil, notGranted(env.UserHome, plan.Files[len(plan.Files)-1].Path, alias, table)
 		}
 		return []probeKey{{protocol: models.Responses, model: alias}}, nil
 	case "claude":
-		// Project .claude/settings*.json overrides cannot be repaired by setup, even if a granted
-		// dedicated or user ANTHROPIC_MODEL would otherwise mask them in Effective.
-		if projPath, projAlias, _, bad := claude.ProjectUngranted(
-			table,
-			env.UserHome,
-			env.WorkDir,
-		); bad {
-			return nil, notGranted(projPath, projAlias, table)
-		}
 		planned := make(map[string][]byte, len(plan.Files))
+		var configured []string
 		for _, f := range plan.Files {
 			alias, err := claude.Selected(f.Data)
 			if err != nil {
 				return nil, fmt.Errorf("read proposed Claude settings: %w", err)
 			}
 			if _, granted := models.Find(table, alias); !granted {
-				return nil, notGranted(f.Path, alias, table)
+				return nil, notGranted(env.UserHome, f.Path, alias, table)
 			}
 			planned[f.Path] = f.Data
+			configured = append(configured, alias)
 		}
-		path, alias, _, err := claude.Effective(table, env.UserHome, env.WorkDir, planned)
+		// A project file selecting an ungranted model is setup's to report, not to probe.
+		path, alias, _, err := claude.Effective(table, env.UserHome, claudeWorkDir(env, table), planned)
 		if err != nil {
 			return nil, fmt.Errorf("read effective Claude settings: %w", err)
 		}
 		if _, granted := models.Find(table, alias); !granted {
-			return nil, notGranted(path, alias, table)
+			return nil, notGranted(env.UserHome, path, alias, table)
 		}
-		return []probeKey{{protocol: models.Messages, model: alias}}, nil
+		return claudePickChecks(env.UserHome, table, sel, path, append([]string{alias}, configured...))
 	case "opencode":
 		model := cmp.Or(chosen, models.SonnetOrFirst(table))
 		return []probeKey{{protocol: models.ChatCompletions, model: model}}, nil
@@ -189,9 +184,10 @@ func collectProtocolChecks(
 	return plan, false
 }
 
-// checkProtocols sends at most one minimal request for each distinct uncached (protocol, model) concurrently under one
-// stderr owner, memoizing completed results in cache across Back navigation and failing each tool only on its own
-// dependencies (unless authentication fails).
+// checkProtocols sends at least one minimal request for each distinct uncached
+// (protocol, model) concurrently under one stderr owner (a timed-out check is
+// sent once more), memoizing completed results in cache across Back navigation
+// and failing each tool only on its own dependencies (unless authentication fails).
 func checkProtocols(
 	ctx context.Context,
 	gw gateway.Client,
@@ -221,63 +217,31 @@ func checkProtocols(
 
 	if len(uncached) > 0 && !authFailed.Load() {
 		run.p.ui.railNote(
-			"Sending one 1-token check per configured protocol and model (may incur usage).",
+			"Sending 1-token checks for each configured protocol and model (may incur usage).",
 		)
 		probeCtx, cancelProbes := context.WithCancel(ctx)
 		defer cancelProbes()
-		results := make([]probeResult, len(uncached))
-		sem := make(chan struct{}, maxConcurrentProbes)
-		var wg sync.WaitGroup
+		pending := make([]probeKey, len(uncached))
 		for slot, idx := range uncached {
-			pk := checks[idx].key
-			wg.Add(1)
-			go func(slot int, pk probeKey) {
-				defer wg.Done()
-				select {
-				case sem <- struct{}{}:
-					defer func() { <-sem }()
-				case <-probeCtx.Done():
-					results[slot] = probeResult{
-						err: errors.New("not attempted after authentication failure or cancellation"),
-					}
-					return
-				}
-				if authFailed.Load() || probeCtx.Err() != nil {
-					results[slot] = probeResult{
-						err: errors.New("not attempted after authentication failure or cancellation"),
-					}
-					return
-				}
-				start := time.Now()
-				status, err := gw.Probe(probeCtx, key, pk.model, pk.protocol)
-				dur := time.Since(start)
-				if rejected(err) {
-					authFailed.Store(true)
-					cancelProbes()
-				}
-				results[slot] = probeResult{status: status, err: err, duration: dur}
-			}(slot, pk)
+			pending[slot] = checks[idx].key
 		}
 		label := fmt.Sprintf("Checking %d protocol(s)…", len(uncached))
 		if len(uncached) == 1 {
-			c := checks[uncached[0]]
-			label = fmt.Sprintf("Checking %s (%s)…", c.key.protocol.Label(), c.key.model)
+			label = fmt.Sprintf("Checking %s (%s)…", pending[0].protocol.Label(), pending[0].model)
 		}
+		var results []probeResult
 		_ = run.p.ui.runWithProgress(run.p.ui.railPrefix(), label, func() error {
-			wg.Wait()
+			results = probeAll(probeCtx, cancelProbes, gw, key, pending, &authFailed)
 			return nil
 		})
 		for slot, idx := range uncached {
 			res := results[slot]
 			if authFailed.Load() && res.err != nil && !rejected(res.err) &&
 				errors.Is(res.err, context.Canceled) {
-				res.err = errors.New("not attempted after authentication failure or cancellation")
+				res.err = errNotAttempted
 			}
-			checks[idx].status = res.status
-			checks[idx].err = res.err
-			checks[idx].duration = res.duration
-			if cache != nil && !errors.Is(res.err, context.Canceled) &&
-				!authFailed.Load() {
+			checks[idx].status, checks[idx].err, checks[idx].duration = res.status, res.err, res.duration
+			if cache != nil && !errors.Is(res.err, context.Canceled) && !authFailed.Load() {
 				cache[checks[idx].key] = res
 			}
 		}
@@ -310,6 +274,58 @@ func checkProtocols(
 		}
 	}
 	return ready
+}
+
+var errNotAttempted = errors.New("not attempted after authentication failure or cancellation")
+
+// probeAll sends keys through at most maxConcurrentProbes workers, so a long selection holds that many goroutines
+// rather than one per model.
+func probeAll(
+	ctx context.Context,
+	cancel context.CancelFunc,
+	gw gateway.Client,
+	key string,
+	keys []probeKey,
+	authFailed *atomic.Bool,
+) []probeResult {
+	results := make([]probeResult, len(keys))
+	next := make(chan int)
+	var wg sync.WaitGroup
+	for range min(maxConcurrentProbes, len(keys)) {
+		wg.Go(func() {
+			for slot := range next {
+				results[slot] = probeOne(ctx, cancel, gw, key, keys[slot], authFailed)
+			}
+		})
+	}
+	for slot := range keys {
+		next <- slot
+	}
+	close(next)
+	wg.Wait()
+	return results
+}
+
+// probeOne sends one check unless authentication already failed or the run was cancelled; a rejected key cancels
+// the checks still waiting.
+func probeOne(
+	ctx context.Context,
+	cancel context.CancelFunc,
+	gw gateway.Client,
+	key string,
+	pk probeKey,
+	authFailed *atomic.Bool,
+) probeResult {
+	if authFailed.Load() || ctx.Err() != nil {
+		return probeResult{err: errNotAttempted}
+	}
+	start := time.Now()
+	status, err := probeWithRetry(ctx, gw, key, pk)
+	if rejected(err) {
+		authFailed.Store(true)
+		cancel()
+	}
+	return probeResult{status: status, err: err, duration: time.Since(start)}
 }
 
 func printProtocolResult(u ui, check protocolCheck) {
@@ -349,4 +365,37 @@ func printProtocolResult(u ui, check protocolCheck) {
 	} else {
 		u.status(2, green, "OK", text+"; basic check passed")
 	}
+}
+
+// claudePickChecks is the Messages check of each model in aliases (the one Claude Code runs, then those the files
+// setup writes or keeps select) and of every other model chosen with it, each once.
+func claudePickChecks(
+	userHome string,
+	table []models.Model,
+	sel harness.ModelSelection,
+	path string,
+	aliases []string,
+) ([]probeKey, error) {
+	var checks []probeKey
+	for _, m := range slices.Concat(aliases, sel.Models) {
+		if _, granted := models.Find(table, m); !granted {
+			return nil, notGranted(userHome, path, m, table)
+		}
+		if pk := (probeKey{protocol: models.Messages, model: m}); !slices.Contains(checks, pk) {
+			checks = append(checks, pk)
+		}
+	}
+	return checks, nil
+}
+
+// probeWithRetry sends a basic check once more when the first try ran out of time before any response. A timeout after
+// the headers means the gateway took the request, so it is not sent again.
+func probeWithRetry(ctx context.Context, gw gateway.Client, key string, pk probeKey) (int, error) {
+	status, err := gw.Probe(ctx, key, pk.model, pk.protocol)
+	var unreachable *gateway.UnreachableError
+	if errors.As(err, &unreachable) && unreachable.Timeout() && !unreachable.Answered &&
+		ctx.Err() == nil {
+		return gw.Probe(ctx, key, pk.model, pk.protocol)
+	}
+	return status, err
 }
