@@ -47,11 +47,17 @@ const (
 )
 
 // prepareSnapshot captures a full read-only baseline of BOTH dedicated and native-default files for tool before Beat 1
-// so toggling direct invocation in Beat 3 selects a subset without ever failing with a mismatched write set.
-func prepareSnapshot(env config.Env, tool string) (harness.Plan, error) {
+// so toggling direct invocation in Beat 3 selects a subset without ever failing with a mismatched write set. When the
+// native default cannot be prepared, the baseline covers the dedicated files only and nativeErr says why, so the
+// default prompt can withhold that choice.
+func prepareSnapshot(env config.Env, tool string) (plan harness.Plan, nativeErr, err error) {
 	template, err := setupTools[tool].prepare(env, nil, true, harness.ModelSelection{})
 	if err != nil {
-		return harness.Plan{}, err
+		nativeErr = err
+		template, err = setupTools[tool].prepare(env, nil, false, harness.ModelSelection{})
+	}
+	if err != nil {
+		return harness.Plan{}, nil, err
 	}
 	home, configHome := filepath.Clean(env.UserHome), filepath.Clean(env.ConfigHome)
 	for i := range template.Files {
@@ -68,7 +74,7 @@ func prepareSnapshot(env config.Env, tool string) (harness.Plan, error) {
 			}
 			f.Parents = append(f.Parents, parent)
 			if err == nil && (!info.IsDir() || info.Mode()&os.ModeSymlink != 0) {
-				return harness.Plan{}, fmt.Errorf(
+				return harness.Plan{}, nil, fmt.Errorf(
 					"%s is not a regular directory; fix or move it, then retry",
 					parent,
 				)
@@ -76,11 +82,11 @@ func prepareSnapshot(env config.Env, tool string) (harness.Plan, error) {
 		}
 		f.Before, f.Perm, f.Existed, err = inspectFile(f.Path)
 		if err != nil {
-			return harness.Plan{}, err
+			return harness.Plan{}, nil, err
 		}
 		f.Inspected = true
 	}
-	return template, nil
+	return template, nativeErr, nil
 }
 
 // applySnapshot computes the write plan for (asDefault, sel) and attaches the inspected baselines from the full

@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"os"
 	"runtime"
@@ -38,7 +37,7 @@ var setupTools = map[string]struct {
 	"pi": {
 		userConfig(pi.Setup),
 		func(_ config.Env, t []models.Model, sel harness.ModelSelection) string {
-			return "pi --model " + shellQuoteForOS(pi.ModelFor(t, sel), runtime.GOOS)
+			return modelCommand(runtime.GOOS, "pi --model ", pi.ModelFor(t, sel))
 		},
 		"pi",
 		[]string{"PI_CODING_AGENT_DIR"},
@@ -46,7 +45,7 @@ var setupTools = map[string]struct {
 	"opencode": {
 		userConfig(opencode.Setup),
 		func(_ config.Env, t []models.Model, sel harness.ModelSelection) string {
-			return "opencode -m " + shellQuoteForOS(opencode.ModelFor(t, sel), runtime.GOOS)
+			return modelCommand(runtime.GOOS, "opencode -m ", opencode.ModelFor(t, sel))
 		},
 		"opencode",
 		[]string{"OPENCODE_CONFIG", "OPENCODE_CONFIG_DIR"},
@@ -68,7 +67,7 @@ var setupTools = map[string]struct {
 	"omp": {
 		userConfig(omp.Setup),
 		func(_ config.Env, t []models.Model, sel harness.ModelSelection) string {
-			return "omp --model " + shellQuoteForOS(omp.ModelFor(t, sel), runtime.GOOS)
+			return modelCommand(runtime.GOOS, "omp --model ", omp.ModelFor(t, sel))
 		},
 		"omp",
 		[]string{"PI_CODING_AGENT_DIR", "OMP_PROFILE", "PI_PROFILE", "PI_CONFIG_DIR"},
@@ -198,6 +197,8 @@ type setupTarget struct {
 	out          *targetOutcome
 	snapshot     harness.Plan
 	plan         harness.Plan
+	nativeFile   string
+	nativeErr    error
 	planSel      harness.ModelSelection
 	currentPref  string
 	existing     configuredModel
@@ -335,7 +336,7 @@ func (s *setupSession) preflightTool(tool string) *setupTarget {
 		)
 	}
 	if err == nil {
-		t.snapshot, err = prepareSnapshot(s.env, tool)
+		t.snapshot, t.nativeErr, err = prepareSnapshot(s.env, tool)
 	}
 	if err != nil {
 		t.preflightErr = err
@@ -367,6 +368,7 @@ func (s *setupSession) inspectCandidates() {
 			continue
 		}
 		t.plan = plan0
+		t.nativeFile = nativeFileOf(t.snapshot, plan0)
 		t.existing = inspectConfiguredModel(t.out.tool, s.env, s.table, t.snapshot, plan0)
 		t.badge = toolBadge(t.out.tool, s.env, s.table, t.existing)
 	}
@@ -842,55 +844,6 @@ func obtainKey(
 	}
 	key, err := readKey(deps, connectPrompt)
 	return key, nil, err
-}
-
-func confirmEnvKey(deps Deps, p presenter, env config.Env, envKey string) (bool, error) {
-	if p.inline != nil {
-		c := choice{
-			title:    "Use " + creds.EnvVar + " (" + maskKey(envKey) + ")?",
-			subtitle: "Gateway: " + safe(env.BaseURL),
-			options: []option{
-				{label: "Use " + creds.EnvVar, detail: maskKey(envKey) + " with " + safe(env.BaseURL)},
-				{label: "Enter a different key", detail: "paste key with hidden input"},
-				{label: "Cancel", detail: "exit without reading or saving a key"},
-			},
-			rail:  true,
-			theme: &p.ui.th,
-		}
-		picked, err := p.inline.Select(c)
-		if err != nil {
-			return false, err
-		}
-		if picked[0] == 2 {
-			return false, errCancelled
-		}
-		return picked[0] == 0, nil
-	}
-	p.ui.line(2, "Key source: "+creds.EnvVar)
-	p.ui.line(2, "Key: "+maskKey(envKey))
-	p.ui.line(2, "Use this key with "+safe(env.BaseURL)+"?")
-	p.ui.line(4, "1) Use "+creds.EnvVar)
-	p.ui.line(4, "2) Enter a different key (default)")
-	p.ui.line(4, "3) Cancel")
-	for range 3 {
-		answer, err := deps.Prompter.ReadLine("Choose key option (Enter for 2): ")
-		if errors.Is(err, io.EOF) || errors.Is(err, errInputEnded) {
-			return false, errInputEnded
-		}
-		if err != nil {
-			return false, err
-		}
-		switch strings.ToLower(strings.TrimSpace(answer)) {
-		case "1", "y", "yes":
-			return true, nil
-		case "", "2", "n", "no":
-			return false, nil
-		case "3", "c", "cancel":
-			return false, errCancelled
-		}
-		p.ui.line(2, "Choose a number from 1 to 3.")
-	}
-	return false, errors.New("no answer: expected key option number")
 }
 
 func catalogueFamilies(table []models.Model) string {

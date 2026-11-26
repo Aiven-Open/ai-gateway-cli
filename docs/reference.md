@@ -154,9 +154,7 @@ file written, the previous key is put back unless another process changed the
 key file meanwhile. Setup, login and logout hold one lock file, `~/.config/aiven/ai-gateway.lock`, while they change a key file or the model preferences, so they never interleave; one that waits more than 10 seconds stops and asks you to retry. When no configuration change is approved,
 `ai-gateway-models.json` is not written.
 
-Ready tools end with a compact launch table (`COMMAND` / `MODEL`, without
-shell comment markers so commands paste cleanly in `cmd.exe`, PowerShell,
-`bash`, `zsh` and `fish`) and the direct native command. Tools that need attention or were declined get the
+Ready tools end with one launch command per line, each followed by its default model on a line of its own so that a copied command passes no extra argument, and the direct native command. Tools that need attention or were declined get the
 `aiven-ai-gateway setup <harness>` command to run again. The exit status is
 nonzero when any tool failed, was not installed, was partially written or
 the run was cancelled; a decline alone exits zero but is not reported as

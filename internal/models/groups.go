@@ -4,6 +4,7 @@ package models
 
 import (
 	"cmp"
+	"maps"
 	"slices"
 	"strings"
 )
@@ -117,6 +118,20 @@ var owners = map[string]string{
 	"z-ai":       "Z.ai",
 	"zai":        "Z.ai",
 	"zhipu":      "Z.ai",
+}
+
+// knownPublisher reports whether group is an owner the reviewed lists name, as opposed to one a catalogue states that
+// the CLI has not reviewed.
+func knownPublisher(group string) bool {
+	if slices.Contains(slices.Collect(maps.Values(owners)), group) {
+		return true
+	}
+	for _, k := range known {
+		if k.publisher == group {
+			return true
+		}
+	}
+	return false
 }
 
 // DisplayName is the catalogue's display name, else the reviewed name for a known id, else the id itself.

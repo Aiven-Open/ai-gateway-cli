@@ -165,9 +165,31 @@ func ModelArgs(args []string, model string) []string {
 			continue
 		}
 		switch a {
-		case "auth", "models", "serve", "acp", "agent", "attach", "completion", "db", "debug",
-			"export", "generate", "github", "help", "import", "mcp", "pr", "session", "stats",
-			"uninstall", "upgrade", "web":
+		// From opencode --help (1.18.25); auth and plug are aliases of providers and plugin.
+		case "acp",
+			"agent",
+			"attach",
+			"auth",
+			"completion",
+			"db",
+			"debug",
+			"export",
+			"generate",
+			"github",
+			"help",
+			"import",
+			"mcp",
+			"models",
+			"plug",
+			"plugin",
+			"pr",
+			"providers",
+			"serve",
+			"session",
+			"stats",
+			"uninstall",
+			"upgrade",
+			"web":
 			return args
 		}
 	}
