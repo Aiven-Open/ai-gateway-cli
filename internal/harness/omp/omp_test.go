@@ -91,7 +91,6 @@ func TestSetupAddsTheProviderWithEachModelOnItsProtocol(t *testing.T) {
 	plan := setUp(t, in)
 	if len(plan.Files) != 1 || plan.Files[0].Path != agentPath(in.UserHome, "models.yml") ||
 		!plan.Files[0].Backup ||
-		!plan.Files[0].Models ||
 		plan.Argv != nil ||
 		plan.Env != nil {
 		t.Fatalf("plan = %+v", plan)

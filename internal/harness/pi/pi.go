@@ -112,7 +112,7 @@ func Setup(in harness.Input) (harness.Plan, error) {
 	if _, err := in.Selection.ResolveMain(in.Table); err != nil {
 		return harness.Plan{}, err
 	}
-	files := []harness.File{{Path: path, Data: data, Backup: true, Models: true}}
+	files := []harness.File{{Path: path, Data: data, Backup: true}}
 	if in.Default {
 		settings["defaultProvider"], settings["defaultModel"] = "aiven", harness.AliasFor(
 			in.Table,

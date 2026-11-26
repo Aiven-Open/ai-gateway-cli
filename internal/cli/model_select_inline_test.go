@@ -172,7 +172,7 @@ func TestInlinePatternYBadgesUserClaudeLayerResolvesInlineAndTogglesDirect(t *te
 		t.Errorf("missing rail start/end glyphs:\n%s", out)
 	}
 	endIdx := strings.Index(out, "└")
-	tableIdx := strings.Index(out, "TOOL")
+	tableIdx := strings.Index(out, "Default provider  ")
 	launchIdx := strings.Index(out, "aiven-ai-gateway launch claude")
 	if endIdx < 0 || tableIdx < endIdx || launchIdx < endIdx {
 		t.Errorf("rail did not close before Review table & launch commands:\n%s", out)

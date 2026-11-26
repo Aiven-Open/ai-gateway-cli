@@ -172,61 +172,6 @@ func (u ui) railEnd(text string) {
 	u.printf("%s  %s\n", u.th.dim(u.th.g.railEnd), u.th.bold(safe(text)))
 }
 
-// table prints an aligned multi-column table with optional dimmed column headers.
-func (u ui) table(indent int, headers []string, rows [][]string) {
-	if len(rows) == 0 && len(headers) == 0 {
-		return
-	}
-	cols := len(headers)
-	for _, r := range rows {
-		cols = max(cols, len(r))
-	}
-	widths := make([]int, cols)
-	for i, h := range headers {
-		widths[i] = max(widths[i], cells(safe(h)))
-	}
-	for _, r := range rows {
-		for i, c := range r {
-			widths[i] = max(widths[i], cells(safe(c)))
-		}
-	}
-	prefix := strings.Repeat(" ", indent)
-	if len(headers) > 0 {
-		var b strings.Builder
-		b.WriteString(prefix)
-		for i := range cols {
-			h := ""
-			if i < len(headers) {
-				h = safe(headers[i])
-			}
-			if i < cols-1 {
-				b.WriteString(u.th.dim(pad(h, widths[i])))
-				b.WriteString("  ")
-			} else {
-				b.WriteString(u.th.dim(h))
-			}
-		}
-		u.printf("%s\n", b.String())
-	}
-	for _, r := range rows {
-		var b strings.Builder
-		b.WriteString(prefix)
-		for i := range cols {
-			val := ""
-			if i < len(r) {
-				val = safe(r[i])
-			}
-			if i < cols-1 {
-				b.WriteString(pad(val, widths[i]))
-				b.WriteString("  ")
-			} else {
-				b.WriteString(val)
-			}
-		}
-		u.printf("%s\n", b.String())
-	}
-}
-
 // command either preserves the executable text exactly or refuses to display it. Sanitizing a quoted token
 // would silently change its argument; tabs are also unrepresentable when copied from a terminal.
 func (u ui) command(indent int, s string) bool {

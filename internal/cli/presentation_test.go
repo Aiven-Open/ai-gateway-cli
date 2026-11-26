@@ -90,17 +90,17 @@ func TestSetupAnnouncesEachRequestBeforeSendingItAndSavesOnlyAfterTheProbe(t *te
 	}
 	out := stderr.String()
 	if !strings.Contains(out, "OK Responses with gpt-sol: HTTP 200 (") ||
-		!strings.Contains(out, "; basic check passed\n\nPi configuration\n") {
+		!strings.Contains(out, "; basic check passed\n\nPi\n") {
 		t.Errorf("missing probe summary before preview: %q", out)
 	}
 	saveIdx := strings.Index(out, "  Saving the key…\n  OK saved to "+s.keyPath()+"\n")
-	lastPreviewIdx := strings.LastIndex(out, "OMP configuration\n")
+	lastPreviewIdx := strings.LastIndex(out, "\nOMP\n")
 	if saveIdx < 0 || lastPreviewIdx < 0 || saveIdx < lastPreviewIdx {
 		t.Errorf("key saved before all previews completed: %q", out)
 	}
 	// Each configured protocol and model is checked once before saving the key.
 	for _, tool := range []string{"Pi", "OpenCode", "Codex", "Claude Code", "OMP"} {
-		if !strings.Contains(out, "\n"+tool+" configuration\n") ||
+		if !strings.Contains(out, "\n"+tool+"\n") ||
 			!strings.Contains(out, "\n  "+tool+strings.Repeat(" ", 13-len(tool))+"configured\n") {
 			t.Errorf("%s was not configured and summarised: %q", tool, out)
 		}
