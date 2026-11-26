@@ -975,7 +975,7 @@ func selectDirectInvocation(
 				detail: yesDetail,
 			},
 			{
-				label:  fmt.Sprintf("No — only via 'aiven-ai-gateway launch %s'", tool),
+				label:  fmt.Sprintf("No — only via 'aiven-ai-gateway %s'", tool),
 				detail: "keeps existing " + nativeFile + " default",
 			},
 		}
@@ -1001,7 +1001,7 @@ func selectDirectInvocation(
 			detail: "running tools directly uses Aiven automatically",
 		},
 		{
-			label:  "No — only via 'aiven-ai-gateway launch'",
+			label:  "No — only via 'aiven-ai-gateway <tool>'",
 			detail: "keeps your current defaults",
 		},
 		{
@@ -1127,7 +1127,7 @@ func selectDirectPerTool(
 			}
 		}
 		if len(names) == 0 {
-			return "via 'aiven-ai-gateway launch <tool>'", nil
+			return "via 'aiven-ai-gateway <tool>'", nil
 		}
 		return strings.Join(names, ", ") + " directly", nil
 	}
@@ -1167,7 +1167,7 @@ func selectDirectPerTool(
 			}
 		}
 		if len(names) == 0 {
-			return "via 'aiven-ai-gateway launch <tool>'", nil
+			return "via 'aiven-ai-gateway <tool>'", nil
 		}
 		return strings.Join(names, ", ") + " directly", nil
 	}

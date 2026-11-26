@@ -19,6 +19,7 @@ import (
 const (
 	claudeLimitNote = "Claude models are always available. " +
 		"Add up to five models from other vendors."
+	claudeLimitStatus  = "%d of %d models from other vendors chosen. Claude models do not count."
 	claudeLimitRefusal = "Five models from other vendors are already chosen. Clear one to add another."
 	claudePlainLimit   = "Choose up to five models from other vendors. Claude models do not count."
 	claudeNoneChosen   = "Choose at least one model."
@@ -220,17 +221,23 @@ func pickClaudeModels(
 
 // claudeModelChoice is the inline model list: tick order kept, and a sixth model from another vendor refused.
 func claudeModelChoice(p presenter, table, flat []models.Model, aliases, kept []string) choice {
+	others := func(picked []bool) int {
+		var on []string
+		for j, ok := range picked {
+			if ok {
+				on = append(on, aliases[j])
+			}
+		}
+		return otherCount(table, on)
+	}
 	c := choice{
 		title: "Choose models for Claude Code", subtitle: claudeLimitNote,
 		multi: true, ordered: true, allowBack: true, rail: true, theme: &p.ui.th,
+		status: func(picked []bool) string {
+			return fmt.Sprintf(claudeLimitStatus, others(picked), claude.MaxOtherModels)
+		},
 		refuse: func(picked []bool, i int) string {
-			var on []string
-			for j, ok := range picked {
-				if ok {
-					on = append(on, aliases[j])
-				}
-			}
-			if !claude.IsClaude(table, aliases[i]) && otherCount(table, on) >= claude.MaxOtherModels {
+			if !claude.IsClaude(table, aliases[i]) && others(picked) >= claude.MaxOtherModels {
 				return claudeLimitRefusal
 			}
 			return ""

@@ -274,7 +274,7 @@ func (r *setupRun) finish() int {
 						"contains terminal controls.")
 					u.line(
 						2,
-						"Use aiven-ai-gateway launch "+entry.outcome.tool+" instead; its arguments remain literal.",
+						"Use aiven-ai-gateway "+entry.outcome.tool+" instead; its arguments remain literal.",
 					)
 				} else if entry.outcome.tool == "claude" {
 					showedClaude = true

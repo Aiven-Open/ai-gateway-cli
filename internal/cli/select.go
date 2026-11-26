@@ -34,6 +34,8 @@ type choice struct {
 	order []int
 	// refuse gives the reason ticking option i is refused with picked as it stands, or "" to allow it.
 	refuse func(picked []bool, i int) string
+	// status, when set, replaces subtitle with a line that follows the ticks.
+	status func(picked []bool) string
 }
 
 type option struct {
@@ -244,8 +246,12 @@ func (s *selectState) render(width, height int) []string {
 	if budget == 0 || len(header)+1 < budget {
 		header = append(header, titlePrefix+s.th.bold(fitTitle(titleText)))
 	}
-	if s.c.subtitle != "" && (budget == 0 || len(header)+1 < budget) {
-		header = append(header, bodyPrefix+s.th.dim(fitBody(s.c.subtitle)))
+	subtitle := s.c.subtitle
+	if s.c.status != nil {
+		subtitle = s.c.status(slices.Clone(s.picked))
+	}
+	if subtitle != "" && (budget == 0 || len(header)+1 < budget) {
+		header = append(header, bodyPrefix+s.th.dim(fitBody(subtitle)))
 	}
 	if s.notice != "" && (budget == 0 || len(header)+1 < budget) {
 		header = append(header, bodyPrefix+s.th.paint(yellow, fitBody(s.notice)))

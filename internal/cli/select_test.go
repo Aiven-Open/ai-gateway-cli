@@ -571,3 +571,27 @@ func TestOrderedMultiSelectFilteredTickAndLimit(t *testing.T) {
 		t.Fatalf("filtered ticks picked %v, want [8 0]", picked)
 	}
 }
+
+func TestSelectRenderShowsStatusFollowingTicks(t *testing.T) {
+	c := toolChoice(true)
+	c.subtitle = "static"
+	c.status = func(picked []bool) string {
+		n := 0
+		for _, ok := range picked {
+			if ok {
+				n++
+			}
+		}
+		return fmt.Sprintf("%d chosen", n)
+	}
+	s := newSelectState(c)
+	before := strings.Join(s.render(80, 0), "\n")
+	if _, finished, err := s.keys([]byte(" ")); finished || err != nil {
+		t.Fatalf("selection ended: finished=%v err=%v", finished, err)
+	}
+	after := strings.Join(s.render(80, 0), "\n")
+	if !strings.Contains(before, "0 chosen") || !strings.Contains(after, "1 chosen") ||
+		strings.Contains(after, "static") {
+		t.Errorf("before %q\nafter %q", before, after)
+	}
+}
