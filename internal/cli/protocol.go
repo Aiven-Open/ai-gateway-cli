@@ -24,6 +24,11 @@ import (
 
 const maxConcurrentProbes = 4
 
+// probeBudget is how long all basic checks of one round may take together.
+var probeBudget = 60 * time.Second
+
+var errNotAttempted = errors.New("not attempted after authentication failure or cancellation")
+
 // errNotGranted is a configured model the key does not grant. The tool would keep requesting it, so setup checks
 // nothing else and saves neither the key nor any tool.
 var errNotGranted = errors.New("which this key does not grant")
@@ -223,7 +228,7 @@ func checkProtocols(
 		run.p.ui.railNote(
 			"Sending one 1-token check per configured protocol and model (may incur usage).",
 		)
-		probeCtx, cancelProbes := context.WithCancel(ctx)
+		probeCtx, cancelProbes := context.WithTimeout(ctx, probeBudget)
 		defer cancelProbes()
 		results := make([]probeResult, len(uncached))
 		sem := make(chan struct{}, maxConcurrentProbes)
@@ -238,13 +243,13 @@ func checkProtocols(
 					defer func() { <-sem }()
 				case <-probeCtx.Done():
 					results[slot] = probeResult{
-						err: errors.New("not attempted after authentication failure or cancellation"),
+						err: errNotAttempted,
 					}
 					return
 				}
 				if authFailed.Load() || probeCtx.Err() != nil {
 					results[slot] = probeResult{
-						err: errors.New("not attempted after authentication failure or cancellation"),
+						err: errNotAttempted,
 					}
 					return
 				}
@@ -271,13 +276,19 @@ func checkProtocols(
 			res := results[slot]
 			if authFailed.Load() && res.err != nil && !rejected(res.err) &&
 				errors.Is(res.err, context.Canceled) {
-				res.err = errors.New("not attempted after authentication failure or cancellation")
+				res.err = errNotAttempted
+			}
+			if ctx.Err() == nil && errors.Is(probeCtx.Err(), context.DeadlineExceeded) &&
+				(errors.Is(res.err, errNotAttempted) || errors.Is(res.err, context.DeadlineExceeded)) {
+				res.err = fmt.Errorf(
+					"not finished: the basic checks together took longer than %.0f seconds",
+					probeBudget.Seconds(),
+				)
 			}
 			checks[idx].status = res.status
 			checks[idx].err = res.err
 			checks[idx].duration = res.duration
-			if cache != nil && !errors.Is(res.err, context.Canceled) &&
-				!authFailed.Load() {
+			if cache != nil && res.err == nil { // a failed check is sent again after Back
 				cache[checks[idx].key] = res
 			}
 		}

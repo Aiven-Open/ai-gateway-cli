@@ -101,7 +101,9 @@ uncached `(protocol, model)` concurrently (Chat Completions, Messages or
 Responses, 1 output token each) with a live spinner on styled terminals and
 deterministic sorted status rows with elapsed latency. Completed probe
 results are memoized across `Back` navigation so stepping back and forward
-never re-sends already-verified probes. These basic checks may incur usage.
+never re-sends already-verified probes. These basic checks may incur usage. A check that failed is sent again after
+`Back`. Each check has 10 seconds and all checks of one round share 60;
+none is retried.
 They do not show that a tool's own requests, or the models its other slots
 and pins name, are accepted. A refusal fails only the tools depending on
 that model; authentication failure cancels remaining checks and prevents
@@ -111,11 +113,14 @@ Finally, `setup` closes the vertical rail (`└`) and presents a rail-free
 review table (for multiple tools: `Apply all`, `Inspect redacted diffs`,
 `Back`, `Cancel`) or diff preview (for one tool: `Apply`, `Show full
 redacted diff`, `Back`, `Cancel`). Only after explicit approval (or `--yes`)
-does `setup` save the key (`0600`), write approved files atomically with
-timestamped `.bak` backups, and persist launcher model preferences for
-approved Pi, OpenCode and OMP targets. When zero configuration changes are
-approved (cancelled, declined, or non-interactive without `--yes`), neither
-the key nor `ai-gateway-models.json` is written.
+does `setup` write approved files atomically with timestamped `.bak`
+backups, persist launcher model preferences for approved Pi, OpenCode and
+OMP targets, and then save the key (`0600`). The key is saved last and only
+when a tool was configured or wrote one of its files, so a run whose writes
+all fail leaves the saved key as it was. A new key for tools that are all up to date is saved with
+`--yes` or at a terminal. When a change is cancelled or declined, or the run
+is non-interactive without `--yes`, neither the key nor
+`ai-gateway-models.json` is written.
 
 Ready tools end with a compact launch table (`COMMAND` / `MODEL`, without
 shell comment markers so commands paste cleanly in `cmd.exe`, PowerShell,

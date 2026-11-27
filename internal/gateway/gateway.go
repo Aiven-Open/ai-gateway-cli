@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -42,9 +43,14 @@ var (
 type UnreachableError struct {
 	BaseURL string
 	Err     error
+	// Limit is how long the request was allowed to take.
+	Limit time.Duration
 }
 
 func (e *UnreachableError) Error() string {
+	if e.Timeout() {
+		return fmt.Sprintf("the gateway at %s did not answer within %s", e.BaseURL, e.Limit)
+	}
 	cause := e.Err
 	if ue := new(url.Error); errors.As(cause, &ue) {
 		cause = ue.Err // the request URL is already in the message
@@ -52,6 +58,24 @@ func (e *UnreachableError) Error() string {
 	return "cannot reach gateway at " + e.BaseURL + ": " + cause.Error()
 }
 func (e *UnreachableError) Unwrap() error { return e.Err }
+
+// Timeout reports whether the request ran out of its time rather than failing to connect.
+func (e *UnreachableError) Timeout() bool {
+	var ne net.Error
+	return e.Limit > 0 && errors.As(e.Err, &ne) && ne.Timeout()
+}
+
+// requestLimit is the time one request has: the shortest of Timeout, the client's own timeout and what ctx has left.
+func requestLimit(ctx context.Context, hc *http.Client) time.Duration {
+	limit := Timeout
+	if hc.Timeout > 0 {
+		limit = min(limit, hc.Timeout)
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		limit = min(limit, time.Until(deadline).Round(time.Millisecond))
+	}
+	return limit
+}
 
 // HTTPError retains bounded, credential-redacted gateway error details.
 type HTTPError struct {
@@ -133,6 +157,7 @@ func (c Client) Probe(
 		return 0, fmt.Errorf("unresolved inference protocol")
 	}
 	body, _ := json.Marshal(payload)
+	limit := requestLimit(ctx, c.HTTP)
 	resp, err := c.do(ctx, http.MethodPost, path, key, bytes.NewReader(body))
 	if err != nil {
 		var he *HTTPError
@@ -144,6 +169,10 @@ func (c Client) Probe(
 	defer func() { _ = resp.Body.Close() }()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	if err != nil {
+		// A body that stops arriving in time is the same failure as headers that never come.
+		if stalled := (&UnreachableError{BaseURL: c.BaseURL, Err: err, Limit: limit}); stalled.Timeout() {
+			return resp.StatusCode, stalled
+		}
 		return resp.StatusCode, fmt.Errorf("read basic check response: %w", err)
 	}
 	var envelope map[string]json.RawMessage
@@ -168,6 +197,7 @@ func (c Client) do(
 	method, path, key string,
 	body io.Reader,
 ) (*http.Response, error) {
+	limit := requestLimit(ctx, c.HTTP)
 	ctx, cancel := context.WithTimeout(ctx, Timeout)
 	// A returned body is read by the caller; keep cancellation tied to its close.
 	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.BaseURL, "/")+path, body)
@@ -188,7 +218,7 @@ func (c Client) do(
 	resp, err := hc.Do(req)
 	if err != nil {
 		cancel()
-		return nil, &UnreachableError{BaseURL: c.BaseURL, Err: err}
+		return nil, &UnreachableError{BaseURL: c.BaseURL, Err: err, Limit: limit}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
