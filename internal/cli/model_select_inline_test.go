@@ -725,7 +725,7 @@ func TestSetupMalformedModelPrefsRefusedBeforeApproval(t *testing.T) {
 	deps := inlineDeps(p, &stderr)
 	deps.HTTP = srv.Client()
 	code := Run(t.Context(), []string{"setup", "opencode"}, env, deps)
-	if code == 0 || !strings.Contains(stderr.String(), "is not valid JSON") {
+	if code == 0 || !strings.Contains(stderr.String(), "is not a valid model preference file") {
 		t.Fatalf("exit=%d, stderr:\n%s", code, stderr.String())
 	}
 	if len(probes()) != 0 {
