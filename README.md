@@ -123,8 +123,12 @@ Keys are stored with mode `0600` at `~/.config/aiven/ai-gateway-key` for the
 default gateway (`https://ai.aiven.io`), and under
 `~/.config/aiven/ai-gateway-keys/` for custom origins. `setup` reuses a
 valid saved key automatically; run `aiven-ai-gateway login` or pass
-`--key-stdin` to replace it. No key or preference file is written unless at
-least one configuration change is approved.
+`--key-stdin` to replace it. The key is saved last, after the approved changes
+are written, and only when at least one tool was configured or wrote one of
+its files. With nothing to change, a new key is saved when every selected
+tool is already up to date and the run has `--yes` or a terminal. A key file that already holds the key with
+mode `0600` is not rewritten. No preference file is written unless at least
+one configuration change is approved.
 
 ## Environment
 

@@ -15,6 +15,7 @@ import (
 
 	"github.com/aiven-open/ai-gateway-cli/internal/config"
 	"github.com/aiven-open/ai-gateway-cli/internal/creds"
+	"github.com/aiven-open/ai-gateway-cli/internal/fsutil"
 	"github.com/aiven-open/ai-gateway-cli/internal/gateway"
 	"github.com/aiven-open/ai-gateway-cli/internal/harness"
 	"github.com/aiven-open/ai-gateway-cli/internal/harness/claude"
@@ -770,36 +771,6 @@ func (s *setupSession) commitApproved(approved []approvedWrite) int {
 			t.out.resolvedModel = resolvedToolModel(t.out.tool, s.env, s.table, t.plan, t.planSel)
 		}
 	}
-	if len(approved) == 0 {
-		hasUnchanged := false
-		for _, o := range s.run.targets {
-			if o.status == statusUnchanged {
-				hasUnchanged = true
-				break
-			}
-		}
-		if hasUnchanged {
-			s.run.credential = "unchanged; existing key files unchanged"
-		} else {
-			s.run.credential = "not saved by this run; existing key files unchanged; " +
-				"no configuration changes were approved"
-		}
-		return s.run.finish()
-	}
-
-	s.p.begin("Saving the key")
-	where, err := saveKey(s.env, s.deps, s.key)
-	if err != nil {
-		s.p.failed("the key was not saved")
-		for _, item := range approved {
-			item.target.out.status = statusPending
-			item.target.out.reason = "not attempted: saving the key failed"
-		}
-		return s.run.sharedFailure(s.deps, "saving the key", err)
-	}
-	s.p.passed("saved to " + where)
-	s.run.credential = "saved to " + where
-
 	prefUpdates := map[string]string{}
 	for _, item := range approved {
 		writeApproved(s.deps, item)
@@ -827,6 +798,68 @@ func (s *setupSession) commitApproved(approved []approvedWrite) int {
 				item.target.out.reason = "saving launcher model preferences failed: " + err.Error()
 			}
 		}
+	}
+	return s.saveKeyLast(approved)
+}
+
+// saveKeyLast saves the run's key after the tool files, so a run that configures nothing leaves the key file as it
+// was. The key is saved when an approved tool was configured or wrote a file, or when nothing needed a change, every
+// selected tool is up to date and the run was approved with --yes or at a terminal. A tool is not reported as ready
+// when the key file does not hold the key it was checked with, or when saving the key failed.
+func (s *setupSession) saveKeyLast(approved []approvedWrite) int {
+	data, mode, err := fsutil.ReadRegular(creds.Path(s.env.UserHome, s.env.BaseURL))
+	usable := err == nil && creds.Parse(data) == s.key
+	needed := slices.ContainsFunc(approved, func(item approvedWrite) bool {
+		return item.target.out.status == statusConfigured || len(item.target.out.written) > 0
+	})
+	unchanged := 0
+	for _, o := range s.run.targets {
+		if o.status == statusUnchanged {
+			unchanged++
+		}
+	}
+	if len(approved) == 0 {
+		needed = (s.opts.yes || s.deps.Prompter != nil) && unchanged > 0 &&
+			unchanged == len(s.run.targets)
+	}
+	var saveErr error
+	switch {
+	// Windows has no permission bits to inspect, so the file is always written there, which sets its access.
+	case needed && usable && runtime.GOOS != "windows" && mode.Perm() == 0o600:
+		s.run.credential = "unchanged; existing key files unchanged"
+	case needed:
+		s.p.begin("Saving the key")
+		where, err := saveKey(s.env, s.deps, s.key)
+		if saveErr = err; err != nil {
+			s.p.failed("the key was not saved")
+		} else {
+			s.p.passed("saved to " + where)
+			s.run.credential, usable = "saved to "+where, true
+		}
+	case usable && unchanged > 0:
+		s.run.credential = "unchanged; existing key files unchanged"
+	case len(approved) == 0:
+		s.run.credential = "not saved by this run; existing key files unchanged; " +
+			"no configuration changes were approved"
+	default:
+		s.run.credential = "not saved by this run; existing key files unchanged; no tool was configured"
+	}
+	if !usable || saveErr != nil {
+		for _, o := range s.run.targets {
+			switch {
+			case o.status == statusUnchanged && saveErr == nil:
+				o.status, o.reason = statusSkipped, "the key was not saved"
+			case o.status == statusUnchanged:
+				o.status, o.reason = statusFailed, "the key was not updated: saving the key failed"
+			case o.status == statusConfigured && len(o.written) > 0:
+				o.status, o.reason = statusPartial, "the key was not saved"
+			case o.status == statusConfigured:
+				o.status, o.reason = statusFailed, "the key was not saved"
+			}
+		}
+	}
+	if saveErr != nil {
+		return s.run.sharedFailure(s.deps, "saving the key", saveErr)
 	}
 	return s.run.finish()
 }
@@ -1061,6 +1094,8 @@ func gatewayCategory(err error) string {
 		return "the gateway rejected the key"
 	case errors.Is(err, gateway.ErrNoModels):
 		return "the key grants no models"
+	case errors.As(err, &unreachable) && unreachable.Timeout():
+		return "the gateway did not answer in time"
 	case errors.As(err, &unreachable):
 		return "the gateway could not be reached"
 	case errors.As(err, &he) && he.Status == 429:

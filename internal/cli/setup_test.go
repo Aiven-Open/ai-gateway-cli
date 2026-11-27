@@ -321,7 +321,11 @@ func TestSetupResolvesChecksAndSavesKey(t *testing.T) {
 				}
 				return
 			}
-			if r.code != 0 || r.stdout != "" || !strings.Contains(r.stderr, "OK saved to "+keyFile+"\n") {
+			saved := "OK saved to " + keyFile + "\n"
+			if tc.fileKey == tc.wantKey && runtime.GOOS != "windows" { // already saved, so not written again
+				saved = "unchanged; existing key files unchanged"
+			}
+			if r.code != 0 || r.stdout != "" || !strings.Contains(r.stderr, saved) {
 				t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
 			}
 			if reqs := g.journal(); reqs[len(reqs)-1].Method != "POST" {
@@ -932,5 +936,281 @@ func TestUnrecognisedAnswerIsAskedAgain(t *testing.T) {
 	if r.code != 0 || len(p.prompts) < 4 || !slices.Equal(p.prompts[1:4], []string{ask, ask, ask}) ||
 		!strings.Contains(r.stderr, "Aiven is now the native default\n") {
 		t.Fatalf("exit %d, prompts %q, stderr %q", r.code, p.prompts, r.stderr)
+	}
+}
+
+// A new key for a tool that is already up to date is saved: the tool reads the key file, so keeping the old key would
+// leave it on a key the user replaced.
+func TestSetupSavesARotatedKeyWhenNothingElseChanges(t *testing.T) {
+	s := newSession(t, newGatewayDouble(t))
+	if r := s.stdin(keyShort).run("setup", "--key-stdin", "--yes", "claude"); r.code != 0 {
+		t.Fatalf("first setup: exit %d, stderr %q", r.code, r.stderr)
+	}
+	r := s.stdin(keyBare).run("setup", "--key-stdin", "--yes", "claude")
+	if r.code != 0 || !strings.Contains(r.stderr, "Already configured; no file needs a change.") {
+		t.Fatalf("rotation: exit %d, stderr %q", r.code, r.stderr)
+	}
+	if got := readOrEmpty(t, s.keyPath()); got != keyBare+"\n" {
+		t.Errorf("key file = %q, want %q", got, keyBare+"\n")
+	}
+	if !strings.Contains(r.stderr, "saved to "+s.keyPath()) {
+		t.Errorf("summary does not report the save: %q", r.stderr)
+	}
+	if runtime.GOOS == "windows" {
+		return // the key file is always written there, to set its access
+	}
+	// The same key again writes nothing.
+	keyWrites := 0
+	s.deps.WriteFile = func(path string, data []byte, perm os.FileMode) error {
+		if path == s.keyPath() {
+			keyWrites++
+		}
+		return fsutil.WriteAtomic(path, data, perm)
+	}
+	r = s.stdin(keyBare).run("setup", "--key-stdin", "--yes", "claude")
+	if r.code != 0 || keyWrites != 0 ||
+		!strings.Contains(r.stderr, "unchanged; existing key files unchanged") {
+		t.Errorf("same key: exit %d, %d key writes, stderr %q", r.code, keyWrites, r.stderr)
+	}
+	// At a terminal, without --yes, a rotated key is saved too.
+	s.deps.Prompter = &scriptedPrompter{
+		answers: []string{"1", "2"},
+	} // keep current model, not the default
+	r = s.stdin(keyShort).run("setup", "--key-stdin", "claude")
+	if got := readOrEmpty(t, s.keyPath()); r.code != 0 || got != keyShort+"\n" {
+		t.Errorf("terminal rotation: exit %d, key file %q, stderr %q", r.code, got, r.stderr)
+	}
+}
+
+// A tool whose checks failed may still need the old key, so the new one is not saved beside an up-to-date tool.
+func TestSetupKeepsOldKeyWhenAnotherToolFailsItsChecks(t *testing.T) {
+	g := newGatewayDouble(t)
+	g.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet:
+			_, _ = w.Write([]byte(`{"data":[{"id":"claude-sonnet"},{"id":"gpt-6.1-sol"}]}`))
+		case r.URL.Path == "/v1/chat/completions":
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":{"message":"chat failed"}}`))
+		default:
+			_, _ = w.Write([]byte(`{"type":"message","object":"response","content":[],"output":[]}`))
+		}
+	})
+	s := newSession(t, g)
+	if r := s.stdin(keyShort).run("setup", "--key-stdin", "--yes", "claude"); r.code != 0 {
+		t.Fatalf("first setup: exit %d, stderr %q", r.code, r.stderr)
+	}
+	s.deps.Prompter = &scriptedPrompter{answers: []string{"claude,opencode"}}
+	r := s.stdin(keyBare).run("setup", "--key-stdin", "--yes")
+	if got := readOrEmpty(t, s.keyPath()); got != keyShort+"\n" {
+		t.Errorf("key file = %q, want %q; exit %d, stderr %q", got, keyShort+"\n", r.code, r.stderr)
+	}
+	if !strings.Contains(r.stderr, "not saved by this run") {
+		t.Errorf("summary does not say the key was not saved: %q", r.stderr)
+	}
+}
+
+// A tool that wrote a file keeps the new key, so the file it wrote can still be used.
+func TestSetupKeepsTheNewKeyAfterAPartialWrite(t *testing.T) {
+	s := newSession(t, newGatewayDouble(t)).loggedIn(keyFlash)
+	s.deps.WriteFile = failNth(filepath.Join(s.fakeHome, ".codex", "aiven.config.toml"), 1)
+	r := s.stdin(keyValid).run("setup", "--key-stdin", "--yes", "codex")
+	if r.code != 1 || !strings.Contains(r.stderr, "partially configured") {
+		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
+	}
+	if got := readOrEmpty(t, s.keyPath()); got != keyValid+"\n" {
+		t.Errorf("key file = %q, want %q", got, keyValid+"\n")
+	}
+}
+
+// A rotation that cannot be saved is a failed run, not a completed one.
+func TestSetupFailedRotationIsNotReportedAsComplete(t *testing.T) {
+	s := newSession(t, newGatewayDouble(t))
+	if r := s.stdin(keyShort).run("setup", "--key-stdin", "--yes", "claude"); r.code != 0 {
+		t.Fatalf("first setup: exit %d, stderr %q", r.code, r.stderr)
+	}
+	s.deps.WriteFile = failNth(s.keyPath(), 1)
+	r := s.stdin(keyBare).run("setup", "--key-stdin", "--yes", "claude")
+	if r.code != 1 || strings.Contains(r.stderr, "Setup complete") ||
+		strings.Contains(r.stderr, "Start a session") ||
+		!strings.Contains(r.stderr, "Setup finished with errors") {
+		t.Errorf("exit %d, stderr %q", r.code, r.stderr)
+	}
+}
+
+// A missing tool is not up to date, so a new key is not saved beside the one that is.
+func TestSetupKeepsOldKeyWhenAnotherToolIsNotInstalled(t *testing.T) {
+	s := newSession(t, newGatewayDouble(t))
+	if r := s.stdin(keyShort).run("setup", "--key-stdin", "--yes", "claude"); r.code != 0 {
+		t.Fatalf("first setup: exit %d, stderr %q", r.code, r.stderr)
+	}
+	s.runner.missing = []string{"codex"}
+	s.deps.Prompter = &scriptedPrompter{answers: []string{"claude,codex"}}
+	r := s.stdin(keyBare).run("setup", "--key-stdin", "--yes")
+	if got := readOrEmpty(t, s.keyPath()); got != keyShort+"\n" {
+		t.Errorf("key file = %q, want %q; exit %d, stderr %q", got, keyShort+"\n", r.code, r.stderr)
+	}
+}
+
+// An up-to-date tool is not ready when the key it was checked with was not saved and none is usable.
+func TestSetupDoesNotAdvertiseUnchangedToolWhenKeyWasNotSaved(t *testing.T) {
+	s := newSession(t, newGatewayDouble(t))
+	if r := s.stdin(keyShort).run("setup", "--key-stdin", "--yes", "claude"); r.code != 0 {
+		t.Fatalf("first setup: exit %d, stderr %q", r.code, r.stderr)
+	}
+	if err := os.Remove(s.keyPath()); err != nil {
+		t.Fatal(err)
+	}
+	s.runner.missing = []string{"codex"}
+	s.deps.Prompter = &scriptedPrompter{answers: []string{"claude,codex"}}
+	r := s.stdin(keyBare).run("setup", "--key-stdin", "--yes")
+	if strings.Contains(r.stderr, "aiven-ai-gateway launch claude") ||
+		!strings.Contains(r.stderr, "the key was not saved") {
+		t.Errorf("exit %d, stderr %q", r.code, r.stderr)
+	}
+	if got := readOrEmpty(t, s.keyPath()); got != "" {
+		t.Errorf("key file = %q, want none", got)
+	}
+}
+
+// The key is saved after the tool files, so a run that configures no tool never writes the key file.
+func TestSetupLeavesKeyFileAloneWhenNoToolIsConfigured(t *testing.T) {
+	for _, tc := range []struct{ name, saved, given string }{
+		{"replacing key", keyFlash, keyValid},
+		{"first key", "", keyValid},
+		{"reusing saved key", keyValid, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newSession(t, newGatewayDouble(t))
+			if tc.saved != "" {
+				s.loggedIn(tc.saved)
+			}
+			failing, keyWrites := failNth(filepath.Join(s.fakeHome, claude.SettingsFile), 1), 0
+			s.deps.WriteFile = func(path string, data []byte, perm os.FileMode) error {
+				if path == s.keyPath() {
+					keyWrites++
+				}
+				return failing(path, data, perm)
+			}
+			args := []string{"setup", "--yes", "claude"}
+			if tc.given != "" {
+				args = append(args, "--key-stdin")
+			}
+			r := s.stdin(tc.given).run(args...)
+			if r.code != 1 || keyWrites != 0 || strings.Contains(r.stderr, "Start a session") {
+				t.Fatalf("exit %d, %d key writes, stderr %q", r.code, keyWrites, r.stderr)
+			}
+			want := ""
+			if tc.saved != "" {
+				want = tc.saved + "\n"
+			}
+			if got := readOrEmpty(t, s.keyPath()); got != want {
+				t.Errorf("key file = %q, want %q", got, want)
+			}
+			if !strings.Contains(
+				r.stderr,
+				"not saved by this run; existing key files unchanged; no tool was configured",
+			) {
+				t.Errorf("summary does not say the key was not saved: %q", r.stderr)
+			}
+		})
+	}
+}
+
+// A failed write beside an up-to-date tool configures nothing: the old key stays, and the up-to-date tool, checked
+// with the new key, is not advertised.
+func TestSetupKeepsOldKeyWhenWriteFailsBesideUnchangedTool(t *testing.T) {
+	s := newSession(t, newGatewayDouble(t))
+	if r := s.stdin(keyShort).run("setup", "--key-stdin", "--yes", "claude"); r.code != 0 {
+		t.Fatalf("first setup: exit %d, stderr %q", r.code, r.stderr)
+	}
+	s.deps.WriteFile = failNth(filepath.Join(s.fakeHome, ".codex", "config.toml"), 1)
+	s.deps.Prompter = &scriptedPrompter{answers: []string{"claude,codex"}}
+	r := s.stdin(keyBare).run("setup", "--key-stdin", "--yes")
+	if r.code != 1 || strings.Contains(r.stderr, "Start a session") {
+		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
+	}
+	if got := readOrEmpty(t, s.keyPath()); got != keyShort+"\n" {
+		t.Errorf("key file = %q, want %q", got, keyShort+"\n")
+	}
+}
+
+// A key that cannot be saved leaves no tool ready: neither the one just written nor the one already up to date.
+func TestSetupFailedKeySaveAdvertisesNoTool(t *testing.T) {
+	s := newSession(t, newGatewayDouble(t))
+	if r := s.stdin(keyShort).run("setup", "--key-stdin", "--yes", "claude"); r.code != 0 {
+		t.Fatalf("first setup: exit %d, stderr %q", r.code, r.stderr)
+	}
+	failing, order := failNth(s.keyPath(), 1), []string(nil)
+	s.deps.WriteFile = func(path string, data []byte, perm os.FileMode) error {
+		order = append(order, path)
+		return failing(path, data, perm)
+	}
+	s.deps.Prompter = &scriptedPrompter{answers: []string{"claude,codex"}}
+	r := s.stdin(keyBare).run("setup", "--key-stdin", "--yes")
+	if r.code != 1 || strings.Contains(r.stderr, "Start a session") ||
+		!strings.Contains(r.stderr, "the key was not updated: saving the key failed") {
+		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
+	}
+	// The tool files come first and stay; the key is the last write tried.
+	written := filepath.Join(s.fakeHome, ".codex", "config.toml")
+	last := len(order) - 1
+	if last < 1 || order[last] != s.keyPath() || !slices.Contains(order[:last], written) ||
+		readOrEmpty(t, written) == "" || !strings.Contains(r.stderr, "written: "+written) {
+		t.Errorf("writes in order %q, stderr %q", order, r.stderr)
+	}
+	if got := readOrEmpty(t, s.keyPath()); got != keyShort+"\n" {
+		t.Errorf("key file = %q, want %q", got, keyShort+"\n")
+	}
+}
+
+// Without --yes and without a terminal, setup writes nothing, the key file included.
+func TestSetupWithoutApprovalLeavesKeyFileAlone(t *testing.T) {
+	s := newSession(t, newGatewayDouble(t))
+	if r := s.stdin(keyShort).run("setup", "--key-stdin", "--yes", "claude"); r.code != 0 {
+		t.Fatalf("first setup: exit %d, stderr %q", r.code, r.stderr)
+	}
+	r := s.stdin(keyBare).run("setup", "--key-stdin", "claude")
+	if got := readOrEmpty(
+		t,
+		s.keyPath(),
+	); got != keyShort+"\n" ||
+		strings.Contains(r.stderr, "Saving the key") {
+		t.Errorf("key file = %q, want %q; exit %d, stderr %q", got, keyShort+"\n", r.code, r.stderr)
+	}
+}
+
+func TestSetupRestoresKeyFileModeWhenKeyIsUnchanged(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no Unix permission bits")
+	}
+	s := newSession(t, newGatewayDouble(t))
+	if r := s.stdin(keyShort).run("setup", "--key-stdin", "--yes", "claude"); r.code != 0 {
+		t.Fatalf("first setup: exit %d, stderr %q", r.code, r.stderr)
+	}
+	if err := os.Chmod(s.keyPath(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s.deps.WriteFile = failNth(s.keyPath(), 1)
+	if r := s.run(
+		"setup",
+		"--yes",
+		"claude",
+	); r.code != 1 ||
+		strings.Contains(r.stderr, "Setup complete") ||
+		strings.Contains(r.stderr, "Start a session") {
+		t.Fatalf("failed mode repair: exit %d, stderr %q", r.code, r.stderr)
+	}
+	r := s.run("setup", "--yes", "claude")
+	info, err := os.Stat(s.keyPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := readOrEmpty(
+		t,
+		s.keyPath(),
+	); r.code != 0 || info.Mode().Perm() != 0o600 ||
+		got != keyShort+"\n" {
+		t.Errorf("exit %d, mode %v, key file %q, stderr %q", r.code, info.Mode().Perm(), got, r.stderr)
 	}
 }

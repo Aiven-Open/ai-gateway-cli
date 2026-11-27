@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,11 +15,14 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/aiven-open/ai-gateway-cli/internal/config"
 	"github.com/aiven-open/ai-gateway-cli/internal/creds"
 	"github.com/aiven-open/ai-gateway-cli/internal/fsutil"
+	"github.com/aiven-open/ai-gateway-cli/internal/gateway"
 	"github.com/aiven-open/ai-gateway-cli/internal/harness/claude"
 	"github.com/aiven-open/ai-gateway-cli/internal/models"
 )
@@ -1178,4 +1182,104 @@ func (p *plainSetupPrompter) ReadLine(prompt string) (string, error) {
 	a := p.answers[p.idx]
 	p.idx++
 	return a, nil
+}
+
+// A change declined at review saves nothing, even when another selected tool is already up to date.
+func TestSetupDeclinedChangeLeavesTheSavedKeyAlone(t *testing.T) {
+	srv, _ := inlineGateway(t, multiModelTestCatalogue)
+	env, home := inlineSetupEnv(t, srv.URL)
+	run := func(secret string, answers ...selectAnswer) string {
+		p := &inlineSetupPrompter{secret: secret, scriptedSelector: scriptedSelector{answers: answers}}
+		var stderr strings.Builder
+		deps := inlineDeps(p, &stderr)
+		deps.HTTP = srv.Client()
+		deps.Stdin = strings.NewReader(secret + "\n")
+		if code := Run(t.Context(), []string{"setup", "--key-stdin"}, env, deps); code != 0 {
+			t.Fatalf("exit %d: %s", code, stderr.String())
+		}
+		return stderr.String()
+	}
+	// Pi and OpenCode, recommended defaults, Yes for all, then Apply.
+	run("synthetic-key", pick(0, 1), pick(0), pick(0), pick(0))
+	if err := os.Remove(filepath.Join(home, ".config", "opencode", "opencode.json")); err != nil {
+		t.Fatal(err)
+	}
+	// Pi is now up to date; OpenCode needs a change, and Cancel declines it.
+	out := run("rotated-key", pick(0, 1), pick(0), pick(0), pick(3))
+	got, err := os.ReadFile(creds.Path(home, srv.URL))
+	if err != nil || string(got) != "synthetic-key\n" {
+		t.Errorf("key file = %q, %v; want the key from before the run", got, err)
+	}
+	if !strings.Contains(out, "not saved by this run; existing key files unchanged") ||
+		strings.Contains(out, "Saving the key") {
+		t.Errorf("summary does not say the key was not saved:\n%s", out)
+	}
+}
+
+func pick(picked ...int) selectAnswer { return selectAnswer{picked: picked} }
+
+// basicChecks runs n Messages checks against handler through checkProtocols and returns their results.
+func basicChecks(
+	t *testing.T,
+	n int,
+	cache map[probeKey]probeResult,
+	handler http.HandlerFunc,
+) []protocolCheck {
+	t.Helper()
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+	plan := protocolPlan{deps: map[string][]probeKey{}}
+	for i := range n {
+		pk := probeKey{protocol: models.Messages, model: fmt.Sprintf("model-%d", i)}
+		plan.checks = append(plan.checks, protocolCheck{key: pk})
+	}
+	run := &setupRun{p: newPresenter(config.Env{}, Deps{Stderr: io.Discard}, true)}
+	gw := gateway.Client{HTTP: srv.Client(), BaseURL: srv.URL}
+	checkProtocols(t.Context(), gw, "sk-test-checks", nil, plan, run, cache)
+	return run.checks
+}
+
+// Not parallel: it shortens probeBudget.
+func TestBasicChecksStopAtTheirSharedBudget(t *testing.T) {
+	defer func(d time.Duration) { probeBudget = d }(probeBudget)
+	probeBudget = 200 * time.Millisecond
+	var posts atomic.Int32
+	checks := basicChecks(t, maxConcurrentProbes+2, nil, func(_ http.ResponseWriter, r *http.Request) {
+		posts.Add(1)
+		select { // an unread request body hides the client's hang-up, so the wait is bounded here
+		case <-r.Context().Done():
+		case <-time.After(time.Second):
+		}
+	})
+	if posts.Load() != maxConcurrentProbes {
+		t.Errorf("%d checks sent, want %d", posts.Load(), maxConcurrentProbes)
+	}
+	for _, c := range checks {
+		if c.err == nil ||
+			!strings.Contains(c.err.Error(), "not finished: the basic checks together took longer than") {
+			t.Errorf("%s: err = %v", c.key.model, c.err)
+		}
+	}
+}
+
+// A failed check is not remembered, so the same choice after Back sends it again; a passed one is not repeated.
+func TestFailedBasicCheckIsSentAgainAfterBack(t *testing.T) {
+	t.Parallel()
+	var posts atomic.Int32
+	cache := map[probeKey]probeResult{}
+	for round, wantErr := range []bool{true, false, false} {
+		checks := basicChecks(t, 1, cache, func(w http.ResponseWriter, _ *http.Request) {
+			if posts.Add(1) == 1 {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			_, _ = w.Write([]byte(`{"id":"synthetic","type":"message","content":[]}`))
+		})
+		if (checks[0].err != nil) != wantErr {
+			t.Fatalf("round %d: err = %v", round, checks[0].err)
+		}
+	}
+	if posts.Load() != 2 {
+		t.Errorf("%d checks sent, want 2", posts.Load())
+	}
 }

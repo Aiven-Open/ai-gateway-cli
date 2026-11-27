@@ -9,8 +9,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/aiven-open/ai-gateway-cli/internal/gateway"
 	"github.com/aiven-open/ai-gateway-cli/internal/models"
@@ -228,5 +230,61 @@ func TestModelsDecodesOwnerAndDisplayNameWithoutControlCharacters(t *testing.T) 
 				t.Errorf("owner %q, name %q; want %q, %q", ms[0].Owner, ms[0].Name, tc.owner, tc.display)
 			}
 		})
+	}
+}
+
+func TestProbeTimeoutNamesTheLimit(t *testing.T) {
+	release := make(chan struct{}) // the handler never reads the body, so it learns of no hang-up
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))
+	defer srv.Close()
+	defer close(release)
+	c := gateway.Client{HTTP: &http.Client{Timeout: 50 * time.Millisecond}, BaseURL: srv.URL}
+	_, err := c.Probe(context.Background(), "sk", "m", models.Messages)
+	var unreachable *gateway.UnreachableError
+	if !errors.As(err, &unreachable) || !unreachable.Timeout() {
+		t.Fatalf("err = %v, want a timed-out UnreachableError", err)
+	}
+	if want := "the gateway at " + srv.URL + " did not answer within 50ms"; err.Error() != want {
+		t.Errorf("err = %q, want %q", err, want)
+	}
+}
+
+func TestProbeLimitFollowsShorterContext(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))
+	defer srv.Close()
+	defer close(release)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	_, err := gateway.Client{
+		HTTP:    &http.Client{},
+		BaseURL: srv.URL,
+	}.Probe(
+		ctx,
+		"sk",
+		"m",
+		models.Messages,
+	)
+	var unreachable *gateway.UnreachableError
+	if !errors.As(err, &unreachable) || !unreachable.Timeout() ||
+		unreachable.Limit <= 0 || unreachable.Limit > 50*time.Millisecond {
+		t.Fatalf("err = %v, want a timeout limited by the context's 50ms", err)
+	}
+}
+
+// A body cut short is a broken response, not an unreachable gateway.
+func TestProbeKeepsTruncatedBodyApartFromTimeout(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Length", "100")
+		_, _ = w.Write([]byte("{"))
+	}))
+	defer srv.Close()
+	status, err := gateway.Client{HTTP: srv.Client(), BaseURL: srv.URL}.Probe(
+		context.Background(), "sk", "m", models.Messages,
+	)
+	var unreachable *gateway.UnreachableError
+	if status != http.StatusOK || err == nil || errors.As(err, &unreachable) ||
+		!strings.Contains(err.Error(), "read basic check response") {
+		t.Fatalf("status %d, err = %v", status, err)
 	}
 }
