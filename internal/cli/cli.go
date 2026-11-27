@@ -150,6 +150,7 @@ var helpCommands = []helpCommand{
 			"Never starts a session. Without a harness, a terminal offers installed tools.",
 			"Interactive steps support Esc / Shift+Tab to go back before saving.",
 			"Interactive setup sets Aiven as default; --yes leaves tool defaults unchanged.",
+			"Claude Code takes Claude models plus up to five models from other vendors.",
 		},
 	},
 	{"launch", "[--plain] [harness] [--] [native args]", []string{

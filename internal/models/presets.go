@@ -36,6 +36,12 @@ var (
 		"claude-opus-5-5", "claude-opus-5", "claude-opus-4-8", "claude-opus-4-7",
 		"claude-opus-4-6", "claude-opus-4-5", "claude-opus",
 	}
+	anthropicFableOrder = []string{
+		"claude-fable-5-2",
+		"claude-fable-5-1",
+		"claude-fable",
+		"claude-opus-5-5",
+	}
 	anthropicHaikuOrder = []string{
 		"claude-haiku-5-5", "claude-haiku-5.5", "claude-haiku-4-5", "claude-haiku",
 	}
@@ -187,4 +193,39 @@ func OpenWeightOrFirst(ms []Model) string {
 		return a
 	}
 	return FirstAlias(ms)
+}
+
+// IsClaude reports whether m is an Anthropic model: the catalogue files it under Anthropic, or
+// names no owner the reviewed list knows and the alias starts with claude-, in any case. A model
+// another vendor owns, such as an Aiven-owned claude-opus-5-5, is not.
+func (m Model) IsClaude() bool {
+	switch m.Group() {
+	case "Anthropic":
+		return true
+	case UnknownGroup:
+		return strings.HasPrefix(strings.ToLower(m.Alias), "claude-")
+	}
+	return false
+}
+
+// AnthropicTiers returns the first granted Anthropic model of each Claude tier's own order, matched
+// in any case. A tier the key grants none of stays empty, where FindPreset would fill it from
+// another tier.
+func AnthropicTiers(ms []Model) Preset {
+	spelled := map[string]string{}
+	var own []Model
+	for _, m := range ms {
+		if lower := strings.ToLower(m.Alias); m.IsClaude() {
+			spelled[lower] = m.Alias
+			own = append(own, Model{Alias: lower})
+		}
+	}
+	return Preset{
+		ID:     PresetAnthropic,
+		Name:   "Anthropic",
+		Opus:   spelled[FirstGranted(own, anthropicOpusOrder...)],
+		Sonnet: spelled[FirstGranted(own, anthropicSonnetOrder...)],
+		Haiku:  spelled[FirstGranted(own, anthropicHaikuOrder...)],
+		Fable:  spelled[FirstGranted(own, anthropicFableOrder...)],
+	}
 }

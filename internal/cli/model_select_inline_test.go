@@ -3,6 +3,8 @@
 package cli
 
 import (
+	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -23,6 +25,7 @@ import (
 	"github.com/aiven-open/ai-gateway-cli/internal/creds"
 	"github.com/aiven-open/ai-gateway-cli/internal/fsutil"
 	"github.com/aiven-open/ai-gateway-cli/internal/gateway"
+	"github.com/aiven-open/ai-gateway-cli/internal/harness"
 	"github.com/aiven-open/ai-gateway-cli/internal/harness/claude"
 	"github.com/aiven-open/ai-gateway-cli/internal/models"
 )
@@ -336,9 +339,9 @@ func TestCustomizePerToolHubPicksOneToolThenDoneAndSupportsSequential(t *testing
 				{err: errBack},
 				// 4: Customize hub: pick 3 = Claude Code directly!
 				{picked: []int{3}},
-				// 5: Claude Code menu: 0=Anthropic, 1=OpenAI, 2=Open-weight, 3=Custom model…
-				{picked: []int{3}},
-				// 6: Custom model picker: pick deepseek-v4.1-flash (Anthropic 0..2, DeepSeek 3, OpenAI 4)
+				// 5: Claude Code menu: 0=Recommended defaults, 1=Choose models
+				{picked: []int{1}},
+				// 6: Choose models: Anthropic 0..2, DeepSeek 3, OpenAI 4; deepseek-v4.1-flash alone
 				{picked: []int{3}},
 				// 7: Customize hub (cursor now on 6 = Done — continue): press Enter on 6!
 				{picked: []int{6}},
@@ -430,7 +433,7 @@ func TestSetupClaudeUserConflictRepairFromHomeDirectory(t *testing.T) {
 	p := &inlineSetupPrompter{
 		secret: "synthetic-key",
 		scriptedSelector: scriptedSelector{answers: []selectAnswer{
-			{picked: []int{1}}, // Anthropic preset, after Keep unchanged
+			{picked: []int{1}}, // Recommended defaults, after Keep unchanged
 			{picked: []int{0}}, // Write native default and repair user file
 			{picked: []int{0}}, // Apply
 		}},
@@ -468,7 +471,8 @@ func TestSetupClaudeLauncherUsesExplicitSetupChoice(t *testing.T) {
 	p := &inlineSetupPrompter{
 		secret: "synthetic-key",
 		scriptedSelector: scriptedSelector{answers: []selectAnswer{
-			{picked: []int{2}}, // OpenAI preset (after Keep current and Anthropic)
+			{picked: []int{2}}, // Choose models, after Keep current and Recommended defaults
+			{picked: []int{1}}, // gpt-6.1-sol: Anthropic 0, OpenAI 1, Z.ai 2
 			{picked: []int{1}}, // Launch only
 			{picked: []int{0}}, // Apply
 		}},
@@ -661,8 +665,8 @@ func TestSetupAlignsNativeDefaultAndProbeWithPersistedLauncherPreference(t *test
 	}
 }
 
-// Custom model pick in Claude interactive setup must preserve existing granted Claude tier slots.
-func TestSetupClaudeCustomPickPreservesExistingGrantedTier(t *testing.T) {
+// Choosing models takes the tiers from the catalogue, never from a pin the settings already hold.
+func TestSetupClaudeChoosingModelsTakesTiersFromCatalogue(t *testing.T) {
 	t.Parallel()
 	srv, _ := inlineGateway(t, `[
 		{"id":"claude-sonnet-4-5","owned_by":"Anthropic"},
@@ -684,8 +688,8 @@ func TestSetupClaudeCustomPickPreservesExistingGrantedTier(t *testing.T) {
 	p := &inlineSetupPrompter{
 		secret: "synthetic-key",
 		scriptedSelector: scriptedSelector{answers: []selectAnswer{
-			{picked: []int{2}}, // Custom model…
-			{picked: []int{2}}, // glm-5
+			{picked: []int{1}}, // Choose models, after Recommended defaults
+			{picked: []int{2}}, // glm-5: Anthropic 0..1, Z.ai 2
 			{picked: []int{1}}, // Launch only
 			{picked: []int{0}}, // Apply
 		}},
@@ -697,8 +701,8 @@ func TestSetupClaudeCustomPickPreservesExistingGrantedTier(t *testing.T) {
 		t.Fatalf("setup exit %d: %s", code, stderr.String())
 	}
 	wired := readJSONKey(t, path, "env").(map[string]any)
-	if got := wired["ANTHROPIC_DEFAULT_SONNET_MODEL"]; got != "claude-sonnet-4-5" {
-		t.Errorf("Sonnet tier after custom model = %q, want claude-sonnet-4-5", got)
+	if got := wired["ANTHROPIC_DEFAULT_SONNET_MODEL"]; got != "claude-sonnet-5-5" {
+		t.Errorf("Sonnet tier after choosing models = %q, want the catalogue's claude-sonnet-5-5", got)
 	}
 }
 
@@ -866,8 +870,10 @@ func TestUnattendedSetupPreservesAndValidatesCanonicalUserEnvModel(t *testing.T)
 		if code != 0 {
 			t.Fatalf("exit %d, stderr:\n%s", code, stderr.String())
 		}
-		if got := probes()["/v1/messages"]; !slices.Equal(got, []string{"glm-5"}) {
-			t.Errorf("Messages probes = %v, want [glm-5]", got)
+		// The kept dedicated model is checked too, since it runs outside the user's own selection.
+		got := slices.Sorted(slices.Values(probes()["/v1/messages"]))
+		if !slices.Equal(got, []string{"claude-sonnet-5-5", "glm-5"}) {
+			t.Errorf("Messages probes = %v, want [claude-sonnet-5-5 glm-5]", got)
 		}
 	})
 	t.Run("refuses ungranted user ANTHROPIC_MODEL over dedicated ANTHROPIC_MODEL", func(t *testing.T) {
@@ -914,7 +920,7 @@ func TestUnattendedSetupPreservesAndValidatesCanonicalUserEnvModel(t *testing.T)
 	})
 }
 
-func TestLauncherOnlyCustomPickPreservesInheritedUserClaudeTier(t *testing.T) {
+func TestLauncherOnlyChoosingModelsTakesTiersFromCatalogue(t *testing.T) {
 	t.Parallel()
 	srv, probes := inlineGateway(t, `[
 		{"id":"claude-opus-5-5","owned_by":"Anthropic"},
@@ -942,9 +948,9 @@ func TestLauncherOnlyCustomPickPreservesInheritedUserClaudeTier(t *testing.T) {
 		secret: "sk-test-inline-valid",
 		scriptedSelector: scriptedSelector{
 			answers: []selectAnswer{
-				// Claude menu: 0=Keep current, 1=Anthropic, 2=Open-weight, 3=Custom model…
-				{picked: []int{3}},
-				// Custom picker: Anthropic(0..3), Z.ai(4=glm-5)
+				// Claude menu: 0=Keep current, 1=Recommended defaults, 2=Choose models
+				{picked: []int{2}},
+				// Choose models: Anthropic 0..3, Z.ai 4 = glm-5
 				{picked: []int{4}},
 				// Beat 3: 1 = No — only via launch
 				{picked: []int{1}},
@@ -961,6 +967,10 @@ func TestLauncherOnlyCustomPickPreservesInheritedUserClaudeTier(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, stderr.String())
 	}
+	if got := optionLabels(p.asked[0]); !slices.Equal(
+		got, []string{"Keep current", "Recommended defaults", "Choose models"}) {
+		t.Errorf("menu = %q", got)
+	}
 	if got := probes()["/v1/messages"]; !slices.Equal(got, []string{"glm-5"}) {
 		t.Errorf("Messages probes = %v, want [glm-5]", got)
 	}
@@ -975,8 +985,8 @@ func TestLauncherOnlyCustomPickPreservesInheritedUserClaudeTier(t *testing.T) {
 	envMap, _ := cfg["env"].(map[string]any)
 	if cfg["model"] != "glm-5" ||
 		envMap["ANTHROPIC_CUSTOM_MODEL_OPTION"] != "glm-5" ||
-		envMap["ANTHROPIC_DEFAULT_SONNET_MODEL"] != "claude-sonnet-4-5" {
-		t.Fatalf("expected inherited Sonnet tier preserved with glm-5 custom pick, got %v", cfg)
+		envMap["ANTHROPIC_DEFAULT_SONNET_MODEL"] != "claude-sonnet-5-5" {
+		t.Fatalf("expected the catalogue's Sonnet tier with glm-5 custom pick, got %v", cfg)
 	}
 }
 
@@ -1065,7 +1075,7 @@ func TestLauncherOnlyClaudeChoicesOverrideUserTierAndCustomPinsOnLaunch(t *testi
 	]`
 	userJSON := `{"model":"claude-sonnet-5-5","env":{"ANTHROPIC_DEFAULT_SONNET_MODEL":"claude-sonnet-4-5","ANTHROPIC_CUSTOM_MODEL_OPTION":"gpt-6.1-sol"}}`
 
-	t.Run("preset owns its tier slots on launch", func(t *testing.T) {
+	t.Run("recommended defaults own the tier slots on launch", func(t *testing.T) {
 		t.Parallel()
 		srv, _ := inlineGateway(t, cat)
 		env, home := inlineSetupEnv(t, srv.URL)
@@ -1080,8 +1090,8 @@ func TestLauncherOnlyClaudeChoicesOverrideUserTierAndCustomPinsOnLaunch(t *testi
 			secret: "sk-test-inline-valid",
 			scriptedSelector: scriptedSelector{
 				answers: []selectAnswer{
-					// Claude menu: 0=Keep current, 1=Anthropic, 2=OpenAI
-					{picked: []int{2}},
+					// Claude menu: 0=Keep current, 1=Recommended defaults
+					{picked: []int{1}},
 					// Beat 3: 1 = No — only via launch
 					{picked: []int{1}},
 					// Review: 0 = Apply
@@ -1100,57 +1110,60 @@ func TestLauncherOnlyClaudeChoicesOverrideUserTierAndCustomPinsOnLaunch(t *testi
 		if code := Run(context.Background(), []string{"launch", "claude"}, env, launchDeps); code != 0 {
 			t.Fatalf("launch exit %d, stderr:\n%s", code, stderr.String())
 		}
-		if !slices.Contains(runner.lastEnv, "ANTHROPIC_DEFAULT_SONNET_MODEL=gpt-6.1-sol") ||
+		if !slices.Contains(runner.lastEnv, "ANTHROPIC_DEFAULT_SONNET_MODEL=claude-sonnet-5-5") ||
 			!slices.Contains(runner.lastEnv, "ANTHROPIC_CUSTOM_MODEL_OPTION=") {
-			t.Fatalf("expected OpenAI preset tier and blank custom option, got env %v", runner.lastEnv)
+			t.Fatalf("expected Anthropic preset tier and blank custom option, got env %v", runner.lastEnv)
 		}
 	})
 
-	t.Run("custom pick owns custom option while keeping granted user Claude tier", func(t *testing.T) {
-		t.Parallel()
-		srv, _ := inlineGateway(t, cat)
-		env, home := inlineSetupEnv(t, srv.URL)
-		userSettings := filepath.Join(home, ".claude", "settings.json")
-		if err := os.MkdirAll(filepath.Dir(userSettings), 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(userSettings, []byte(userJSON), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		p := &inlineSetupPrompter{
-			secret: "sk-test-inline-valid",
-			scriptedSelector: scriptedSelector{
-				answers: []selectAnswer{
-					// Claude menu: 0=Keep current, 1=Anthropic, 2=OpenAI, 3=Open-weight, 4=Custom model…
-					{picked: []int{4}},
-					// Custom picker: Anthropic(0..1), OpenAI(2), Z.ai(3=glm-5)
-					{picked: []int{3}},
-					// Beat 3: 1 = No — only via launch
-					{picked: []int{1}},
-					// Review: 0 = Apply
-					{picked: []int{0}},
+	t.Run(
+		"choosing a model owns the custom option and tiers come from the catalogue",
+		func(t *testing.T) {
+			t.Parallel()
+			srv, _ := inlineGateway(t, cat)
+			env, home := inlineSetupEnv(t, srv.URL)
+			userSettings := filepath.Join(home, ".claude", "settings.json")
+			if err := os.MkdirAll(filepath.Dir(userSettings), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(userSettings, []byte(userJSON), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			p := &inlineSetupPrompter{
+				secret: "sk-test-inline-valid",
+				scriptedSelector: scriptedSelector{
+					answers: []selectAnswer{
+						// Claude menu: 0=Keep current, 1=Recommended defaults, 2=Choose models
+						{picked: []int{2}},
+						// Choose models: Anthropic 0..1, OpenAI 2, Z.ai 3 = glm-5
+						{picked: []int{3}},
+						// Beat 3: 1 = No — only via launch
+						{picked: []int{1}},
+						// Review: 0 = Apply
+						{picked: []int{0}},
+					},
 				},
-			},
-		}
-		var stderr strings.Builder
-		deps := inlineDeps(p, &stderr)
-		deps.HTTP = srv.Client()
-		if code := Run(context.Background(), []string{"setup", "claude"}, env, deps); code != 0 {
-			t.Fatalf("setup exit %d, stderr:\n%s", code, stderr.String())
-		}
-		runner := &inlineRunner{}
-		launchDeps := Deps{Stderr: &stderr, HTTP: srv.Client(), Runner: runner}
-		if code := Run(context.Background(), []string{"launch", "claude"}, env, launchDeps); code != 0 {
-			t.Fatalf("launch exit %d, stderr:\n%s", code, stderr.String())
-		}
-		if !slices.Contains(runner.lastEnv, "ANTHROPIC_DEFAULT_SONNET_MODEL=claude-sonnet-4-5") ||
-			!slices.Contains(runner.lastEnv, "ANTHROPIC_CUSTOM_MODEL_OPTION=glm-5") {
-			t.Fatalf(
-				"expected custom glm-5 and preserved claude-sonnet-4-5 tier, got env %v",
-				runner.lastEnv,
-			)
-		}
-	})
+			}
+			var stderr strings.Builder
+			deps := inlineDeps(p, &stderr)
+			deps.HTTP = srv.Client()
+			if code := Run(context.Background(), []string{"setup", "claude"}, env, deps); code != 0 {
+				t.Fatalf("setup exit %d, stderr:\n%s", code, stderr.String())
+			}
+			runner := &inlineRunner{}
+			launchDeps := Deps{Stderr: &stderr, HTTP: srv.Client(), Runner: runner}
+			if code := Run(context.Background(), []string{"launch", "claude"}, env, launchDeps); code != 0 {
+				t.Fatalf("launch exit %d, stderr:\n%s", code, stderr.String())
+			}
+			if !slices.Contains(runner.lastEnv, "ANTHROPIC_DEFAULT_SONNET_MODEL=claude-sonnet-5-5") ||
+				!slices.Contains(runner.lastEnv, "ANTHROPIC_CUSTOM_MODEL_OPTION=glm-5") {
+				t.Fatalf(
+					"expected custom glm-5 and the catalogue's claude-sonnet-5-5 tier, got env %v",
+					runner.lastEnv,
+				)
+			}
+		},
+	)
 }
 
 type inlineRunner struct {
@@ -1185,7 +1198,7 @@ func (p *plainSetupPrompter) ReadLine(prompt string) (string, error) {
 }
 
 // A change declined at review saves nothing, even when another selected tool is already up to date.
-func TestSetupDeclinedChangeLeavesTheSavedKeyAlone(t *testing.T) {
+func TestSetupDeclinedChangeLeavesSavedKeyAlone(t *testing.T) {
 	srv, _ := inlineGateway(t, multiModelTestCatalogue)
 	env, home := inlineSetupEnv(t, srv.URL)
 	run := func(secret string, answers ...selectAnswer) string {
@@ -1281,5 +1294,439 @@ func TestFailedBasicCheckIsSentAgainAfterBack(t *testing.T) {
 	}
 	if posts.Load() != 2 {
 		t.Errorf("%d checks sent, want 2", posts.Load())
+	}
+}
+
+// The Claude Code catalogues below list their models as numbered here.
+const (
+	// Anthropic 0 haiku, 1 opus, 2 sonnet; DeepSeek 3; Google 4; OpenAI 5.
+	claudeMixCatalogue = `[
+	{"id":"claude-opus-5-5","owned_by":"Anthropic"},
+	{"id":"claude-sonnet-5-5","owned_by":"Anthropic"},
+	{"id":"claude-haiku-5-5","owned_by":"Anthropic"},
+	{"id":"deepseek-v4.1-flash","owned_by":"DeepSeek"},
+	{"id":"gemini-4-neon","owned_by":"Google"},
+	{"id":"gpt-6-astra","owned_by":"OpenAI"}
+]`
+	// Alibaba 0 (1 in plain mode), Anthropic 1, DeepSeek 2, Google 3, Moonshot AI 4, OpenAI 5, Z.ai 6.
+	claudeWideCatalogue = `[
+	{"id":"claude-sonnet-5-5","owned_by":"Anthropic"},
+	{"id":"deepseek-v4.1-flash","owned_by":"DeepSeek"},
+	{"id":"gemini-4-neon","owned_by":"Google"},
+	{"id":"glm-5","owned_by":"Z.ai"},
+	{"id":"gpt-6-astra","owned_by":"OpenAI"},
+	{"id":"kimi-k3","owned_by":"Moonshot AI"},
+	{"id":"qwen3-coder-480b","owned_by":"Alibaba"}
+]`
+	// Anthropic 0 fable, 1 haiku, 2 opus 4.6, 3 opus 5.5, 4 sonnet; Google 5.
+	claudeFableCatalogue = `[
+	{"id":"claude-opus-5-5","owned_by":"Anthropic"},
+	{"id":"claude-opus-4-6","owned_by":"Anthropic"},
+	{"id":"claude-sonnet-5-5","owned_by":"Anthropic"},
+	{"id":"claude-haiku-5-5","owned_by":"Anthropic"},
+	{"id":"claude-fable-5-2","owned_by":"Anthropic"},
+	{"id":"gemini-4-neon","owned_by":"Google"}
+]`
+	// Aiven 0, Anthropic 1, DeepSeek 2, Google 3, Moonshot AI 4, OpenAI 5, Z.ai 6.
+	claudeAivenCatalogue = `[
+	{"id":"claude-opus-5-5","owned_by":"Aiven"},
+	{"id":"claude-sonnet-5-5","owned_by":"Anthropic"},
+	{"id":"deepseek-v4.1-flash","owned_by":"DeepSeek"},
+	{"id":"gemini-4-neon","owned_by":"Google"},
+	{"id":"kimi-k3","owned_by":"Moonshot AI"},
+	{"id":"gpt-6-astra","owned_by":"OpenAI"},
+	{"id":"glm-5","owned_by":"Z.ai"}
+]`
+)
+
+func optionLabels(c choice) []string {
+	var out []string
+	for _, o := range c.options {
+		out = append(out, o.label)
+	}
+	return out
+}
+
+// claudeSlots reads the dedicated settings as "main custom fable opus sonnet haiku", "-" for no custom option, or ""
+// when setup wrote no file.
+func claudeSlots(t *testing.T, home string) string {
+	t.Helper()
+	path := filepath.Join(home, claude.SettingsFile)
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return ""
+	}
+	env := readJSONKey(t, path, "env").(map[string]any)
+	got := []any{readJSONKey(t, path, "model"), cmp.Or(env["ANTHROPIC_CUSTOM_MODEL_OPTION"], any("-"))}
+	for _, tier := range []string{"FABLE", "OPUS", "SONNET", "HAIKU"} {
+		got = append(got, env["ANTHROPIC_DEFAULT_"+tier+"_MODEL"])
+	}
+	return strings.TrimSuffix(fmt.Sprintln(got...), "\n")
+}
+
+// Inline rows answer: Models for Claude Code (Recommended defaults, Choose models), the model list, the default
+// among the picks, Default provider (1 is launch only), Review (0 is Apply). Plain rows type the same steps.
+func TestSetupChoosesModelsForClaudeCode(t *testing.T) {
+	t.Parallel()
+	limit := func(five []bool, sixth, anthropic int) func(*testing.T, string, []choice) {
+		return func(t *testing.T, _ string, asked []choice) {
+			refuse := asked[1].refuse
+			if got := refuse(five, sixth); got != claudeLimitRefusal {
+				t.Errorf("sixth tick: %q, want the refusal", got)
+			}
+			if got := refuse(five, anthropic); got != "" {
+				t.Errorf("Claude tick refused: %q", got)
+			}
+			five[slices.Index(five, true)] = false
+			if got := refuse(five, sixth); got != "" {
+				t.Errorf("fifth tick refused: %q", got)
+			}
+		}
+	}
+	for _, tc := range []struct {
+		name, catalogue string
+		argv            []string
+		refused         string // the model whose basic check the gateway answers with HTTP 400
+		settings        string // ~/.claude/settings.json before the run
+		answers         []selectAnswer
+		plain           []string
+		code            int
+		left            int
+		slots           string
+		notes           []string // shown in Choose models and again in Review
+		says            []string
+		probes          []string
+		check           func(t *testing.T, home string, asked []choice)
+	}{
+		{
+			name: "others take custom option then unticked tiers", catalogue: claudeMixCatalogue,
+			answers: []selectAnswer{
+				{picked: []int{1}}, {picked: []int{4, 5, 3}}, {picked: []int{0}}, {picked: []int{1}}, {picked: []int{0}},
+			},
+			slots: "gemini-4-neon gemini-4-neon gpt-6-astra deepseek-v4.1-flash claude-sonnet-5-5 claude-haiku-5-5",
+			notes: []string{
+				"gemini-4-neon takes the custom model option", "gpt-6-astra takes the fable tier",
+				"deepseek-v4.1-flash takes the opus tier",
+			},
+			probes: []string{"deepseek-v4.1-flash", "gemini-4-neon", "gpt-6-astra"},
+			check: func(t *testing.T, _ string, asked []choice) {
+				if got := optionLabels(asked[0]); !slices.Equal(got, []string{"Recommended defaults", "Choose models"}) {
+					t.Errorf("menu = %q", got)
+				}
+				list := asked[1]
+				ticked := []bool{false, false, true, true, true, false}
+				if !list.multi || !list.ordered || len(list.options) != 6 ||
+					list.status(ticked) != fmt.Sprintf(claudeLimitStatus, 2, claude.MaxOtherModels) {
+					t.Errorf("model list = %+v, status %q", list, list.status(ticked))
+				}
+				want := []string{"gemini-4-neon", "gpt-6-astra", "deepseek-v4.1-flash"}
+				if got := optionLabels(asked[2]); !slices.Equal(got, want) {
+					t.Errorf("default list = %q", got)
+				}
+			},
+		},
+		{
+			name: "back from default list keeps picks", catalogue: claudeMixCatalogue,
+			answers: []selectAnswer{
+				{picked: []int{1}}, {picked: []int{5, 4}}, {err: errBack}, {picked: []int{5, 4}},
+				{picked: []int{0}}, {picked: []int{1}}, {picked: []int{0}},
+			},
+			slots: "gpt-6-astra gpt-6-astra gemini-4-neon claude-opus-5-5 claude-sonnet-5-5 claude-haiku-5-5",
+			check: func(t *testing.T, _ string, asked []choice) {
+				again := asked[3]
+				if !again.options[4].picked || !again.options[5].picked || !slices.Equal(again.order, []int{5, 4}) {
+					t.Errorf("reopened list lost the picks: order %v, options %+v", again.order, again.options)
+				}
+			},
+		},
+		{
+			name: "first ticked Claude model takes its tier, second is named", catalogue: claudeFableCatalogue,
+			answers: []selectAnswer{
+				{picked: []int{1}}, {picked: []int{0, 2, 3, 5}}, {picked: []int{0}}, {picked: []int{1}}, {picked: []int{0}},
+			},
+			slots: "claude-fable-5-2 gemini-4-neon claude-fable-5-2 claude-opus-4-6 claude-sonnet-5-5 claude-haiku-5-5",
+			notes: []string{
+				"gemini-4-neon takes the custom model option",
+				"Not in a tier, choose with /model in Claude Code: claude-opus-5-5",
+			},
+		},
+		{
+			name: "haiku tier going to another vendor is warned about", catalogue: claudeWideCatalogue,
+			answers: []selectAnswer{
+				{picked: []int{1}}, {picked: []int{0, 2, 3, 4, 5}}, {picked: []int{0}}, {picked: []int{1}}, {picked: []int{0}},
+			},
+			slots: "qwen3-coder-480b qwen3-coder-480b deepseek-v4.1-flash gemini-4-neon gpt-6-astra kimi-k3",
+			notes: []string{
+				"kimi-k3 takes the haiku tier",
+				"Claude Code also sends background requests to the haiku tier: they go to kimi-k3.",
+			},
+			check: limit([]bool{true, false, true, true, true, true, false}, 6, 1),
+		},
+		{
+			name: "Aiven-owned claude alias counts as another vendor", catalogue: claudeAivenCatalogue,
+			answers: []selectAnswer{{picked: []int{1}}, {err: errCancelled}}, code: 1,
+			check: func(t *testing.T, home string, asked []choice) {
+				first := asked[1].options[0]
+				if first.label != "claude-opus-5-5" || !strings.HasSuffix(first.detail, "Aiven") {
+					t.Errorf("first option = %+v", first)
+				}
+				if got := asked[0].options[1].detail; got != "pick from 7 granted models" {
+					t.Errorf("Choose models detail = %q", got)
+				}
+				limit([]bool{true, false, true, true, true, true, false}, 6, 1)(t, home, asked)
+			},
+		},
+		{
+			name: "ungranted current model heads menu", catalogue: claudeMixCatalogue,
+			settings: `{"model":"retired-model"}`,
+			answers:  []selectAnswer{{err: errCancelled}}, code: 1,
+			check: func(t *testing.T, _ string, asked []choice) {
+				want := []string{"Keep unchanged (refuse setup)", "Recommended defaults", "Choose models"}
+				if got := optionLabels(asked[0]); !slices.Equal(got, want) ||
+					!strings.Contains(asked[0].title, "(current retired-model is not granted)") {
+					t.Errorf("menu %q = %q, want %q", asked[0].title, got, want)
+				}
+			},
+		},
+		{
+			name: "pick that fails its check blocks Apply", catalogue: claudeMixCatalogue, refused: "gpt-6-astra",
+			answers: []selectAnswer{
+				{picked: []int{1}}, {picked: []int{4, 5}}, {picked: []int{0}}, {picked: []int{1}}, {picked: []int{0}},
+			},
+			code: 1, left: 1, says: []string{"gpt-6-astra", "model not served"},
+		},
+		{
+			name: "Review of several tools names slots beside Apply all", catalogue: claudeMixCatalogue,
+			argv: []string{"setup"},
+			// Tools: OpenCode and Claude Code; Customize per tool; hub: Claude Code; its three lists; hub: Done.
+			answers: []selectAnswer{
+				{picked: []int{1, 3}}, {picked: []int{5}}, {picked: []int{1}}, {picked: []int{1}}, {picked: []int{4, 5}},
+				{picked: []int{0}}, {picked: []int{3}}, {picked: []int{1}}, {picked: []int{0}},
+			},
+			slots: "gemini-4-neon gemini-4-neon gpt-6-astra claude-opus-5-5 claude-sonnet-5-5 claude-haiku-5-5",
+			notes: []string{"gemini-4-neon takes the custom model option", "gpt-6-astra takes the fable tier"},
+		},
+		{
+			name: "refused pick fails Claude Code only", catalogue: claudeMixCatalogue, refused: "gpt-6-astra",
+			argv: []string{"setup"},
+			// Tools: OpenCode and Claude Code; Customize per tool; hub: Claude Code; its three lists; hub: Done.
+			answers: []selectAnswer{
+				{picked: []int{1, 3}}, {picked: []int{5}}, {picked: []int{1}}, {picked: []int{1}}, {picked: []int{4, 5}},
+				{picked: []int{0}}, {picked: []int{3}}, {picked: []int{1}}, {picked: []int{0}},
+			},
+			code: 1, says: []string{"gpt-6-astra", "model not served"},
+			check: func(t *testing.T, home string, _ []choice) {
+				if _, err := os.Stat(filepath.Join(home, ".config", "opencode", "opencode.json")); err != nil {
+					t.Errorf("OpenCode, whose check passed, was not written: %v", err)
+				}
+			},
+		},
+		{
+			name: "plain list refuses six models from other vendors", catalogue: claudeWideCatalogue,
+			plain: []string{"2", "1,2,3,4,5,6,7", "2,4", "2", "n", "1"},
+			slots: "gemini-4-neon gemini-4-neon claude-sonnet-5-5 claude-sonnet-5-5 claude-sonnet-5-5 claude-sonnet-5-5",
+			says:  []string{claudeLimitNote, claudePlainLimit},
+		},
+		{
+			name: "plain list takes ids and Back keeps picks", catalogue: claudeMixCatalogue,
+			plain: []string{"2", "gemini-4-neon,gpt-6-astra", "b", "", "2", "n", "1"},
+			slots: "gpt-6-astra gemini-4-neon gpt-6-astra claude-opus-5-5 claude-sonnet-5-5 claude-haiku-5-5",
+			notes: []string{"gpt-6-astra takes the fable tier"},
+			says:  []string{claudeKeptNote + "gemini-4-neon, gpt-6-astra"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			srv, probes := inlineGateway(t, tc.catalogue)
+			if tc.refused != "" {
+				served := srv.Config.Handler
+				srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					body, _ := io.ReadAll(r.Body)
+					if strings.Contains(string(body), `"`+tc.refused+`"`) {
+						w.WriteHeader(http.StatusBadRequest)
+						_, _ = w.Write([]byte(`{"error":{"message":"model not served"}}`))
+						return
+					}
+					r.Body = io.NopCloser(bytes.NewReader(body))
+					served.ServeHTTP(w, r)
+				})
+			}
+			env, home := inlineSetupEnv(t, srv.URL)
+			if tc.settings != "" {
+				path := filepath.Join(home, ".claude", "settings.json")
+				if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte(tc.settings), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var stderr strings.Builder
+			inline := &inlineSetupPrompter{
+				secret: "synthetic-key", scriptedSelector: scriptedSelector{answers: tc.answers},
+			}
+			deps, argv := inlineDeps(inline, &stderr), []string{"setup", "claude"}
+			if tc.argv != nil {
+				argv = tc.argv
+			}
+			if tc.plain != nil {
+				deps = Deps{
+					Stderr: &stderr, Stdout: io.Discard, Runner: allInstalled{},
+					Prompter: &plainSetupPrompter{secret: "synthetic-key", answers: tc.plain},
+				}
+				argv = append(argv, "--plain")
+			}
+			deps.HTTP = srv.Client()
+			code := Run(t.Context(), argv, env, deps)
+			out := stderr.String()
+			if code != tc.code || len(inline.answers) != tc.left {
+				t.Fatalf(
+					"exit %d, %d answers left; want %d and %d:\n%s",
+					code,
+					len(inline.answers),
+					tc.code,
+					tc.left,
+					out,
+				)
+			}
+			if got := claudeSlots(t, home); got != tc.slots {
+				t.Errorf("slots = %s\nwant    %s", got, tc.slots)
+			}
+			for _, note := range tc.notes {
+				if strings.Count(out, note) != 2 {
+					t.Errorf(
+						"%q shown %d times, want in Choose models and in Review:\n%s",
+						note,
+						strings.Count(out, note),
+						out,
+					)
+				}
+			}
+			for _, text := range tc.says {
+				if !strings.Contains(out, text) {
+					t.Errorf("no %q in:\n%s", text, out)
+				}
+			}
+			if got := slices.Sorted(
+				slices.Values(probes()["/v1/messages"]),
+			); tc.probes != nil &&
+				!slices.Equal(got, tc.probes) {
+				t.Errorf("Messages checks = %v, want %v", got, tc.probes)
+			}
+			if tc.check != nil {
+				tc.check(t, home, inline.asked)
+			}
+			if tc.code != 0 || tc.plain != nil {
+				return
+			}
+			// A repeat --yes run leaves the chosen mix where it is.
+			before := claudeSlots(t, home)
+			stderr.Reset()
+			if code := Run(t.Context(), []string{"setup", "claude", "--yes"}, env, deps); code != 0 ||
+				claudeSlots(t, home) != before ||
+				!strings.Contains(stderr.String(), "Already configured; no file needs a change.") {
+				t.Errorf(
+					"repeat setup exit %d changed %s to %s:\n%s",
+					code,
+					before,
+					claudeSlots(t, home),
+					stderr.String(),
+				)
+			}
+		})
+	}
+}
+
+// Model ids are read as displayed: an offered id stands for itself, in its own case, and no word is a shortcut.
+func TestPlainModelListsReadIdsAsDisplayed(t *testing.T) {
+	t.Parallel()
+	offered := []string{"all", "Vendor-Mixed", "pi"}
+	for answer, want := range map[string][]string{
+		"Vendor-Mixed": {"Vendor-Mixed"}, "all": {"all"}, "2, pi": {"Vendor-Mixed", "pi"}, "vendor-mixed": nil,
+		"codex": nil,
+	} {
+		if got, ok := parseModelPicks(answer, offered); ok != (want != nil) || !slices.Equal(got, want) {
+			t.Errorf("parseModelPicks(%q) = %q, %v; want %q", answer, got, ok, want)
+		}
+	}
+}
+
+// Catalogue text reaches the terminal without its control characters.
+func TestClaudeModelListsPrintCatalogueTextWithoutControlCharacters(t *testing.T) {
+	t.Parallel()
+	const alias = "glm\x1b[31m-5"
+	table := []models.Model{{Alias: alias, Owner: "Ven\x1b[2Jdor"}}
+	var stderr strings.Builder
+	deps := Deps{Prompter: &plainSetupPrompter{answers: []string{""}}, Stderr: &stderr}
+	picks, err := pickClaudeModelsPlain(
+		deps,
+		newPresenter(config.Env{}, deps, true),
+		table,
+		[]string{alias},
+		[]string{alias},
+	)
+	label := claudeLabel(harness.ModelSelection{Model: alias, Models: []string{alias, "other"}})
+	notes, _ := claudeSlotNotes(table, harness.ModelSelection{Model: alias, Models: []string{alias}})
+	shown := stderr.String() + label + strings.Join(notes, "")
+	if err != nil || !slices.Equal(picks, []string{alias}) || len(notes) == 0 ||
+		strings.Contains(shown, "\x1b") {
+		t.Errorf("picks %q, %v; shown %q", picks, err, shown)
+	}
+}
+
+// A shared vendor preset is Claude Code's default model only: its tiers stay on granted Claude models.
+func TestSharedVendorPresetSetsClaudeCodeDefaultOnly(t *testing.T) {
+	t.Parallel()
+	const fable = `[
+	{"id":"claude-sonnet-5-5","owned_by":"Anthropic"},
+	{"id":"claude-fable-5-2","owned_by":"Anthropic"},
+	{"id":"glm-5","owned_by":"Z.ai"}
+]`
+	for name, tc := range map[string]struct {
+		catalogue string
+		preset    int // index of Open-weight in the shared Default model list
+		slots     string
+	}{
+		"tiers take Claude stand-in": {
+			multiModelTestCatalogue, 3,
+			"glm-5 glm-5 claude-sonnet-5-5 claude-sonnet-5-5 claude-sonnet-5-5 claude-sonnet-5-5",
+		},
+		"granted fable keeps its tier": {
+			fable, 2, "glm-5 glm-5 claude-fable-5-2 claude-sonnet-5-5 claude-sonnet-5-5 claude-sonnet-5-5",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			srv, _ := inlineGateway(t, tc.catalogue)
+			env, home := inlineSetupEnv(t, srv.URL)
+			// Harnesses: Pi and Claude Code; the preset; Default provider: launch only; Review: Apply all.
+			p := &inlineSetupPrompter{secret: "synthetic-key", scriptedSelector: scriptedSelector{
+				answers: []selectAnswer{
+					{picked: []int{0, 3}}, {picked: []int{tc.preset}}, {picked: []int{1}}, {picked: []int{0}},
+				},
+			}}
+			var stderr strings.Builder
+			deps := inlineDeps(p, &stderr)
+			deps.HTTP = srv.Client()
+			if code := Run(t.Context(), []string{"setup"}, env, deps); code != 0 {
+				t.Fatalf("setup exit %d: %s", code, stderr.String())
+			}
+			if got := p.asked[1].options[tc.preset]; got.label != "Open-weight" || got.detail != "glm-5" {
+				t.Errorf("Default model option %d = %+v", tc.preset, got)
+			}
+			if got := claudeSlots(t, home); got != tc.slots {
+				t.Errorf("slots = %s\nwant    %s", got, tc.slots)
+			}
+		})
+	}
+	table := []models.Model{
+		{Alias: "claude-sonnet-5-5", Owner: "Anthropic"},
+		{Alias: "glm-5", Owner: "Z.ai"},
+	}
+	preset := harness.ModelSelection{Preset: models.PresetOpenWeight}
+	if got := sharedSelection("claude", table, harness.ModelSelection{}); !got.IsZero() {
+		t.Errorf("Recommended defaults for Claude Code = %+v, want zero", got)
+	}
+	if got := sharedSelection("pi", table, preset); got.Preset != preset.Preset || got.Model != "" {
+		t.Errorf("preset for pi = %+v, want unchanged", got)
 	}
 }

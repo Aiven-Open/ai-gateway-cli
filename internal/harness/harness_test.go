@@ -159,3 +159,18 @@ func TestModelSelectionResolveMain(t *testing.T) {
 		t.Error("expected error for unsatisfied preset on non-empty table")
 	}
 }
+
+func TestModelSelectionWithModelsIsChoiceWhoseDefaultIsItsModel(t *testing.T) {
+	t.Parallel()
+	picks := harness.ModelSelection{Models: []string{"glm-5", "gpt-6-sol"}}
+	if picks.IsZero() {
+		t.Error("a list of models counts as no choice")
+	}
+	if got, err := picks.ResolveMain(nil); err != nil || got != "glm-5" {
+		t.Errorf("ResolveMain without a default = %q, %v; want glm-5", got, err)
+	}
+	withDefault := harness.ModelSelection{Model: "gpt-6-sol", Models: picks.Models}
+	if got, err := withDefault.ResolveMain(nil); err != nil || got != "gpt-6-sol" {
+		t.Errorf("ResolveMain = %q, %v; want gpt-6-sol", got, err)
+	}
+}

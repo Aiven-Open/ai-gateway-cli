@@ -615,7 +615,7 @@ func (s *setupSession) runBeatModels(
 		if !decision.customize {
 			draft := make(map[string]toolDraft, len(eligible))
 			for _, t := range eligible {
-				sel := decision.shared
+				sel := sharedSelection(t.out.tool, s.table, decision.shared)
 				label := decision.summaryLabel
 				set := !sel.IsZero()
 				if per, ok := decision.perTool[t.out.tool]; ok {
