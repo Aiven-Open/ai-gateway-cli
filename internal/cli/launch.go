@@ -259,6 +259,7 @@ func launch(plan harness.Plan, env config.Env, deps Deps, p presenter) int {
 		}
 	}
 	p.ui.line(2, "Starting "+toolLabel(plan.Argv[0])+"; the session now owns this terminal.")
+	restoreAllVT()
 	if err := deps.Runner.Exec(plan.Argv[0], plan.Argv, execx.Merge(childEnv, plan.Env)); err != nil {
 		return fail(deps, err.Error())
 	}
