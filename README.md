@@ -168,7 +168,8 @@ one configuration change is approved.
   extended Unix ACLs (`chmod +a`, `setfacl`). Windows terminals enable
   virtual terminal processing and bounded `Esc` waits automatically,
   falling back to `--plain` on legacy ConHost consoles where VT modes are
-  unavailable; other non-Unix platforms require `--plain`.
+  unavailable; hidden key input works there too, and the console's modes are
+  restored before the tool starts; other non-Unix platforms require `--plain`.
 
 ## Development
 
