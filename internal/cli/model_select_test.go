@@ -20,9 +20,16 @@ import (
 const (
 	keyOpenWeightLA    = "sk-test-open-weight-la"
 	keyProductionOwned = "sk-test-production-owned"
+	keyGeminiFour      = "sk-test-gemini-four"
 )
 
 func init() {
+	keyModels[keyGeminiFour] = []string{
+		`{"id":"gemini-4-argon","object":"model","created":0,"owned_by":"Google"}`,
+		`{"id":"gemini-4-carbon","object":"model","created":0,"owned_by":"Google"}`,
+		`{"id":"gemini-4-hydrogen","object":"model","created":0,"owned_by":"Google"}`,
+		`{"id":"gemini-4-neon","object":"model","created":0,"owned_by":"Google"}`,
+	}
 	keyModels[keyOpenWeightLA] = []string{
 		`{"id":"deepseek-v3.2","object":"model","created":0,"owned_by":"DeepSeek","context_window_tokens":163840}`,
 		`{"id":"devstral-2-123b","object":"model","created":0,"owned_by":"Mistral AI","context_window_tokens":262144}`,
@@ -432,5 +439,16 @@ func TestSetupPlainSelectsGeminiPreset(t *testing.T) {
 	if cfg["model"] != "gemini-4-argon[1m]" ||
 		env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] != "gemini-3.8-flash[1m]" {
 		t.Fatalf("claude Gemini settings = %v", cfg)
+	}
+}
+
+func TestSetupGeminiPresetDefaultsToNeon(t *testing.T) {
+	t.Parallel()
+	s := newSession(t, newGatewayDouble(t)).stdin(keyGeminiFour)
+	// Beat 2: 1=Gemini; Beat 3: 2=No; Review: y=Apply.
+	s.deps.Prompter = &scriptedPrompter{answers: []string{"1", "2", "y"}}
+	r := s.run("setup", "opencode", "--key-stdin", "--plain")
+	if r.code != 0 || !strings.Contains(r.stderr, "opencode -m aiven/gemini-4-neon\n") {
+		t.Fatalf("exit %d, stderr:\n%s", r.code, r.stderr)
 	}
 }
